@@ -1,15 +1,15 @@
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::get, Router};
 use tokio::net::TcpListener;
+
+use crate::state::AppState;
 
 mod routes;
 
-pub async fn serve() -> Result<(), axum::Error> {
+pub async fn serve(state: AppState) -> Result<(), axum::Error> {
     let app = Router::new()
         .route("/", get(root))
-        .route("/devices", get(routes::devices::get));
+        .route("/devices", get(routes::devices::get))
+        .with_state(state);
 
     let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
 

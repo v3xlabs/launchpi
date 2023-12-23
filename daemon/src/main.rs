@@ -1,6 +1,8 @@
 use tracing::info;
 
 mod api;
+mod state;
+mod controllers;
 
 #[tokio::main]
 async fn main() {
@@ -8,5 +10,7 @@ async fn main() {
 
     info!("Starting daemon");
 
-    api::serve().await.unwrap();
+    let state = state::AppState::default();
+
+    api::serve(state).await.unwrap();
 }

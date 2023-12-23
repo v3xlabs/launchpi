@@ -636,6 +636,7 @@ dependencies = [
  "anyhow",
  "axum",
  "launchy",
+ "lazy_static",
  "midir",
  "nanorand",
  "rodio",
