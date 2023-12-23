@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-launchy = { git = "https://github.com/lucemans/launchy.git" }
+anyhow = "1.0.76"
+launchy = { path = "/home/luc/dev/local/launchy" }
+# launchy = { git = "https://github.com/lucemans/launchy.git" }
 midir = { version = "0.9.1", features = ["jack"] }
 nanorand = "0.7.0"
 rodio = "0.17.3"
