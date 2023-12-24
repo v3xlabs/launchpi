@@ -23,7 +23,10 @@ pub trait Controller: Send + Sync + 'static {
 
     // -device specific starts here-
 
-    async fn initialize(&mut self) -> Result<(), MidiError> where Self: Sized {
+    async fn initialize(&mut self) -> Result<(), MidiError>
+    where
+        Self: Sized,
+    {
         Ok(())
     }
 
@@ -33,7 +36,7 @@ pub trait Controller: Send + Sync + 'static {
 
     fn clear(&mut self) -> Result<(), MidiError>;
 
-    fn name(&self) -> &str;        
+    fn name(&self) -> &str;
 }
 
 #[allow(dead_code)]

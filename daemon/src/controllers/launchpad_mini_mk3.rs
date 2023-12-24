@@ -10,6 +10,7 @@ pub struct LaunchpadMiniMk3 {
 }
 
 unsafe impl Send for LaunchpadMiniMk3 {}
+
 unsafe impl Sync for LaunchpadMiniMk3 {}
 
 #[async_trait::async_trait]
