@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, OutputDevice, control::Button};
+use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, OutputDevice};
 use rand::Rng;
 
 use super::{Controller, DeviceInfo};
@@ -23,22 +23,10 @@ impl Controller for LaunchpadMiniMk1 {
     }
 
     async fn guess() -> Result<Self, MidiError> {
-        let midi_in =
-            launchy::mini::Input::guess_polling().expect("No Launchpad Mini Mk1 Input Found");
-        let midi_out = launchy::mini::Output::guess().expect("No Launchpad Mini Mk1 Output Found");
+        let midi_in = launchy::mini::Input::guess_polling()?;
+        let midi_out = launchy::mini::Output::guess()?;
 
         Ok(Self { midi_in, midi_out })
-    }
-
-    fn clear(&mut self) -> Result<(), MidiError> {
-        self.midi_out
-            .light_all(launchy::mini::Color::BLACK)
-    }
-
-    async fn run(&mut self) -> Result<(), MidiError> {
-        println!("Device found");
-
-        Ok(())
     }
 
     async fn initialize(&mut self) -> Result<(), MidiError>
@@ -54,9 +42,25 @@ impl Controller for LaunchpadMiniMk1 {
         let random_x = rng.gen_range(0..8);
         let random_y = rng.gen_range(0..8);
 
-        self.midi_out.light(launchy::mini::Button::GridButton { x: random_x, y: random_y }, launchy::mini::Color::ORANGE)?;
+        self.midi_out.light(
+            launchy::mini::Button::GridButton {
+                x: random_x,
+                y: random_y,
+            },
+            launchy::mini::Color::ORANGE,
+        )?;
 
         Ok(())
+    }
+
+    async fn run(&mut self) -> Result<(), MidiError> {
+        println!("Device found");
+
+        Ok(())
+    }
+
+    fn clear(&mut self) -> Result<(), MidiError> {
+        self.midi_out.light_all(launchy::mini::Color::BLACK)
     }
 
     fn name(&self) -> &str {

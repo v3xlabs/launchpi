@@ -1,4 +1,4 @@
-use tracing::info;
+use tracing::{error, info};
 
 mod api;
 mod controllers;
@@ -12,7 +12,13 @@ async fn main() {
 
     let mut state = state::AppState::default();
 
-    let controller = controllers::guess().await.unwrap();
+    let controller = controllers::guess().await;
+
+    let Ok(controller) = controller else {
+        error!("Couldn't find a controller");
+
+        return;
+    };
 
     // controller.initialize().await.unwrap();
 
