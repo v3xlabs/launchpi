@@ -2,39 +2,30 @@ use std::collections::HashMap;
 
 use launchy::MidiError;
 
-use self::{launchpad_mini_mk1::LaunchpadMiniMk1, launchpad_mini_mk3::LaunchpadMiniMk3};
+use crate::scripts::Script;
 
-mod launchpad_mini_mk1;
-mod launchpad_mini_mk3;
+pub mod launchpad_mini_mk1;
+pub mod launchpad_mini_mk3;
 
 #[async_trait::async_trait]
-pub trait Controller: Send + Sync + 'static {
-    fn from_connection(device: &DeviceInfo) -> Result<Self, ()>
-    where
-        Self: Sized;
+pub trait Controller: Send {
+    fn from_connection(device: &DeviceInfo) -> Result<Box<Self>, ()>;
 
-    fn detect_all() -> Result<Vec<DeviceInfo>, ()>
-    where
-        Self: Sized;
+    fn detect_all() -> Result<Vec<DeviceInfo>, ()>;
 
-    async fn guess() -> Result<Self, MidiError>
-    where
-        Self: Sized;
+    fn guess() -> Result<Box<Self>, MidiError>;
 
     // -device specific starts here-
 
-    async fn initialize(&mut self) -> Result<(), MidiError>
-    where
-        Self: Sized,
-    {
+    fn initialize(&self) -> Result<(), MidiError> {
         Ok(())
     }
 
-    async fn run(&mut self) -> Result<(), MidiError>
-    where
-        Self: Sized;
+    fn run(&self, script: &impl Script) -> Result<(), MidiError>;
 
-    fn clear(&mut self) -> Result<(), MidiError>;
+    fn clear(&self) -> Result<(), MidiError>;
+
+    fn set_button_color(&self, x: u8, y: u8, color: u8) -> Result<(), MidiError>;
 
     fn name(&self) -> &str;
 }
@@ -54,15 +45,3 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, ()> {
     Ok(list)
 }
 
-pub async fn guess() -> Result<Box<dyn Controller>, ()> {
-    if let Ok(mut t) = LaunchpadMiniMk3::guess().await {
-        t.initialize().await.unwrap();
-        return Ok(Box::new(t));
-    }
-    if let Ok(mut t) = LaunchpadMiniMk1::guess().await {
-        t.initialize().await.unwrap();
-        return Ok(Box::new(t));
-    }
-
-    Err(())
-}

@@ -647,6 +647,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "cpal",
  "launchy",
  "lazy_static",
  "midir",
@@ -663,7 +664,6 @@ dependencies = [
 [[package]]
 name = "launchy"
 version = "0.3.0"
-source = "git+https://github.com/lucemans/launchy.git#1028dad716ce747db6bd6732097a2357c907ffba"
 dependencies = [
  "midir",
 ]

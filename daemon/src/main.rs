@@ -1,7 +1,15 @@
+use launchy::MidiError;
+use scripts::Script;
+use tokio::{join, select};
 use tracing::{error, info};
+
+use crate::controllers::{
+    launchpad_mini_mk1::LaunchpadMiniMk1, launchpad_mini_mk3::LaunchpadMiniMk3, Controller,
+};
 
 mod api;
 mod controllers;
+mod scripts;
 mod state;
 
 #[tokio::main]
@@ -10,21 +18,25 @@ async fn main() {
 
     info!("Starting daemon");
 
-    let mut state = state::AppState::default();
+    let state = state::AppState::default();
 
-    let controller = controllers::guess().await;
+    let controller = LaunchpadMiniMk3::guess().unwrap();
+    let controller2 = LaunchpadMiniMk1::guess().unwrap();
 
-    let Ok(controller) = controller else {
-        error!("Couldn't find a controller");
+    controller.initialize().unwrap();
+    controller2.initialize().unwrap();
 
-        return;
-    };
+    // info!("Successfully started controller: {}", controller.name());
 
-    // controller.initialize().await.unwrap();
+    // state.controllers.push(controller);
 
-    info!("Successfully started controller: {}", controller.name());
+    let script = scripts::ping::PingScript::new();
 
-    state.controllers.push(controller);
+    tokio::spawn(async move { controller.run(&script).unwrap() });
+
+    let script2 = scripts::ping::PingScript::new();
+
+    tokio::spawn(async move { controller2.run(&script2).unwrap() });
 
     api::serve(state).await.unwrap();
 }

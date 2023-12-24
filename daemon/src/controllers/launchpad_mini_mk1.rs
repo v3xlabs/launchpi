@@ -1,69 +1,80 @@
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
-use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, OutputDevice};
+use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, MsgPollingWrapper, OutputDevice};
 use rand::Rng;
+use tracing::info;
+
+use crate::scripts::Script;
 
 use super::{Controller, DeviceInfo};
 
 pub struct LaunchpadMiniMk1 {
-    midi_in: InputDeviceHandlerPolling<launchy::mini::Message>,
-    midi_out: launchy::mini::Output,
+    midi_in: Arc<Mutex<InputDeviceHandlerPolling<launchy::mini::Message>>>,
+    midi_out: Arc<Mutex<launchy::mini::Output>>,
 }
-
-unsafe impl Send for LaunchpadMiniMk1 {}
-unsafe impl Sync for LaunchpadMiniMk1 {}
 
 #[async_trait::async_trait]
 impl Controller for LaunchpadMiniMk1 {
-    fn from_connection(_device: &DeviceInfo) -> Result<Self, ()> {
+    fn from_connection(_device: &DeviceInfo) -> Result<Box<Self>, ()> {
         todo!()
     }
     fn detect_all() -> Result<Vec<DeviceInfo>, ()> {
         todo!()
     }
 
-    async fn guess() -> Result<Self, MidiError> {
-        let midi_in = launchy::mini::Input::guess_polling()?;
-        let midi_out = launchy::mini::Output::guess()?;
+    fn guess() -> Result<Box<Self>, MidiError> {
+        let input = launchy::mini::Input::guess_polling()?;
+        let output = launchy::mini::Output::guess()?;
 
-        Ok(Self { midi_in, midi_out })
+        let midi_in = Arc::new(Mutex::new(input));
+        let midi_out = Arc::new(Mutex::new(output));
+
+        Ok(Box::new(Self { midi_in, midi_out }))
     }
 
-    async fn initialize(&mut self) -> Result<(), MidiError>
-    where
-        Self: Sized,
-    {
+    fn initialize(&self) -> Result<(), MidiError> {
         self.clear().unwrap();
 
         // Wait for 1 second
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        let mut rng = rand::thread_rng();
-        let random_x = rng.gen_range(0..8);
-        let random_y = rng.gen_range(0..8);
-
-        self.midi_out.light(
-            launchy::mini::Button::GridButton {
-                x: random_x,
-                y: random_y,
-            },
-            launchy::mini::Color::ORANGE,
-        )?;
+        // tokio::time::sleep(Duration::from_millis(10)).await;
 
         Ok(())
     }
 
-    async fn run(&mut self) -> Result<(), MidiError> {
-        println!("Device found");
+    fn run(&self, script: &impl Script) -> Result<(), MidiError> {
+        let midi_in = self.midi_in.lock().unwrap();
+
+        for message in midi_in.iter() {
+            match message {
+                launchy::mini::Message::Press { button } => match button {
+                    launchy::mini::Button::GridButton { x, y } => {
+                        script.on_press(x, y, self);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
 
         Ok(())
     }
 
-    fn clear(&mut self) -> Result<(), MidiError> {
-        self.midi_out.light_all(launchy::mini::Color::BLACK)
+    fn clear(&self) -> Result<(), MidiError> {
+        let mut midi_out = self.midi_out.lock().unwrap();
+
+        midi_out.light_all(launchy::mini::Color::BLACK)
     }
 
     fn name(&self) -> &str {
         "Launchpad Mini Mk1"
+    }
+
+    fn set_button_color(&self, x: u8, y: u8, color: u8) -> Result<(), MidiError> {
+        let mut midi_out = self.midi_out.lock().unwrap();
+
+        midi_out.light(
+            launchy::mini::Button::GridButton { x, y },
+            launchy::mini::Color::GREEN,
+        )
     }
 }
