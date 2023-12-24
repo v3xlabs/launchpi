@@ -1,6 +1,17 @@
+use std::time::Duration;
+
+use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, OutputDevice, control::Button};
+use rand::Rng;
+
 use super::{Controller, DeviceInfo};
 
-pub struct LaunchpadMiniMk1 {}
+pub struct LaunchpadMiniMk1 {
+    midi_in: InputDeviceHandlerPolling<launchy::mini::Message>,
+    midi_out: launchy::mini::Output,
+}
+
+unsafe impl Send for LaunchpadMiniMk1 {}
+unsafe impl Sync for LaunchpadMiniMk1 {}
 
 #[async_trait::async_trait]
 impl Controller for LaunchpadMiniMk1 {
@@ -11,7 +22,44 @@ impl Controller for LaunchpadMiniMk1 {
         todo!()
     }
 
-    async fn clear(&self) -> Result<(), ()> {
-        todo!()
+    async fn guess() -> Result<Self, MidiError> {
+        let midi_in =
+            launchy::mini::Input::guess_polling().expect("No Launchpad Mini Mk1 Input Found");
+        let midi_out = launchy::mini::Output::guess().expect("No Launchpad Mini Mk1 Output Found");
+
+        Ok(Self { midi_in, midi_out })
+    }
+
+    fn clear(&mut self) -> Result<(), MidiError> {
+        self.midi_out
+            .light_all(launchy::mini::Color::BLACK)
+    }
+
+    async fn run(&mut self) -> Result<(), MidiError> {
+        println!("Device found");
+
+        Ok(())
+    }
+
+    async fn initialize(&mut self) -> Result<(), MidiError>
+    where
+        Self: Sized,
+    {
+        self.clear().unwrap();
+
+        // Wait for 1 second
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let mut rng = rand::thread_rng();
+        let random_x = rng.gen_range(0..8);
+        let random_y = rng.gen_range(0..8);
+
+        self.midi_out.light(launchy::mini::Button::GridButton { x: random_x, y: random_y }, launchy::mini::Color::ORANGE)?;
+
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Launchpad Mini Mk1"
     }
 }

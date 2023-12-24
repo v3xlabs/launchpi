@@ -10,7 +10,15 @@ async fn main() {
 
     info!("Starting daemon");
 
-    let state = state::AppState::default();
+    let mut state = state::AppState::default();
+
+    let controller = controllers::guess().await.unwrap();
+
+    // controller.initialize().await.unwrap();
+
+    info!("Successfully started controller: {}", controller.name());
+
+    state.controllers.push(controller);
 
     api::serve(state).await.unwrap();
 }
