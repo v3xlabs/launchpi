@@ -1,32 +1,34 @@
-use midir::{MidiInput, MidiOutput, MidiIO};
+use std::collections::HashMap;
 
 mod launchpad_mini_mk1;
 mod launchpad_mini_mk3;
 
-pub trait Controller<T> {
-    fn from_connection(device: DeviceInfo<Self::DeviceInfo>) -> Result<Self, ()>;
+#[async_trait::async_trait]
+pub trait Controller: Send + Sync + 'static {
+    fn from_connection(device: &DeviceInfo) -> Result<Self, ()>
+    where
+        Self: Sized;
 
-    fn detect_all() -> Result<Vec<dyn DeviceInfo<Self, T>>, ()>;
+    fn detect_all() -> Result<Vec<DeviceInfo>, ()>
+    where
+        Self: Sized;
 
     // -device specific starts here-
 
     async fn clear(&self) -> Result<(), ()>;
 }
 
+#[allow(dead_code)]
 pub struct DeviceInfo {
     name: String,
-    // TODO:
-    port: String,
+    port: u16,
+
+    extra_data: HashMap<String, String>,
 }
 
-pub fn list_controllers() -> Result<Vec<dyn DeviceInfo>, ()> {
+#[allow(dead_code)]
+pub fn list_devices() -> Result<Vec<DeviceInfo>, ()> {
     let list = vec![];
-
-    list.push_all(launchpad_mini_mk1::detect_all());
-    list.push_all(launchpad_mini_mk1::detect_all());
-    list.push_all(launchpad_mini_mk1::detect_all());
-    list.push_all(launchpad_mini_mk1::detect_all());
-    list.push_all(launchpad_mini_mk1::detect_all());
 
     Ok(list)
 }

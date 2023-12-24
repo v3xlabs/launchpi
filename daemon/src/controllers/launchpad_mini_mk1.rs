@@ -1,18 +1,17 @@
-use super::Controller;
-
+use super::{Controller, DeviceInfo};
 
 pub struct LaunchpadMiniMk1 {}
 
+#[async_trait::async_trait]
 impl Controller for LaunchpadMiniMk1 {
-    fn from_connection(connection: T) -> Result<Self, ()> {
-        unimplemented!()
+    fn from_connection(_device: &DeviceInfo) -> Result<Self, ()> {
+        todo!()
+    }
+    fn detect_all() -> Result<Vec<DeviceInfo>, ()> {
+        todo!()
     }
 
-    async fn clear() -> Result<(), ()> {
-        unimplemented!()
-    }
-
-    async fn detect_all() -> Result<Vec<DeviceInfo>, ()> {
-        unimplemented!()
+    async fn clear(&self) -> Result<(), ()> {
+        todo!()
     }
 }

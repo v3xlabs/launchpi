@@ -634,6 +634,7 @@ name = "launchpi"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "launchy",
  "lazy_static",

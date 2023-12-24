@@ -1,8 +1,8 @@
 use tracing::info;
 
 mod api;
-mod state;
 mod controllers;
+mod state;
 
 #[tokio::main]
 async fn main() {
