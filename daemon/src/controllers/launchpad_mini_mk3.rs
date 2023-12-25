@@ -1,16 +1,12 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 
 use crate::scripts::Script;
 
-use super::{Controller, DeviceInfo};
+use super::{Alles, Controller, DeviceInfo, ScriptRunner};
 use launchy::{
-    launchpad_mini_mk3::PaletteColor, Color, InputDevice, InputDeviceHandlerPolling, MidiError,
+    launchpad_mini_mk3::PaletteColor, InputDevice, InputDeviceHandlerPolling, MidiError,
     MsgPollingWrapper, OutputDevice,
 };
-use rand::Rng;
 
 pub struct LaunchpadMiniMk3 {
     midi_in: Arc<Mutex<InputDeviceHandlerPolling<launchy::mini_mk3::Message>>>,
@@ -40,24 +36,6 @@ impl Controller for LaunchpadMiniMk3 {
         Ok(())
     }
 
-    fn run(&self, script: &impl Script) -> Result<(), MidiError> {
-        let midi_in = self.midi_in.lock().unwrap();
-
-        for message in midi_in.iter() {
-            match message {
-                launchy::mini_mk3::Message::Press { button } => match button {
-                    launchy::mini_mk3::Button::GridButton { x, y } => {
-                        script.on_press(x, y, self);
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
     fn clear(&self) -> Result<(), MidiError> {
         let mut midi_out = self.midi_out.lock().unwrap();
         midi_out.clear()
@@ -71,9 +49,51 @@ impl Controller for LaunchpadMiniMk3 {
         let mut midi_out: std::sync::MutexGuard<'_, launchy::launchpad_mini_mk3::Output> =
             self.midi_out.lock().unwrap();
 
-        midi_out.light(
-            launchy::mini_mk3::Button::GridButton { x, y },
-            PaletteColor::CYAN,
-        )
+        let color = match color {
+            0 => PaletteColor::BLACK,
+            // 1 => PaletteColor::DARK_GRAY,
+            // 2 => PaletteColor::LIGHT_GRAY,
+            1 => PaletteColor::WHITE,
+            2 => PaletteColor::RED,
+            3 => PaletteColor::YELLOW,
+            4 => PaletteColor::BLUE,
+            5 => PaletteColor::MAGENTA,
+            6 => PaletteColor::BROWN,
+            7 => PaletteColor::CYAN,
+            8 => PaletteColor::GREEN,
+            _ => PaletteColor::BLACK,
+        };
+
+        midi_out.light(launchy::mini_mk3::Button::GridButton { x, y }, color)
     }
 }
+
+impl ScriptRunner for LaunchpadMiniMk3 {
+    fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
+        script.initialize(self);
+
+        let midi_in = self.midi_in.lock().unwrap();
+
+        for message in midi_in.iter() {
+            match message {
+                launchy::mini_mk3::Message::Press { button } => match button {
+                    launchy::mini_mk3::Button::GridButton { x, y } => {
+                        script.on_press(x, y, self);
+                    }
+                    _ => {}
+                },
+                launchy::launchpad_mini_mk3::Message::Release { button } => match button {
+                    launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
+                        script.on_release(x, y, self);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Alles for LaunchpadMiniMk3 {}

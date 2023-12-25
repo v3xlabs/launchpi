@@ -1,59 +1,50 @@
-use std::{fs::File, io::BufReader, time::Duration};
+use std::{fs::File, io::BufReader};
 
-use rodio::{source::SineWave, Decoder, Sink, Source};
-use cpal::traits::{HostTrait, DeviceTrait};
+use cpal::traits::{DeviceTrait, HostTrait};
+use rodio::{Decoder, OutputStreamHandle, Sink};
 use tracing::info;
-
 use crate::controllers::Controller;
 
 use super::Script;
 
-pub struct PingScript {}
+pub struct PingScript {
+    stream_handle: OutputStreamHandle,
+}
 
 impl Script for PingScript {
     fn name(&self) -> &'static str {
         "ping"
     }
 
-    fn on_press(&self, x: u8, y: u8, controller: &impl super::Controller) {
+    fn on_press(&mut self, x: u8, y: u8, controller: &dyn Controller) {
         info!("Ping! {} {}", x, y);
         controller.set_button_color(x, y, 0).unwrap();
 
-        tokio::spawn(async {
-            // play sound
-            let thing = cpal::default_host().output_devices().unwrap().find(|x| {
-                // x.name().unwrap().contains("pipewire")
-                info!("Device: {:?}", x.name().unwrap());
-                false
-            }).unwrap();
+        info!("Playing sound");
+        let file = File::open("assets/developers.mp3").unwrap();
+        let file = Decoder::new(BufReader::new(file)).unwrap();
 
-            let (_stream, stream_handle) = rodio::OutputStream::try_from_device(&thing).unwrap();
-            let sink = Sink::try_new(&stream_handle).unwrap();
+        let sink = Sink::try_new(&self.stream_handle).unwrap();
 
-            let file = BufReader::new(File::open("assets/ping.wav").unwrap());
-            let source = Decoder::new(file).unwrap();
+        sink.append(file);
 
-            sink.append(source);
-
-            sink.sleep_until_end();
-        });
+        sink.detach();
     }
 
     fn new() -> Self {
-        Self {}
-    }
-}
+        let device = cpal::default_host()
+            .output_devices()
+            .unwrap()
+            .find(|device| {
+                info!("--- {}", device.name().unwrap());
+                device.name().unwrap().contains("pipewire")
+            })
+            .unwrap();
 
-pub struct Ping2Script {}
+        let (stream, stream_handle) = rodio::OutputStream::try_from_device(&device).unwrap();
 
-impl Script for Ping2Script {
-    fn name(&self) -> &'static str {
-        "ping2"
-    }
+        std::mem::forget(stream);
 
-    fn on_press(&self, x: u8, y: u8, controller: &impl Controller) {}
-
-    fn new() -> Self {
-        Self {}
+        Self { stream_handle }
     }
 }

@@ -1,10 +1,16 @@
-use launchy::MidiError;
+use std::{
+    process,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
+
 use scripts::Script;
-use tokio::{join, select};
-use tracing::{error, info};
+use tokio::select;
+use tracing::info;
 
 use crate::controllers::{
-    launchpad_mini_mk1::LaunchpadMiniMk1, launchpad_mini_mk3::LaunchpadMiniMk3, Controller,
+    launchpad_mini_mk1::LaunchpadMiniMk1, launchpad_mini_mk3::LaunchpadMiniMk3, Controller, ScriptRunner, Alles
 };
 
 mod api;
@@ -20,8 +26,12 @@ async fn main() {
 
     let state = state::AppState::default();
 
-    let controller = LaunchpadMiniMk3::guess().unwrap();
-    let controller2 = LaunchpadMiniMk1::guess().unwrap();
+    let mut controllers: Vec<Arc<Box<dyn Alles>>> = Vec::new();
+
+    let controller: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk1::guess().unwrap());
+    controllers.push(controller.clone());
+    let controller2: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk3::guess().unwrap());
+    controllers.push(controller2.clone());
 
     controller.initialize().unwrap();
     controller2.initialize().unwrap();
@@ -30,13 +40,27 @@ async fn main() {
 
     // state.controllers.push(controller);
 
-    let script = scripts::ping::PingScript::new();
+    let mut script = scripts::soundboard::SoundboardScript::new();
 
-    tokio::spawn(async move { controller.run(&script).unwrap() });
+    let controller1 = controller.clone();
+    tokio::spawn(async move { controller1.run(&mut script).unwrap() });
 
-    let script2 = scripts::ping::PingScript::new();
+    let mut script2 = scripts::soundboard::SoundboardScript::new();
 
-    tokio::spawn(async move { controller2.run(&script2).unwrap() });
+    let controller21 = controller2.clone();
+    tokio::spawn(async move { controller21.run(&mut script2).unwrap() });
 
-    api::serve(state).await.unwrap();
+    select! {
+        _ = api::serve(state) => {},
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received SIGINT, shutting down");
+        },
+    }
+
+    controller.clear().unwrap();
+    controller2.clear().unwrap();
+
+    thread::sleep(Duration::from_millis(100));
+
+    process::exit(0);
 }

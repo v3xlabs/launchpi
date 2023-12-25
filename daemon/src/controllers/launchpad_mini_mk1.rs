@@ -1,12 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, MsgPollingWrapper, OutputDevice};
-use rand::Rng;
-use tracing::info;
 
 use crate::scripts::Script;
 
-use super::{Controller, DeviceInfo};
+use super::{Controller, DeviceInfo, ScriptRunner, Alles};
 
 pub struct LaunchpadMiniMk1 {
     midi_in: Arc<Mutex<InputDeviceHandlerPolling<launchy::mini::Message>>>,
@@ -41,24 +39,6 @@ impl Controller for LaunchpadMiniMk1 {
         Ok(())
     }
 
-    fn run(&self, script: &impl Script) -> Result<(), MidiError> {
-        let midi_in = self.midi_in.lock().unwrap();
-
-        for message in midi_in.iter() {
-            match message {
-                launchy::mini::Message::Press { button } => match button {
-                    launchy::mini::Button::GridButton { x, y } => {
-                        script.on_press(x, y, self);
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
     fn clear(&self) -> Result<(), MidiError> {
         let mut midi_out = self.midi_out.lock().unwrap();
 
@@ -72,9 +52,49 @@ impl Controller for LaunchpadMiniMk1 {
     fn set_button_color(&self, x: u8, y: u8, color: u8) -> Result<(), MidiError> {
         let mut midi_out = self.midi_out.lock().unwrap();
 
-        midi_out.light(
-            launchy::mini::Button::GridButton { x, y },
-            launchy::mini::Color::GREEN,
-        )
+        let color = match color {
+            0 => launchy::mini::Color::BLACK,
+            1 => launchy::mini::Color::RED,
+            2 => launchy::mini::Color::GREEN,
+            3 => launchy::mini::Color::AMBER,
+            4 => launchy::mini::Color::DIM_GREEN,
+            5 => launchy::mini::Color::ORANGE,
+            6 => launchy::mini::Color::YELLOW,
+            _ => launchy::mini::Color::AMBER,
+        };
+
+        midi_out.light(launchy::mini::Button::GridButton { x, y }, color)
     }
 }
+
+impl ScriptRunner for LaunchpadMiniMk1 {
+
+
+    fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
+        script.initialize(self);
+
+        let midi_in = self.midi_in.lock().unwrap();
+
+        for message in midi_in.iter() {
+            match message {
+                launchy::mini::Message::Press { button } => match button {
+                    launchy::mini::Button::GridButton { x, y } => {
+                        script.on_press(x, y, self);
+                    }
+                    _ => {}
+                },
+                launchy::mini::Message::Release { button } => match button {
+                    launchy::mini::Button::GridButton { x, y } => {
+                        script.on_release(x, y, self);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Alles for LaunchpadMiniMk1 {}
