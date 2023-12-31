@@ -4,7 +4,7 @@ use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, MsgPollingWrapp
 
 use crate::scripts::Script;
 
-use super::{Controller, DeviceInfo, ScriptRunner, Alles};
+use super::{Alles, Controller, ScriptRunner};
 
 pub struct LaunchpadMiniMk1 {
     midi_in: Arc<Mutex<InputDeviceHandlerPolling<launchy::mini::Message>>>,
@@ -13,13 +13,6 @@ pub struct LaunchpadMiniMk1 {
 
 #[async_trait::async_trait]
 impl Controller for LaunchpadMiniMk1 {
-    fn from_connection(_device: &DeviceInfo) -> Result<Box<Self>, ()> {
-        todo!()
-    }
-    fn detect_all() -> Result<Vec<DeviceInfo>, ()> {
-        todo!()
-    }
-
     fn guess() -> Result<Box<Self>, MidiError> {
         let input = launchy::mini::Input::guess_polling()?;
         let output = launchy::mini::Output::guess()?;
@@ -68,8 +61,6 @@ impl Controller for LaunchpadMiniMk1 {
 }
 
 impl ScriptRunner for LaunchpadMiniMk1 {
-
-
     fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
         script.initialize(self);
 

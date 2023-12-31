@@ -1,4 +1,5 @@
 use axum::{routing::get, Router};
+use tower_http::cors::CorsLayer;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
@@ -8,10 +9,14 @@ use crate::state::AppState;
 mod routes;
 
 pub async fn serve(state: Arc<AppState>) -> Result<(), axum::Error> {
+    let cors = CorsLayer::very_permissive();
+
     let app = Router::new()
         .route("/", get(routes::root::root))
         .route("/connect", get(routes::connect::post))
         .route("/devices", get(routes::devices::get))
+        .route("/events", get(routes::events::sse_handler))
+        .layer(cors)
         .with_state(state);
 
     let mut port = 3000;
