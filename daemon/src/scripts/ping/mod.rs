@@ -18,17 +18,17 @@ impl Script for PingScript {
 
     fn on_press(&mut self, x: u8, y: u8, controller: &dyn Controller) {
         info!("Ping! {} {}", x, y);
-        controller.set_button_color(x, y, 0).unwrap();
+        controller.set_button_color(x, y, 1).unwrap();
 
-        info!("Playing sound");
-        let file = File::open("assets/developers.mp3").unwrap();
-        let file = Decoder::new(BufReader::new(file)).unwrap();
+        // info!("Playing sound");
+        // let file = File::open("assets/developers.mp3").unwrap();
+        // let file = Decoder::new(BufReader::new(file)).unwrap();
 
-        let sink = Sink::try_new(&self.stream_handle).unwrap();
+        // let sink = Sink::try_new(&self.stream_handle).unwrap();
 
-        sink.append(file);
+        // sink.append(file);
 
-        sink.detach();
+        // sink.detach();
     }
 
     fn new() -> Self {

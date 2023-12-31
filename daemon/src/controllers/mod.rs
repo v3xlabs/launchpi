@@ -50,4 +50,3 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, ()> {
 
     Ok(list)
 }
-

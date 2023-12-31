@@ -1,13 +1,8 @@
-use std::{
-    fs::File,
-    io::BufReader,
-    sync::{Arc, Mutex},
-};
+use std::{fs::File, io::BufReader};
 
 use crate::controllers::Controller;
 use cpal::traits::{DeviceTrait, HostTrait};
-use lazy_static::lazy_static;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStreamHandle, Sink};
 use tracing::info;
 
 use super::Script;

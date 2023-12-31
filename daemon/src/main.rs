@@ -10,7 +10,8 @@ use tokio::select;
 use tracing::info;
 
 use crate::controllers::{
-    launchpad_mini_mk1::LaunchpadMiniMk1, launchpad_mini_mk3::LaunchpadMiniMk3, Controller, ScriptRunner, Alles
+    launchpad_mini_mk1::LaunchpadMiniMk1, launchpad_mini_mk3::LaunchpadMiniMk3, Alles, Controller,
+    ScriptRunner,
 };
 
 mod api;
@@ -26,29 +27,25 @@ async fn main() {
 
     let state = state::AppState::default();
 
-    let mut controllers: Vec<Arc<Box<dyn Alles>>> = Vec::new();
+    // let mut controllers: Vec<Arc<Box<dyn Alles>>> = Vec::new();
 
-    let controller: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk1::guess().unwrap());
-    controllers.push(controller.clone());
-    let controller2: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk3::guess().unwrap());
-    controllers.push(controller2.clone());
+    // let controller: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk1::guess().unwrap());
+    // controllers.push(controller.clone());
+    // let controller2: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk3::guess().unwrap());
+    // controllers.push(controller2.clone());
 
-    controller.initialize().unwrap();
-    controller2.initialize().unwrap();
+    // controller.initialize().unwrap();
+    // controller2.initialize().unwrap();
 
-    // info!("Successfully started controller: {}", controller.name());
+    // let mut script = scripts::ping::PingScript::new();
 
-    // state.controllers.push(controller);
+    // let controller1 = controller.clone();
+    // tokio::spawn(async move { controller1.run(&mut script).unwrap() });
 
-    let mut script = scripts::soundboard::SoundboardScript::new();
+    // let mut script2 = scripts::soundboard::SoundboardScript::new();
 
-    let controller1 = controller.clone();
-    tokio::spawn(async move { controller1.run(&mut script).unwrap() });
-
-    let mut script2 = scripts::soundboard::SoundboardScript::new();
-
-    let controller21 = controller2.clone();
-    tokio::spawn(async move { controller21.run(&mut script2).unwrap() });
+    // let controller21 = controller2.clone();
+    // tokio::spawn(async move { controller21.run(&mut script2).unwrap() });
 
     select! {
         _ = api::serve(state) => {},
@@ -57,8 +54,8 @@ async fn main() {
         },
     }
 
-    controller.clear().unwrap();
-    controller2.clear().unwrap();
+    // controller.clear().unwrap();
+    // controller2.clear().unwrap();
 
     thread::sleep(Duration::from_millis(100));
 
