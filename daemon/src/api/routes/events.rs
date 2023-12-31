@@ -5,8 +5,8 @@ use axum::{
 };
 use futures_util::{stream::Stream, StreamExt};
 use std::{convert::Infallible, sync::Arc};
-use tokio::stream;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio::{stream, sync::mpsc};
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tracing::info;
 
 use crate::state::AppState;
@@ -32,19 +32,20 @@ pub async fn sse_handler(
     //         }
     //     });
     // }
-    let stream = stream! {
-        if let Some(controller) = &first_controller {
-            info!("SSE handler 2");
-            let mut receiver = controller.resubscribe();
-                info!("SSE handler 3");
-                loop {
-                    info!("SSE handler 4");
-                    let message = receiver.recv().await.unwrap();
-                    info!("Received messagezzz: {:?}", message);
-                    yield Ok(Event::default().json_data(message).unwrap());
-                }
-         }
-    };
+
+    let (tx, rx) = mpsc::channel(10);
+
+    if let Some(controller) = &first_controller {
+        let mut receiver = controller.resubscribe();
+        tokio::spawn(async move {
+            while let Ok(message) = receiver.recv().await {
+                info!("Received messagezzz: {:?}", message);
+                tx.send(message).await.unwrap();
+            }
+        });
+    }
+
+    let stream = ReceiverStream::new(rx).map(|_| Ok(Event::default().data("HELLOOO")));
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }

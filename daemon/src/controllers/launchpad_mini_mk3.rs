@@ -50,7 +50,7 @@ impl Controller for LaunchpadMiniMk3 {
             
             loop {
                 async {
-                    let sender = sender.lock().unwrap();
+                    let mut sender = sender.lock().unwrap();
                     let midi_in = midi_in.lock().unwrap();
 
                     for message in midi_in.iter_pending() {
