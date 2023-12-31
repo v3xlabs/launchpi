@@ -1,3 +1,4 @@
+use async_stream::try_stream;
 use axum::{
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
@@ -5,8 +6,6 @@ use axum::{
 use futures_util::stream::Stream;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::StreamExt as _;
 use tracing::info;
 
 use crate::state::AppState;
@@ -24,7 +23,7 @@ pub async fn sse_handler(
         )));
     drop(controllers);
 
-    let receiver = match receiver {
+    let mut receiver = match receiver {
         Ok(receiver) => receiver,
         Err(_) => {
             let (_, receiver) = broadcast::channel(1);
@@ -32,15 +31,19 @@ pub async fn sse_handler(
         }
     };
 
-    info!("Found receiver");
-    let stream = BroadcastStream::new(receiver).map(|result| {
-        result
-            .map(|msg| {
-                info!("Forwarding event");
-                Event::default().json_data(msg).unwrap()
-            })
-            .map_err(|_| axum::Error::new(std::io::Error::new(std::io::ErrorKind::Other, "hi")))
-    });
-
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Sse::new(try_stream! {
+        loop {
+            match receiver.recv().await {
+                Ok(msg) => {
+                    info!("Forwarding event");
+                    yield Event::default().json_data(msg).unwrap();
+                }
+                Err(_) => {
+                    info!("Event receiver closed");
+                    break;
+                },
+            }
+        }
+    })
+    .keep_alive(KeepAlive::default())
 }

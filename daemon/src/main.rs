@@ -24,13 +24,9 @@ async fn main() {
     let controllers: Arc<Mutex<Vec<Arc<Box<dyn controllers::Controller>>>>> =
         Arc::new(Mutex::new(Vec::new()));
 
-    let (controller_test_tx, controller_test_rx) = tokio::sync::broadcast::channel(32);
-
     let state = Arc::new(state::AppState {
         controller_tx,
         controllers,
-        controller_test_tx,
-        controller_test_rx
     });
 
     let state1 = state.clone();

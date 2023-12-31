@@ -13,7 +13,6 @@ pub struct LaunchpadMiniMk3 {
     midi_in: Arc<Mutex<InputDeviceHandlerPolling<launchy::mini_mk3::Message>>>,
     midi_out: Arc<Mutex<launchy::mini_mk3::Output>>,
     event_sender: tokio::sync::broadcast::Sender<ControllerEvent>,
-    event_receiver: tokio::sync::broadcast::Receiver<ControllerEvent>,
 }
 
 #[async_trait::async_trait]
@@ -21,14 +20,13 @@ impl Controller for LaunchpadMiniMk3 {
     fn guess() -> Result<Box<Self>, MidiError> {
         let midi_in = Arc::new(Mutex::new(launchy::mini_mk3::Input::guess_polling()?));
         let midi_out = Arc::new(Mutex::new(launchy::mini_mk3::Output::guess()?));
-        let (event_sender, event_receiver) = tokio::sync::broadcast::channel(10);
+        let (event_sender, mut event_receiver) = tokio::sync::broadcast::channel(10);
 
         // Mock receiver magically works lmao
-        let mut event_receiver2 = event_receiver.resubscribe();
         tokio::spawn(async move {
             loop {
-                let message = event_receiver2.recv().await.unwrap();
-                info!("Received message: {:?}", message);
+                let message = event_receiver.recv().await.unwrap();
+                info!("Idle Received message: {:?}", message);
             }
         });
 
@@ -36,7 +34,6 @@ impl Controller for LaunchpadMiniMk3 {
             midi_in,
             midi_out,
             event_sender,
-            event_receiver,
         }))
     }
 
@@ -50,31 +47,34 @@ impl Controller for LaunchpadMiniMk3 {
             info!("Starting midi_in loop");
 
             for message in midi_in.iter() {
-                info!("Received message");
+                info!("MIDI OPERATION");
 
                 // sender.send("value".to_string()).unwrap();
 
                 match message {
                     launchy::mini_mk3::Message::Press { button } => match button {
                         launchy::mini_mk3::Button::GridButton { x, y } => {
-                            info!("Sending press event");
+                            info!("Midi -> send press event");
                             sender
                                 .send(ControllerEvent::Press {
                                     x: x as u8,
                                     y: y as u8,
                                 })
                                 .ok();
+                            sender.send(ControllerEvent::Heartbeat).ok();
                         }
                         _ => {}
                     },
                     launchy::launchpad_mini_mk3::Message::Release { button } => match button {
                         launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
+                            info!("Midi -> send release event");
                             sender
                                 .send(ControllerEvent::Release {
                                     x: x as u8,
                                     y: y as u8,
                                 })
                                 .ok();
+                            sender.send(ControllerEvent::Heartbeat).ok();
                         }
                         _ => {}
                     },

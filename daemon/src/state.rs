@@ -8,8 +8,4 @@ pub struct AppState {
     // pub controllers: Vec<Box<dyn Controller>>,
     pub controller_tx: mpsc::Sender<Arc<Box<dyn Controller>>>,
     pub controllers: Arc<Mutex<Vec<Arc<Box<dyn Controller>>>>>,
-
-    // Temporary
-    pub controller_test_rx: broadcast::Receiver<String>,
-    pub controller_test_tx: broadcast::Sender<String>,
 }
