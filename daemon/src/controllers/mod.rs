@@ -8,7 +8,7 @@ pub mod launchpad_mini_mk1;
 pub mod launchpad_mini_mk3;
 
 #[async_trait::async_trait]
-pub trait Controller: Send {
+pub trait Controller: Send + Sync {
     fn from_connection(device: &DeviceInfo) -> Result<Box<Self>, ()> where Self: Sized;
 
     fn detect_all() -> Result<Vec<DeviceInfo>, ()> where Self: Sized;

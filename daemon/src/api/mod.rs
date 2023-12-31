@@ -7,11 +7,12 @@ use crate::state::AppState;
 
 mod routes;
 
-pub async fn serve(state: AppState) -> Result<(), axum::Error> {
+pub async fn serve(state: Arc<AppState>) -> Result<(), axum::Error> {
     let app = Router::new()
         .route("/", get(routes::root::root))
+        .route("/connect", get(routes::connect::post))
         .route("/devices", get(routes::devices::get))
-        .with_state(Arc::new(state));
+        .with_state(state);
 
     let mut port = 3000;
 
