@@ -29,17 +29,6 @@ async fn main() {
         controllers,
     });
 
-    let state1 = state.clone();
-    tokio::spawn(async move {
-        info!("Starting controller receiver");
-        while let Some(controller) = controller_rx.recv().await {
-            info!("Received controller");
-            controller.initialize().unwrap();
-
-            state1.controllers.lock().unwrap().push(controller.clone());
-        }
-    });
-
     // let mut controllers: Vec<Arc<Box<dyn Alles>>> = Vec::new();
 
     // let controller: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk1::guess().unwrap());
@@ -61,7 +50,8 @@ async fn main() {
     // tokio::spawn(async move { controller21.run(&mut script2).unwrap() });
 
     select! {
-        _ = api::serve(state) => {},
+        _ = api::serve(state.clone()) => {},
+        _ = add_controller(&mut controller_rx, state) => {},
         _ = tokio::signal::ctrl_c() => {
             info!("Received SIGINT, shutting down");
         },
@@ -73,4 +63,21 @@ async fn main() {
     thread::sleep(Duration::from_millis(100));
 
     process::exit(0);
+}
+
+pub async fn add_controller(
+    controller_rx: &mut tokio::sync::mpsc::Receiver<Arc<Box<dyn controllers::Controller>>>,
+    state1: Arc<state::AppState>,
+) -> () {
+    info!("Starting controller receiver");
+    while let Some(controller) = controller_rx.recv().await {
+        info!("Received controller");
+        controller.initialize().unwrap();
+
+        let mut controllers = state1.controllers.lock().unwrap();
+        controllers.push(controller);
+        drop(controllers);
+    }
+
+    ()
 }
