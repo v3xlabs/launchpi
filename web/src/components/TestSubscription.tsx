@@ -1,14 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 export const TestSubscription = () => {
-    const [] = useState([]);
+    const connection = useRef(null);
 
     useEffect(() => {
-        const eventSource = new EventSource('http://localhost:3000/events');
+        // eslint-disable-next-line no-undef
+        const eventSource = new WebSocket('ws://localhost:3000/events');
 
-        eventSource.onmessage = (event) => {
-            console.log(event);
-        };
+        eventSource.addEventListener('message', (e) => {
+            if (e.data) {
+                const data = JSON.parse(e.data);
+
+                console.log(data);
+            } else {
+                console.log({ e });
+            }
+        });
+
+        // @ts-ignore
+        connection.current = eventSource;
 
         return () => {
             eventSource.close();

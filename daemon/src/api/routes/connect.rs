@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use axum::{extract::State, Json};
-use midir::MidiInput;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 

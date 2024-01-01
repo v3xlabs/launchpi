@@ -68,7 +68,7 @@ async fn main() {
 pub async fn add_controller(
     controller_rx: &mut tokio::sync::mpsc::Receiver<Arc<Box<dyn controllers::Controller>>>,
     state1: Arc<state::AppState>,
-) -> () {
+) {
     info!("Starting controller receiver");
     while let Some(controller) = controller_rx.recv().await {
         info!("Received controller");
@@ -78,6 +78,4 @@ pub async fn add_controller(
         controllers.push(controller);
         drop(controllers);
     }
-
-    ()
 }

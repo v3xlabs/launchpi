@@ -20,6 +20,10 @@ pub trait Controller: Send + Sync {
     where
         Self: Sized;
 
+    fn guess_ok() -> Result<(), MidiError>
+    where
+        Self: Sized;
+
     // -device specific starts here-
 
     fn initialize(&self) -> Result<(), MidiError> {

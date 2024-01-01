@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use axum::{Json, extract::State};
-use midir::MidiInput;
 use serde::{Deserialize, Serialize};
 
 use crate::{controllers::{launchpad_mini_mk3::LaunchpadMiniMk3, Controller}, state::AppState};
@@ -20,29 +19,21 @@ pub struct DevicesResult {
 pub async fn get(
     State(state): State<Arc<AppState>>,
 ) -> Json<DevicesResult> {
-    // let input = MidiInput::new("Launchpi").unwrap();
+    let mut devices: Vec<(&str, bool)> = vec![];
 
-    // let devices = input
-    //     .ports()
-    //     .iter()
-    //     .map(|port| Device {
-    //         name: input.port_name(port).unwrap(),
-    //     })
-    //     .collect();
-
-    let mut devices: Vec<(Box<dyn Controller>, bool)> = vec![];
-
-    if let Ok(mk3) = LaunchpadMiniMk3::guess() {
-        let connected = state.controllers.lock().unwrap().iter().any(|controller| {
-            controller.name() == mk3.name()
+    if let Ok(mk3) = LaunchpadMiniMk3::guess_ok() {
+        let controllers = state.controllers.lock().unwrap();
+        let connected = controllers.iter().any(|controller| {
+            controller.name() == "Launchpad Mini Mk3"
         });
-        devices.push((mk3, connected));
+        drop(controllers);
+        devices.push(("Launchpad Mini Mk3", true));
     }
 
     let devices = devices
         .into_iter()
         .map(|(device, connected)| Device {
-            name: device.name().to_string(),
+            name: device.to_string(),
             connected,
         })
         .collect();

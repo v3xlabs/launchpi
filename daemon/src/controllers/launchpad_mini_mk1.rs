@@ -23,6 +23,13 @@ impl Controller for LaunchpadMiniMk1 {
         Ok(Box::new(Self { midi_in, midi_out }))
     }
 
+    fn guess_ok() -> Result<(), MidiError> {
+        launchy::mini::Input::guess_polling()?;
+        launchy::mini::Output::guess()?;
+
+        Ok(())
+    }
+
     fn initialize(&self) -> Result<(), MidiError> {
         self.clear().unwrap();
 

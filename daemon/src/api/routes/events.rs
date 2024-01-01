@@ -1,51 +1,67 @@
-use async_stream::stream;
 use axum::{
-    extract::State,
-    response::sse::{Event, KeepAlive, Sse},
+    extract::{
+        ws::{Message, WebSocket},
+        State, WebSocketUpgrade,
+    },
+    response::Response,
 };
-use futures_util::{stream::Stream, StreamExt};
+use futures_util::{
+    sink::SinkExt,
+    stream::{SplitSink, SplitStream, StreamExt},
+};
+
 use std::{convert::Infallible, sync::Arc};
-use tokio::{stream, sync::mpsc};
-use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+use tokio::{
+    stream,
+    sync::{broadcast::Receiver, mpsc},
+};
 use tracing::info;
 
-use crate::state::AppState;
+use crate::{controllers::ControllerEvent, state::AppState};
 
-pub async fn sse_handler(
-    State(state): State<Arc<AppState>>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+pub async fn sse_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
+    ws.on_upgrade(|socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
+    let (mut sender, mut receiver) = socket.split();
+
+    tokio::spawn(write(sender, state));
+    tokio::spawn(read(receiver));
+}
+
+async fn read(receiver: SplitStream<WebSocket>) {
+    // ...
+}
+
+async fn write(
+    mut sender: SplitSink<WebSocket, Message>,
+    state: Arc<AppState>,
+) {
+
     let state = state.clone();
     let controllers = state.controllers.lock().unwrap().clone();
     let first_controller = controllers
         .first()
         .and_then(|controller| controller.get_event_receiver().ok());
-    // drop(controllers);
+    drop(controllers);
 
-    info!("SSE handler");
+    // ...
+    info!("Apec");
 
-    // if let Some(controller) = &first_controller {
-    //     let mut receiver = controller.resubscribe();
-    //     tokio::spawn(async move {
-    //         loop {
-    //             let message = receiver.recv().await.unwrap();
-    //             info!("Received messagezzz: {:?}", message);
-    //         }
-    //     });
-    // }
-
-    let (tx, rx) = mpsc::channel(10);
-
-    if let Some(controller) = &first_controller {
-        let mut receiver = controller.resubscribe();
+    if let Some(mut controller) = first_controller {
         tokio::spawn(async move {
-            while let Ok(message) = receiver.recv().await {
-                info!("Received messagezzz: {:?}", message);
-                tx.send(message).await.unwrap();
+            info!("Apecz");
+            loop {
+                while let Ok(message) = controller.try_recv() {
+                    info!("Received messagezzz: {:?}", message);
+                    sender
+                        .send(Message::Text(serde_json::to_string(&message).unwrap()))
+                        .await
+                        .unwrap();
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         });
     }
-
-    let stream = ReceiverStream::new(rx).map(|_| Ok(Event::default().data("HELLOOO")));
-
-    Sse::new(stream).keep_alive(KeepAlive::default())
 }
