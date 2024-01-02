@@ -51,10 +51,8 @@ async fn write(
 
     if let Some(mut controller) = first_controller {
         tokio::spawn(async move {
-            info!("Apecz");
             loop {
                 while let Ok(message) = controller.try_recv() {
-                    info!("Received messagezzz: {:?}", message);
                     sender
                         .send(Message::Text(serde_json::to_string(&message).unwrap()))
                         .await

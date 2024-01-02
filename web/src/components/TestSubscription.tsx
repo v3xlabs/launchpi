@@ -9,13 +9,13 @@ export const TestSubscription = () => {
         // eslint-disable-next-line no-undef
         const eventSource = new WebSocket('ws://localhost:3000/events');
 
-        eventSource.addEventListener('message', (e) => {
-            if (e.data) {
-                const data = JSON.parse(e.data);
+        eventSource.addEventListener('message', (event) => {
+            if (event.data) {
+                const data = JSON.parse(event.data);
 
                 console.log(data);
             } else {
-                console.log({ e });
+                console.log({ e: event });
             }
         });
 
@@ -29,8 +29,7 @@ export const TestSubscription = () => {
 
     return (
         <div>
-            hi
-            <TestGrid ws={connection} />
+            <TestGrid ws={connection as any} />
         </div>
     );
 };

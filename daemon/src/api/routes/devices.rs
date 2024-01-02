@@ -27,7 +27,7 @@ pub async fn get(
             controller.name() == "Launchpad Mini Mk3"
         });
         drop(controllers);
-        devices.push(("Launchpad Mini Mk3", true));
+        devices.push(("Launchpad Mini Mk3", connected));
     }
 
     let devices = devices

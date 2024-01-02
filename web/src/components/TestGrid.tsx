@@ -25,6 +25,7 @@ export const TestGrid: FC<{
 }> = ({ ws }) => {
     const [recheck, setRecheck] = useState(0);
     const [grid, setGrid] = useState<boolean[][]>(
+        // eslint-disable-next-line no-undef
         Array.from({ length: 9 }).map(() => Array.from({ length: 9 }))
     );
 
