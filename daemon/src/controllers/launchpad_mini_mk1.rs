@@ -1,14 +1,17 @@
 use std::sync::{Arc, Mutex};
 
 use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, MsgPollingWrapper, OutputDevice};
+use tracing::info;
 
 use crate::scripts::Script;
 
-use super::{Alles, Controller, ScriptRunner};
+use super::{Alles, Controller, ControllerEvent, ScriptRunner};
 
 pub struct LaunchpadMiniMk1 {
     midi_in: Arc<Mutex<InputDeviceHandlerPolling<launchy::mini::Message>>>,
     midi_out: Arc<Mutex<launchy::mini::Output>>,
+    event_sender: Arc<Mutex<tokio::sync::broadcast::Sender<ControllerEvent>>>,
+    event_receiver: tokio::sync::broadcast::Receiver<ControllerEvent>,
 }
 
 #[async_trait::async_trait]
@@ -20,7 +23,14 @@ impl Controller for LaunchpadMiniMk1 {
         let midi_in = Arc::new(Mutex::new(input));
         let midi_out = Arc::new(Mutex::new(output));
 
-        Ok(Box::new(Self { midi_in, midi_out }))
+        let (event_sender, event_receiver) = tokio::sync::broadcast::channel(10);
+
+        Ok(Box::new(Self {
+            midi_in,
+            midi_out,
+            event_receiver,
+            event_sender: Arc::new(Mutex::new(event_sender)),
+        }))
     }
 
     fn guess_ok() -> Result<(), MidiError> {
@@ -33,10 +43,72 @@ impl Controller for LaunchpadMiniMk1 {
     fn initialize(&self) -> Result<(), MidiError> {
         self.clear().unwrap();
 
-        // Wait for 1 second
-        // tokio::time::sleep(Duration::from_millis(10)).await;
+        let sender = self.event_sender.clone();
+        let midi_in = self.midi_in.clone();
+
+        tokio::spawn(async move {
+            info!("Starting midi_in loop");
+
+            let mut sender = sender.lock().unwrap();
+            let midi_in = midi_in.lock().unwrap();
+
+            while let message = midi_in.recv() {
+                info!("MIDI OPERATION");
+
+                // sender.send("value".to_string()).unwrap();
+
+                match message {
+                    launchy::mini::Message::Press { button } => match button {
+                        launchy::mini::Button::GridButton { x, y } => {
+                            info!("Midi -> send press event");
+                            if let Err(error) = sender.send(ControllerEvent::Press { x, y: y + 1 })
+                            {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                        launchy::mini::Button::ControlButton { index } => {
+                            info!("Midi -> send control press event {}", index);
+                            let (x, y) = match index {
+                                0..=7 => (index, 0),
+                                8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
+                            };
+                            if let Err(error) = sender.send(ControllerEvent::Press { x, y }) {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                    },
+                    launchy::launchpad_mini::Message::Release { button } => match button {
+                        launchy::launchpad_mini::Button::GridButton { x, y } => {
+                            info!("Midi -> send release event");
+                            if let Err(error) =
+                                sender.send(ControllerEvent::Release { x, y: y + 1 })
+                            {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                        launchy::mini::Button::ControlButton { index } => {
+                            info!("Midi -> send control press event {}", index);
+                            let (x, y) = match index {
+                                0..=7 => (index, 0),
+                                8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
+                            };
+                            if let Err(error) = sender.send(ControllerEvent::Release { x, y }) {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        });
 
         Ok(())
+    }
+
+    fn get_event_receiver(&self) -> Result<tokio::sync::broadcast::Receiver<ControllerEvent>, ()> {
+        info!("Getting event receiver mk1");
+
+        Ok(self.event_receiver.resubscribe())
     }
 
     fn clear(&self) -> Result<(), MidiError> {
@@ -71,25 +143,25 @@ impl ScriptRunner for LaunchpadMiniMk1 {
     fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
         script.initialize(self);
 
-        let midi_in = self.midi_in.lock().unwrap();
+        // let midi_in = self.midi_in.lock().unwrap();
 
-        for message in midi_in.iter() {
-            match message {
-                launchy::mini::Message::Press { button } => match button {
-                    launchy::mini::Button::GridButton { x, y } => {
-                        script.on_press(x, y, self);
-                    }
-                    _ => {}
-                },
-                launchy::mini::Message::Release { button } => match button {
-                    launchy::mini::Button::GridButton { x, y } => {
-                        script.on_release(x, y, self);
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
+        // for message in midi_in.iter() {
+        //     match message {
+        //         launchy::mini::Message::Press { button } => match button {
+        //             launchy::mini::Button::GridButton { x, y } => {
+        //                 script.on_press(x, y, self);
+        //             }
+        //             _ => {}
+        //         },
+        //         launchy::mini::Message::Release { button } => match button {
+        //             launchy::mini::Button::GridButton { x, y } => {
+        //                 script.on_release(x, y, self);
+        //             }
+        //             _ => {}
+        //         },
+        //         _ => {}
+        //     }
+        // }
 
         Ok(())
     }

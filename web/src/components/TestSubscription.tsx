@@ -10,7 +10,9 @@ export const TestSubscription: FC<{
 
     useEffect(() => {
         // eslint-disable-next-line no-undef
-        const eventSource = new WebSocket('ws://localhost:3000/events');
+        const eventSource = new WebSocket(
+            'ws://localhost:3000/events/' + device_id
+        );
 
         eventSource.addEventListener('message', (event) => {
             if (event.data) {
