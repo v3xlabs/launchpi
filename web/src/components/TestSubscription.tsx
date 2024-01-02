@@ -34,7 +34,22 @@ export const TestSubscription: FC<{
 
     return (
         <div className="space-y-2">
-            <div className="border p-2 rounded-md">{device_type}</div>
+            <div className="border flex justify-between p-2 rounded-md">
+                <div>{device_type}</div>
+
+                <form
+                    action="http://localhost:3000/connect"
+                    method="GET"
+                    onSubmit={(event) => {
+                        // This is the best button implementation you will ever see
+                        event.preventDefault();
+
+                        fetch('http://localhost:3000/run/' + device_id);
+                    }}
+                >
+                    <button className="border px-2 rounded-md">run</button>
+                </form>
+            </div>
             <TestGrid ws={connection as any} device_type={device_type} />
         </div>
     );

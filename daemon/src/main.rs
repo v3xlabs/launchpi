@@ -21,7 +21,7 @@ async fn main() {
     info!("Starting daemon");
 
     let (controller_tx, mut controller_rx) = tokio::sync::mpsc::channel(32);
-    let controllers: Arc<Mutex<Vec<Arc<Box<dyn controllers::Controller>>>>> =
+    let controllers: Arc<Mutex<Vec<Arc<Box<dyn controllers::Alles>>>>> =
         Arc::new(Mutex::new(Vec::new()));
 
     let state = Arc::new(state::AppState {
@@ -66,7 +66,7 @@ async fn main() {
 }
 
 pub async fn add_controller(
-    controller_rx: &mut tokio::sync::mpsc::Receiver<Arc<Box<dyn controllers::Controller>>>,
+    controller_rx: &mut tokio::sync::mpsc::Receiver<Arc<Box<dyn controllers::Alles>>>,
     state1: Arc<state::AppState>,
 ) {
     info!("Starting controller receiver");

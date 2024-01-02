@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, MsgPollingWrapper, OutputDevice};
+use tokio::sync::broadcast::error::TryRecvError;
 use tracing::info;
 
 use crate::scripts::Script;
@@ -142,13 +143,41 @@ impl Controller for LaunchpadMiniMk1 {
 #[async_trait::async_trait]
 impl ScriptRunner for LaunchpadMiniMk1 {
     async fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
+        script.initialize(self);
+
         let mut receiver = self.get_event_receiver().unwrap();
 
-        for message in receiver.recv().await {
-            match message {
-                _ => {
-                    info!("Received message: {:?}", message)
+
+        loop {
+            match receiver.try_recv() {
+                Ok(message) => {
+                    info!("HJIIIIzzzz");
+                    match message {
+                        ControllerEvent::Press { x, y } => {
+                            info!("Received press event: {} {}", x, y);
+                            script.on_press(x, y, self);
+                        }
+                        ControllerEvent::Release { x, y } => {
+                            info!("Received release event: {} {}", x, y);
+                            script.on_release(x, y, self);
+                        }
+                        _ => {
+                            info!("Received message: {:?}", message)
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 }
+                Err(error) => match error {
+                    TryRecvError::Empty => {}
+                    TryRecvError::Closed => {
+                        info!("Closed");
+                        break;
+                    }
+                    TryRecvError::Lagged(_) => {
+                        info!("Lagged");
+                        break;
+                    }
+                },
             }
         }
 

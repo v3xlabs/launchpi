@@ -24,6 +24,9 @@ pub struct SoundboardScript {
     board_state: [[PadState; 8]; 8],
     board_audio: [[Option<String>; 8]; 8],
     board_colors: [[u8; 8]; 8],
+
+    size: [u8; 2],
+    offset: [u8; 2],
 }
 
 impl Script for SoundboardScript {
@@ -32,6 +35,13 @@ impl Script for SoundboardScript {
     }
 
     fn on_press(&mut self, x: u8, y: u8, controller: &dyn Controller) {
+        let (x, y) = (x - self.offset[0], y - self.offset[1]);
+        
+        if x >= self.size[0] || y >= self.size[1] {
+            info!("Out of board button press");
+            return;
+        }
+
         info!("Demo! {} {}", x, y);
 
         let desired_state = match &self.board_state[x as usize][y as usize] {
@@ -66,8 +76,15 @@ impl Script for SoundboardScript {
     }
 
     fn on_release(&mut self, x: u8, y: u8, controller: &dyn Controller) {
+        let (x, y) = (x - self.offset[0], y - self.offset[1]);
+        
         info!("Demo! {} {}", x, y);
-
+        
+        if x >= self.size[0] || y >= self.size[1] {
+            info!("Out of board button press");
+            return;
+        }
+        
         let desired_state = PadState::Idle;
 
         // match desired_state {
@@ -113,6 +130,8 @@ impl Script for SoundboardScript {
         }
 
         Self {
+            size: [8, 8],
+            offset: [0, 1],
             stream_handle,
             board_state: Default::default(),
             board_colors,
