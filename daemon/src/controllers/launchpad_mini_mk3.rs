@@ -157,29 +157,18 @@ impl Controller for LaunchpadMiniMk3 {
     }
 }
 
+#[async_trait::async_trait]
 impl ScriptRunner for LaunchpadMiniMk3 {
-    fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
-        // script.initialize(self);
+    async fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
+        let mut receiver = self.get_event_receiver().unwrap();
 
-        // let midi_in = self.midi_in.lock().unwrap();
-
-        // for message in midi_in.iter() {
-        //     match message {
-        //         launchy::mini_mk3::Message::Press { button } => match button {
-        //             launchy::mini_mk3::Button::GridButton { x, y } => {
-        //                 script.on_press(x, y, self);
-        //             }
-        //             _ => {}
-        //         },
-        //         launchy::launchpad_mini_mk3::Message::Release { button } => match button {
-        //             launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
-        //                 script.on_release(x, y, self);
-        //             }
-        //             _ => {}
-        //         },
-        //         _ => {}
-        //     }
-        // }
+        for message in receiver.recv().await {
+            match message {
+                _ => {
+                    info!("Received message: {:?}", message)
+                }
+            }
+        }
 
         Ok(())
     }

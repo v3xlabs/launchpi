@@ -139,32 +139,22 @@ impl Controller for LaunchpadMiniMk1 {
     }
 }
 
+#[async_trait::async_trait]
 impl ScriptRunner for LaunchpadMiniMk1 {
-    fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
-        script.initialize(self);
+    async fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
+        let mut receiver = self.get_event_receiver().unwrap();
 
-        // let midi_in = self.midi_in.lock().unwrap();
-
-        // for message in midi_in.iter() {
-        //     match message {
-        //         launchy::mini::Message::Press { button } => match button {
-        //             launchy::mini::Button::GridButton { x, y } => {
-        //                 script.on_press(x, y, self);
-        //             }
-        //             _ => {}
-        //         },
-        //         launchy::mini::Message::Release { button } => match button {
-        //             launchy::mini::Button::GridButton { x, y } => {
-        //                 script.on_release(x, y, self);
-        //             }
-        //             _ => {}
-        //         },
-        //         _ => {}
-        //     }
-        // }
+        for message in receiver.recv().await {
+            match message {
+                _ => {
+                    info!("Received message: {:?}", message)
+                }
+            }
+        }
 
         Ok(())
     }
 }
+
 
 impl Alles for LaunchpadMiniMk1 {}

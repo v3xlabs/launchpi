@@ -43,7 +43,7 @@ pub trait Controller: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait ScriptRunner: Send {
-    fn run(&self, script: &mut dyn Script) -> Result<(), MidiError>;
+    async fn run(&self, script: &mut dyn Script) -> Result<(), MidiError>;
 }
 
 #[async_trait::async_trait]
