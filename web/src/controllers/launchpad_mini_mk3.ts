@@ -14,9 +14,9 @@ export const isControllableLight = (x: number, y: number) => {
 export const getCustomCSS = (x: number, y: number) => {
     if (y === 0 && x === 8) return 'aspect-square border rotate-45 scale-75';
 
-    if (y === 0) return 'aspect-square bg-black';
+    if (y === 0) return 'aspect-square bg-black border';
 
-    if (x === 8) return 'aspect-square bg-black';
+    if (x === 8) return 'aspect-square bg-black border';
 
     if (x === 3 && y == 4) return 'aspect-square bg-white border rounded-br-md';
 

@@ -74,7 +74,7 @@ export const TestGrid: FC<{
     }, [ws, ws.current, recheck]);
 
     return (
-        <div className="w-full p-4 border rounded-md">
+        <div className="w-full p-4 border rounded-md bg-neutral-800">
             <div className="w-full grid-cols-9 grid gap-1 grid-rows-9">
                 {[...Array.from({ length: 81 })].map((_, index) => {
                     const { x, y } = decodeXY(index);

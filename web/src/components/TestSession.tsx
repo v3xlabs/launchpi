@@ -7,7 +7,7 @@ export const TestSessions = () => {
     return (
         <div className="space-y-2">
             <h2>Sessions</h2>
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 3xl:grid-cols-3 gap-4">
                 {data?.devices
                     ?.filter((device) => device.connected)
                     .map((device) => (
