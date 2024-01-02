@@ -67,20 +67,41 @@ impl Controller for LaunchpadMiniMk3 {
                     launchy::mini_mk3::Message::Press { button } => match button {
                         launchy::mini_mk3::Button::GridButton { x, y } => {
                             info!("Midi -> send press event");
+                            if let Err(error) = sender.send(ControllerEvent::Press { x, y: y + 1 })
+                            {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                        launchy::mini_mk3::Button::ControlButton { index } => {
+                            info!("Midi -> send control press event {}", index);
+                            let (x, y) = match index {
+                                0..=7 => (index, 0),
+                                8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
+                            };
                             if let Err(error) = sender.send(ControllerEvent::Press { x, y }) {
                                 info!("Error sending event: {}", error);
                             }
                         }
-                        _ => {}
                     },
                     launchy::launchpad_mini_mk3::Message::Release { button } => match button {
                         launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
                             info!("Midi -> send release event");
+                            if let Err(error) =
+                                sender.send(ControllerEvent::Release { x, y: y + 1 })
+                            {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                        launchy::mini_mk3::Button::ControlButton { index } => {
+                            info!("Midi -> send control press event {}", index);
+                            let (x, y) = match index {
+                                0..=7 => (index, 0),
+                                8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
+                            };
                             if let Err(error) = sender.send(ControllerEvent::Release { x, y }) {
                                 info!("Error sending event: {}", error);
                             }
                         }
-                        _ => {}
                     },
                     _ => {}
                 }
