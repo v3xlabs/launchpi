@@ -51,16 +51,17 @@ async fn main() {
 
     select! {
         _ = api::serve(state.clone()) => {},
-        _ = add_controller(&mut controller_rx, state) => {},
+        _ = add_controller(&mut controller_rx, state.clone()) => {},
         _ = tokio::signal::ctrl_c() => {
             info!("Received SIGINT, shutting down");
         },
     }
 
+    drop(state);
+
+    info!("Dropping state");
     // controller.clear().unwrap();
     // controller2.clear().unwrap();
-
-    thread::sleep(Duration::from_millis(100));
 
     process::exit(0);
 }

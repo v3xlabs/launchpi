@@ -10,11 +10,7 @@ use futures_util::{
     stream::{SplitSink, SplitStream, StreamExt},
 };
 
-use std::{convert::Infallible, sync::Arc};
-use tokio::{
-    stream,
-    sync::{broadcast::Receiver, mpsc},
-};
+use std::sync::Arc;
 use tracing::info;
 
 use crate::state::AppState;
@@ -28,15 +24,13 @@ pub async fn sse_handler(
 }
 
 async fn handle_socket(socket: WebSocket, device_id: String, state: Arc<AppState>) {
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, receiver) = socket.split();
 
     tokio::spawn(write(sender, device_id, state));
     tokio::spawn(read(receiver));
 }
 
-async fn read(receiver: SplitStream<WebSocket>) {
-    // ...
-}
+async fn read(_receiver: SplitStream<WebSocket>) {}
 
 async fn write(mut sender: SplitSink<WebSocket, Message>, device_id: String, state: Arc<AppState>) {
     let state = state.clone();

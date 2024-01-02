@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use crate::scripts::Script;
 
@@ -56,55 +59,65 @@ impl Controller for LaunchpadMiniMk3 {
         tokio::spawn(async move {
             info!("Starting midi_in loop");
 
-            let mut sender = sender.lock().unwrap();
+            let sender = sender.lock().unwrap();
             let midi_in = midi_in.lock().unwrap();
 
-            while let message = midi_in.recv() {
-                info!("MIDI OPERATION");
+            while let message = midi_in.recv_timeout(Duration::from_millis(10)) {
+                if let Some(message) = message {
+                    info!("MIDI OPERATION");
 
-                // sender.send("value".to_string()).unwrap();
+                    // sender.send("value".to_string()).unwrap();
 
-                match message {
-                    launchy::mini_mk3::Message::Press { button } => match button {
-                        launchy::mini_mk3::Button::GridButton { x, y } => {
-                            info!("Midi -> send press event");
-                            if let Err(error) = sender.send(ControllerEvent::Press { x, y: y + 1 })
-                            {
-                                info!("Error sending event: {}", error);
+                    match message {
+                        launchy::mini_mk3::Message::Press { button } => match button {
+                            launchy::mini_mk3::Button::GridButton { x, y } => {
+                                info!("Midi -> send press event");
+                                if let Err(error) =
+                                    sender.send(ControllerEvent::Press { x, y: y + 1 })
+                                {
+                                    info!("Error sending event: {}", error);
+                                }
+                            }
+                            launchy::mini_mk3::Button::ControlButton { index } => {
+                                info!("Midi -> send control press event {}", index);
+                                let (x, y) = match index {
+                                    0..=7 => (index, 0),
+                                    8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
+                                };
+                                if let Err(error) = sender.send(ControllerEvent::Press { x, y }) {
+                                    info!("Error sending event: {}", error);
+                                }
+                            }
+                        },
+                        launchy::launchpad_mini_mk3::Message::Release { button } => {
+                            match button {
+                                launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
+                                    info!("Midi -> send release event");
+                                    if let Err(error) =
+                                        sender.send(ControllerEvent::Release { x, y: y + 1 })
+                                    {
+                                        info!("Error sending event: {}", error);
+                                    }
+                                }
+                                launchy::mini_mk3::Button::ControlButton { index } => {
+                                    info!("Midi -> send control press event {}", index);
+                                    let (x, y) = match index {
+                                        0..=7 => (index, 0),
+                                        8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
+                                    };
+                                    if let Err(error) =
+                                        sender.send(ControllerEvent::Release { x, y })
+                                    {
+                                        info!("Error sending event: {}", error);
+                                    }
+                                }
                             }
                         }
-                        launchy::mini_mk3::Button::ControlButton { index } => {
-                            info!("Midi -> send control press event {}", index);
-                            let (x, y) = match index {
-                                0..=7 => (index, 0),
-                                8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
-                            };
-                            if let Err(error) = sender.send(ControllerEvent::Press { x, y }) {
-                                info!("Error sending event: {}", error);
-                            }
-                        }
-                    },
-                    launchy::launchpad_mini_mk3::Message::Release { button } => match button {
-                        launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
-                            info!("Midi -> send release event");
-                            if let Err(error) =
-                                sender.send(ControllerEvent::Release { x, y: y + 1 })
-                            {
-                                info!("Error sending event: {}", error);
-                            }
-                        }
-                        launchy::mini_mk3::Button::ControlButton { index } => {
-                            info!("Midi -> send control press event {}", index);
-                            let (x, y) = match index {
-                                0..=7 => (index, 0),
-                                8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
-                            };
-                            if let Err(error) = sender.send(ControllerEvent::Release { x, y }) {
-                                info!("Error sending event: {}", error);
-                            }
-                        }
-                    },
-                    _ => {}
+                        _ => {}
+                    }
+                } else {
+                    // tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    // info!("Midi -> timeout");
                 }
             }
         });
@@ -186,10 +199,12 @@ impl ScriptRunner for LaunchpadMiniMk3 {
                             info!("Received message: {:?}", message)
                         }
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 }
                 Err(error) => match error {
-                    TryRecvError::Empty => {}
+                    TryRecvError::Empty => {
+                        // info!("Empty");
+                        // break;
+                    }
                     TryRecvError::Closed => {
                         info!("Closed");
                         break;
@@ -200,6 +215,8 @@ impl ScriptRunner for LaunchpadMiniMk3 {
                     }
                 },
             }
+
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
         Ok(())
