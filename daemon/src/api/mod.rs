@@ -13,7 +13,7 @@ pub async fn serve(state: Arc<AppState>) -> Result<(), axum::Error> {
 
     let app = Router::new()
         .route("/", get(routes::root::root))
-        .route("/connect", get(routes::connect::post))
+        .route("/connect/:device_id", get(routes::connect::post))
         .route("/devices", get(routes::devices::get))
         .route("/events", get(routes::events::sse_handler))
         .layer(cors)

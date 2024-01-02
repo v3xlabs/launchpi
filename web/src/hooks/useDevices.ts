@@ -3,7 +3,7 @@ import useSWR from 'swr';
 const fetcher = (url: string) => fetch(url).then((result) => result.json());
 
 export type DevicesResponse = {
-    devices: { name: string; connected: boolean }[];
+    devices: { name: string; id: string; connected: boolean }[];
 };
 
 export const useDevices = () =>

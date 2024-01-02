@@ -6,7 +6,7 @@ export const DeviceList = () => {
     return (
         <div className="w-full border rounded-lg bg-white p-4">
             <p>Please select a device you wish to start your session with</p>
-            <div>
+            <div className="space-y-1">
                 {data?.devices?.map((device) => (
                     <div
                         className="border px-3 py-2 rounded-md flex justify-between"
@@ -26,7 +26,10 @@ export const DeviceList = () => {
                                         // This is the best button implementation you will ever see
                                         event.preventDefault();
 
-                                        fetch('http://localhost:3000/connect');
+                                        fetch(
+                                            'http://localhost:3000/connect/' +
+                                                device.id
+                                        );
                                     }}
                                 >
                                     <button>connect</button>

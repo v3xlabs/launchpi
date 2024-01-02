@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { FC, useEffect, useRef } from 'react';
 
 import { TestGrid } from './TestGrid';
 
-export const TestSubscription = () => {
+export const TestSubscription: FC<{
+    device_id: string;
+    device_type: string;
+}> = ({ device_id, device_type }) => {
     const connection = useRef();
 
     useEffect(() => {
@@ -28,8 +31,9 @@ export const TestSubscription = () => {
     }, []);
 
     return (
-        <div>
-            <TestGrid ws={connection as any} />
+        <div className="space-y-2">
+            <div className="border p-2 rounded-md">{device_type}</div>
+            <TestGrid ws={connection as any} device_type={device_type} />
         </div>
     );
 };

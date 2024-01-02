@@ -1,5 +1,7 @@
 import { FC, MutableRefObject, useEffect, useState } from 'react';
 
+import { launchpad_mini_mk1 } from '../controllers/launchpad_mini_mk1';
+import { launchpad_mini_mk3 } from '../controllers/launchpad_mini_mk3';
 import { WSMesageAny } from '../types/WSMessage';
 
 const decodeXY = (index: number) => {
@@ -9,20 +11,16 @@ const decodeXY = (index: number) => {
     return { x, y };
 };
 
-const gridDefault = (index: number) => {
-    const { x, y } = decodeXY(index);
-
-    if (y === 0) return '#000';
-
-    if (x === 8) return '#000';
-
-    return '#fff';
-};
-
 export const TestGrid: FC<{
     // eslint-disable-next-line no-undef
     ws: MutableRefObject<WebSocket>;
-}> = ({ ws }) => {
+    device_type: string;
+}> = ({ ws, device_type }) => {
+    const controller = {
+        'Launchpad Mini Mk3': launchpad_mini_mk3,
+        'Launchpad Mini Mk1': launchpad_mini_mk1,
+    }[device_type];
+
     const [recheck, setRecheck] = useState(0);
     const [grid, setGrid] = useState<boolean[][]>(
         // eslint-disable-next-line no-undef
@@ -84,12 +82,11 @@ export const TestGrid: FC<{
                     return (
                         <div
                             key={index}
-                            className="border aspect-square"
-                            style={{
-                                backgroundColor: grid?.[y]?.[x]
-                                    ? '#f00'
-                                    : gridDefault(index),
-                            }}
+                            className={
+                                grid?.[y]?.[x]
+                                    ? 'bg-red-500'
+                                    : controller?.getCustomCSS(x, y)
+                            }
                         ></div>
                     );
                 })}
