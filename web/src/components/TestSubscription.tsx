@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 
+import { TestGrid } from './TestGrid';
+
 export const TestSubscription = () => {
-    const connection = useRef(null);
+    const connection = useRef();
 
     useEffect(() => {
         // eslint-disable-next-line no-undef
@@ -25,5 +27,10 @@ export const TestSubscription = () => {
         };
     }, []);
 
-    return <div>hi</div>;
+    return (
+        <div>
+            hi
+            <TestGrid ws={connection} />
+        </div>
+    );
 };
