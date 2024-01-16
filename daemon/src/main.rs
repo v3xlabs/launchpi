@@ -1,3 +1,4 @@
+use axum::extract::{Path, State};
 use std::{
     process,
     sync::{Arc, Mutex},
@@ -27,6 +28,18 @@ async fn main() {
     let state = Arc::new(state::AppState {
         controller_tx,
         controllers,
+    });
+
+    let s1 = state.clone();
+    let s2 = state.clone();
+
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let _ =
+            api::routes::connect::post(Path("launchpad_mini_mk3_0".to_string()), State(s1)).await;
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let _ = api::routes::run::post(Path("launchpad_mini_mk3_0".to_string()), State(s2)).await;
     });
 
     // let mut controllers: Vec<Arc<Box<dyn Alles>>> = Vec::new();
@@ -77,6 +90,7 @@ pub async fn add_controller(
 
         let mut controllers = state1.controllers.lock().unwrap();
         controllers.push(controller);
+        info!("Added controller to central state");
         drop(controllers);
     }
 }

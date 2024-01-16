@@ -36,7 +36,7 @@ impl Script for SoundboardScript {
 
     fn on_press(&mut self, x: u8, y: u8, controller: &dyn Controller) {
         let (x, y) = (x - self.offset[0], y - self.offset[1]);
-        
+
         if x >= self.size[0] || y >= self.size[1] {
             info!("Out of board button press");
             return;
@@ -53,6 +53,7 @@ impl Script for SoundboardScript {
                     let sink = Sink::try_new(&self.stream_handle).unwrap();
 
                     sink.append(file);
+                    sink.set_volume(0.05);
 
                     PadState::Playing(sink)
                 } else {
@@ -77,14 +78,14 @@ impl Script for SoundboardScript {
 
     fn on_release(&mut self, x: u8, y: u8, controller: &dyn Controller) {
         let (x, y) = (x - self.offset[0], y - self.offset[1]);
-        
+
         info!("Demo! {} {}", x, y);
-        
+
         if x >= self.size[0] || y >= self.size[1] {
             info!("Out of board button press");
             return;
         }
-        
+
         let desired_state = PadState::Idle;
 
         // match desired_state {

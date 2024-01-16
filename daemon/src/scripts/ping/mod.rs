@@ -1,14 +1,18 @@
+use std::cmp::max;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{fs::File, io::BufReader};
 
+use crate::controllers::Controller;
 use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{Decoder, OutputStreamHandle, Sink};
 use tracing::info;
-use crate::controllers::Controller;
 
 use super::Script;
 
 pub struct PingScript {
     stream_handle: OutputStreamHandle,
+    curent_color: u8,
 }
 
 impl Script for PingScript {
@@ -18,17 +22,39 @@ impl Script for PingScript {
 
     fn on_press(&mut self, x: u8, y: u8, controller: &dyn Controller) {
         info!("Ping! {} {}", x, y);
-        controller.set_button_color(x, y, 1).unwrap();
 
-        // info!("Playing sound");
-        // let file = File::open("assets/developers.mp3").unwrap();
-        // let file = Decoder::new(BufReader::new(file)).unwrap();
+        if x == 0 && y == 0 {
+            controller.clear().unwrap();
+            self.initialize(controller);
+            return;
+        }
 
-        // let sink = Sink::try_new(&self.stream_handle).unwrap();
+        if x == 1 && y == 0 {
+            self.curent_color = 0;
+            self.initialize(controller);
+            return;
+        }
 
-        // sink.append(file);
+        if x == 8 {
+            self.curent_color = y;
+            self.initialize(controller);
+            return;
+        }
 
-        // sink.detach();
+        controller
+            .set_button_color(x, y, self.curent_color)
+            .unwrap();
+    }
+
+    fn initialize(&mut self, controller: &dyn Controller) {
+        let mut updates: Vec<(u8, u8, u8)> = Vec::new();
+        for color in 1..=8 {
+            updates.push((8, color, color));
+        }
+        for i in 0..=7 {
+            updates.push((i, 0, self.curent_color));
+        }
+        controller.set_button_color_multi(&updates).unwrap();
     }
 
     fn new() -> Self {
@@ -45,6 +71,9 @@ impl Script for PingScript {
 
         std::mem::forget(stream);
 
-        Self { stream_handle }
+        Self {
+            stream_handle,
+            curent_color: 1,
+        }
     }
 }

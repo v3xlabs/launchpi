@@ -7,9 +7,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use crate::scripts::ping::PingScript;
 use crate::{
     controllers::{Alles, Controller},
-    state::AppState, scripts::{soundboard::SoundboardScript, Script},
+    scripts::{soundboard::SoundboardScript, Script},
+    state::AppState,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -27,7 +29,7 @@ pub async fn post(
     State(state): State<Arc<AppState>>,
 ) -> Json<ConnectResult> {
     let state = state.clone();
-    let controllers = state.controllers.lock().unwrap().clone();
+    let controllers = state.controllers.lock().unwrap();
     let first_controller: Option<Arc<Box<dyn Alles>>> = controllers
         .iter()
         .find(|controller| match controller.name() {

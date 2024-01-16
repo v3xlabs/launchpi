@@ -2,13 +2,54 @@ import { FC, MutableRefObject, useEffect, useState } from 'react';
 
 import { launchpad_mini_mk1 } from '../controllers/launchpad_mini_mk1';
 import { launchpad_mini_mk3 } from '../controllers/launchpad_mini_mk3';
-import { WSMesageAny } from '../types/WSMessage';
+import { WSMesage } from '../types/WSMessage';
 
 const decodeXY = (index: number) => {
     const x = index % 9;
     const y = Math.floor(index / 9);
 
     return { x, y };
+};
+
+enum Color {
+    Black = 0,
+    White,
+    Red,
+    Yellow,
+    Blue,
+    Magenta,
+    Brown,
+    Cyan,
+    Green,
+}
+
+const colorToCss = (color: Color): string | undefined => {
+    switch (color) {
+        case Color.Black:
+            return undefined;
+        case Color.White:
+            return 'bg-gray-300';
+        case Color.Red:
+            return 'bg-red-500';
+        case Color.Yellow:
+            return 'bg-yellow-400';
+        case Color.Blue:
+            return 'bg-blue-500';
+        case Color.Magenta:
+            return 'bg-purple-500';
+        case Color.Brown:
+            return 'bg-yellow-800';
+        case Color.Cyan:
+            return 'bg-cyan-400';
+        case Color.Green:
+            return 'bg-green-500';
+    }
+};
+
+const init = (): Color[][] => {
+    return Array.from({ length: 9 }).map(() =>
+        Array.from({ length: 9 }).map(() => Color.Black)
+    );
 };
 
 export const TestGrid: FC<{
@@ -22,36 +63,55 @@ export const TestGrid: FC<{
     }[device_type];
 
     const [recheck, setRecheck] = useState(0);
-    const [grid, setGrid] = useState<boolean[][]>(
+    const [grid, setGrid] = useState<Color[][]>(
         // eslint-disable-next-line no-undef
-        Array.from({ length: 9 }).map(() => Array.from({ length: 9 }))
+        init()
     );
 
+    // eslint-disable-next-line sonarjs/cognitive-complexity
     useEffect(() => {
         if (ws.current) {
             console.log('hooked');
             const x = (event: MessageEvent<string>) => {
                 if (event.data) {
-                    const data: WSMesageAny = JSON.parse(event.data);
+                    const data: WSMesage = JSON.parse(event.data);
 
                     if (data.type == 'Press') {
-                        const { x, y } = data;
-
-                        const newGrid = [...grid];
-
-                        newGrid[y][x] = true;
-
-                        setGrid(newGrid);
+                        // const { x, y } = data;
+                        //
+                        // const newGrid = [...grid];
+                        //
+                        // newGrid[y][x] = true;
+                        //
+                        // setGrid(newGrid);
                     }
 
                     if (data.type == 'Release') {
-                        const { x, y } = data;
+                        // const { x, y } = data;
+                        //
+                        // const newGrid = [...grid];
+                        //
+                        // newGrid[y][x] = false;
+                        //
+                        // setGrid(newGrid);
+                    }
 
-                        const newGrid = [...grid];
+                    if (data.type == 'LightUpdate') {
+                        const { updates } = data;
 
-                        newGrid[y][x] = false;
+                        setGrid((oldGrid) => {
+                            const newGrid = [...oldGrid];
 
-                        setGrid(newGrid);
+                            for (const [x, y, palette] of updates) {
+                                newGrid[y][x] = palette;
+                            }
+
+                            return newGrid;
+                        });
+                    }
+
+                    if (data.type == 'ClearBoard') {
+                        setGrid(init());
                     }
                 } else {
                     console.log({ event });
@@ -71,7 +131,11 @@ export const TestGrid: FC<{
                 setRecheck(Date.now());
             }, 100);
         }
-    }, [ws, ws.current, recheck]);
+    }, [ws, ws.current, recheck, setGrid]);
+
+    useEffect(() => {
+        console.log('grid update', grid);
+    }, [grid]);
 
     return (
         <div className="w-full p-4 border rounded-md bg-neutral-800">
@@ -84,7 +148,7 @@ export const TestGrid: FC<{
                             key={index}
                             className={
                                 grid?.[y]?.[x]
-                                    ? 'bg-red-500'
+                                    ? `border ${colorToCss(grid[y][x])}`
                                     : controller?.getCustomCSS(x, y)
                             }
                         ></div>

@@ -24,7 +24,7 @@ export const TestSubscription: FC<{
             }
         });
 
-        // @ts-ignore
+        // @ts-expect-error
         connection.current = eventSource;
 
         return () => {

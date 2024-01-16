@@ -1,8 +1,19 @@
-export type WSMessage<K extends string, U> = {
+export type WSMessage<K extends string, U = {}> = {
     type: K;
 } & U;
 
-export type WSMesagePress = WSMessage<'Press', { x: number; y: number }>;
-export type WSMesageRelease = WSMessage<'Release', { x: number; y: number }>;
+type Coordinates = { x: number; y: number };
 
-export type WSMesageAny = WSMesagePress | WSMesageRelease;
+export type WSMesagePress = WSMessage<'Press', Coordinates>;
+export type WSMesageRelease = WSMessage<'Release', Coordinates>;
+export type WSLightUpdate = WSMessage<
+    'LightUpdate',
+    { updates: [number, number, number][] }
+>;
+export type WSClearBoard = WSMessage<'ClearBoard'>;
+
+export type WSMesage =
+    | WSMesagePress
+    | WSMesageRelease
+    | WSLightUpdate
+    | WSClearBoard;

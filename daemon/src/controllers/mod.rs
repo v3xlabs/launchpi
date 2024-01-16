@@ -12,6 +12,8 @@ pub enum ControllerEvent {
     Heartbeat,
     Press { x: u8, y: u8 },
     Release { x: u8, y: u8 },
+    LightUpdate { updates: Vec<(u8, u8, u8)> },
+    ClearBoard,
 }
 
 #[async_trait::async_trait]
@@ -33,6 +35,8 @@ pub trait Controller: Send + Sync {
     fn clear(&self) -> Result<(), MidiError>;
 
     fn set_button_color(&self, x: u8, y: u8, color: u8) -> Result<(), MidiError>;
+
+    fn set_button_color_multi(&self, updates: &[(u8, u8, u8)]) -> Result<(), MidiError>;
 
     fn get_event_receiver(&self) -> Result<tokio::sync::broadcast::Receiver<ControllerEvent>, ()> {
         todo!("Implement get_event_receiver")

@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::state::AppState;
 
-mod routes;
+pub mod routes;
 
 pub async fn serve(state: Arc<AppState>) -> Result<(), axum::Error> {
     let cors = CorsLayer::very_permissive();

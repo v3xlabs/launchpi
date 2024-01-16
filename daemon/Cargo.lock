@@ -814,6 +814,7 @@ dependencies = [
 [[package]]
 name = "launchy"
 version = "0.3.0"
+source = "git+https://github.com/lucemans/launchy.git#656d7e5d49c720a32364dfc74ef5c86942e18cdb"
 dependencies = [
  "midir",
 ]

@@ -138,6 +138,14 @@ impl Controller for LaunchpadMiniMk1 {
 
         midi_out.light(launchy::mini::Button::GridButton { x, y }, color)
     }
+
+    fn set_button_color_multi(&self, updates: &[(u8, u8, u8)]) -> Result<(), MidiError> {
+        for (x, y, color) in updates {
+            self.set_button_color(*x, *y, *color)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -147,11 +155,9 @@ impl ScriptRunner for LaunchpadMiniMk1 {
 
         let mut receiver = self.get_event_receiver().unwrap();
 
-
         loop {
             match receiver.try_recv() {
                 Ok(message) => {
-                    info!("HJIIIIzzzz");
                     match message {
                         ControllerEvent::Press { x, y } => {
                             info!("Received press event: {} {}", x, y);
@@ -184,6 +190,5 @@ impl ScriptRunner for LaunchpadMiniMk1 {
         Ok(())
     }
 }
-
 
 impl Alles for LaunchpadMiniMk1 {}

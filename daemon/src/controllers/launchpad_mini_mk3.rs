@@ -59,21 +59,44 @@ impl Controller for LaunchpadMiniMk3 {
         tokio::spawn(async move {
             info!("Starting midi_in loop");
 
-            let sender = sender.lock().unwrap();
             let midi_in = midi_in.lock().unwrap();
 
             while let message = midi_in.recv_timeout(Duration::from_millis(10)) {
-                if let Some(message) = message {
-                    info!("MIDI OPERATION");
+                let Some(message) = message else {
+                    // tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    // info!("Midi -> timeout");
+                    continue;
+                };
 
-                    // sender.send("value".to_string()).unwrap();
+                info!("MIDI OPERATION");
 
-                    match message {
-                        launchy::mini_mk3::Message::Press { button } => match button {
-                            launchy::mini_mk3::Button::GridButton { x, y } => {
-                                info!("Midi -> send press event");
+                let sender = sender.lock().unwrap();
+                match message {
+                    launchy::mini_mk3::Message::Press { button } => match button {
+                        launchy::mini_mk3::Button::GridButton { x, y } => {
+                            info!("Midi -> send press event");
+                            if let Err(error) = sender.send(ControllerEvent::Press { x, y: y + 1 })
+                            {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                        launchy::mini_mk3::Button::ControlButton { index } => {
+                            info!("Midi -> send control press event {}", index);
+                            let (x, y) = match index {
+                                0..=7 => (index, 0),
+                                8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
+                            };
+                            if let Err(error) = sender.send(ControllerEvent::Press { x, y }) {
+                                info!("Error sending event: {}", error);
+                            }
+                        }
+                    },
+                    launchy::launchpad_mini_mk3::Message::Release { button } => {
+                        match button {
+                            launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
+                                info!("Midi -> send release event");
                                 if let Err(error) =
-                                    sender.send(ControllerEvent::Press { x, y: y + 1 })
+                                    sender.send(ControllerEvent::Release { x, y: y + 1 })
                                 {
                                     info!("Error sending event: {}", error);
                                 }
@@ -84,40 +107,13 @@ impl Controller for LaunchpadMiniMk3 {
                                     0..=7 => (index, 0),
                                     8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
                                 };
-                                if let Err(error) = sender.send(ControllerEvent::Press { x, y }) {
+                                if let Err(error) = sender.send(ControllerEvent::Release { x, y }) {
                                     info!("Error sending event: {}", error);
                                 }
                             }
-                        },
-                        launchy::launchpad_mini_mk3::Message::Release { button } => {
-                            match button {
-                                launchy::launchpad_mini_mk3::Button::GridButton { x, y } => {
-                                    info!("Midi -> send release event");
-                                    if let Err(error) =
-                                        sender.send(ControllerEvent::Release { x, y: y + 1 })
-                                    {
-                                        info!("Error sending event: {}", error);
-                                    }
-                                }
-                                launchy::mini_mk3::Button::ControlButton { index } => {
-                                    info!("Midi -> send control press event {}", index);
-                                    let (x, y) = match index {
-                                        0..=7 => (index, 0),
-                                        8..=u8::MAX => (8, index - 7), // TODO: this is 7 due to the light, adjust later when launchy is updated
-                                    };
-                                    if let Err(error) =
-                                        sender.send(ControllerEvent::Release { x, y })
-                                    {
-                                        info!("Error sending event: {}", error);
-                                    }
-                                }
-                            }
                         }
-                        _ => {}
                     }
-                } else {
-                    // tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                    // info!("Midi -> timeout");
+                    _ => {}
                 }
             }
         });
@@ -127,7 +123,13 @@ impl Controller for LaunchpadMiniMk3 {
 
     fn clear(&self) -> Result<(), MidiError> {
         let mut midi_out = self.midi_out.lock().unwrap();
-        midi_out.clear()
+        midi_out.clear()?;
+
+        let sender = self.event_sender.lock().unwrap();
+        sender.send(ControllerEvent::ClearBoard).unwrap();
+        drop(sender);
+
+        Ok(())
     }
 
     fn get_event_receiver(&self) -> Result<tokio::sync::broadcast::Receiver<ControllerEvent>, ()> {
@@ -148,26 +150,51 @@ impl Controller for LaunchpadMiniMk3 {
         "Launchpad Mini Mk3"
     }
 
-    fn set_button_color(&self, x: u8, y: u8, color: u8) -> Result<(), MidiError> {
+    fn set_button_color_multi(&self, updates: &[(u8, u8, u8)]) -> Result<(), MidiError> {
         let mut midi_out: std::sync::MutexGuard<'_, launchy::launchpad_mini_mk3::Output> =
             self.midi_out.lock().unwrap();
+        let sender = self.event_sender.lock().unwrap();
+        sender
+            .send(ControllerEvent::LightUpdate {
+                updates: Vec::from(updates),
+            })
+            .unwrap();
+        drop(sender);
 
-        let color = match color {
-            0 => PaletteColor::BLACK,
-            // 1 => PaletteColor::DARK_GRAY,
-            // 2 => PaletteColor::LIGHT_GRAY,
-            1 => PaletteColor::WHITE,
-            2 => PaletteColor::RED,
-            3 => PaletteColor::YELLOW,
-            4 => PaletteColor::BLUE,
-            5 => PaletteColor::MAGENTA,
-            6 => PaletteColor::BROWN,
-            7 => PaletteColor::CYAN,
-            8 => PaletteColor::GREEN,
-            _ => PaletteColor::BLACK,
-        };
+        for (x, y, color) in updates {
+            let color = match color {
+                0 => PaletteColor::BLACK,
+                // 1 => PaletteColor::DARK_GRAY,
+                // 2 => PaletteColor::LIGHT_GRAY,
+                1 => PaletteColor::WHITE,
+                2 => PaletteColor::RED,
+                3 => PaletteColor::YELLOW,
+                4 => PaletteColor::BLUE,
+                5 => PaletteColor::MAGENTA,
+                6 => PaletteColor::BROWN,
+                7 => PaletteColor::CYAN,
+                8 => PaletteColor::GREEN,
+                _ => PaletteColor::BLACK,
+            };
 
-        midi_out.light(launchy::mini_mk3::Button::GridButton { x, y }, color)
+            let button = if *y == 0 {
+                launchy::mini_mk3::Button::ControlButton { index: *x }
+            } else {
+                launchy::mini_mk3::Button::GridButton { x: *x, y: y - 1 }
+            };
+
+            midi_out.light(button, color)?;
+            // midi_out.light(
+            //     launchy::mini_mk3::Button::GridButton { x: *x, y: *y },
+            //     color,
+            // )?;
+        }
+
+        Ok(())
+    }
+
+    fn set_button_color(&self, x: u8, y: u8, color: u8) -> Result<(), MidiError> {
+        self.set_button_color_multi(&vec![(x, y, color)])
     }
 }
 
@@ -176,30 +203,23 @@ impl ScriptRunner for LaunchpadMiniMk3 {
     async fn run(&self, script: &mut dyn Script) -> Result<(), MidiError> {
         script.initialize(self);
 
-        info!("HJIIII");
-
         let mut receiver = self.get_event_receiver().unwrap();
-
-        info!("hizjs.");
 
         loop {
             match receiver.try_recv() {
-                Ok(message) => {
-                    info!("HJIIIIzzzz");
-                    match message {
-                        ControllerEvent::Press { x, y } => {
-                            info!("Received press event: {} {}", x, y);
-                            script.on_press(x, y, self);
-                        }
-                        ControllerEvent::Release { x, y } => {
-                            info!("Received release event: {} {}", x, y);
-                            script.on_release(x, y, self);
-                        }
-                        _ => {
-                            info!("Received message: {:?}", message)
-                        }
+                Ok(message) => match message {
+                    ControllerEvent::Press { x, y } => {
+                        info!("Received press event: {} {}", x, y);
+                        script.on_press(x, y, self);
                     }
-                }
+                    ControllerEvent::Release { x, y } => {
+                        info!("Received release event: {} {}", x, y);
+                        script.on_release(x, y, self);
+                    }
+                    _ => {
+                        info!("Received message: {:?}", message)
+                    }
+                },
                 Err(error) => match error {
                     TryRecvError::Empty => {
                         // info!("Empty");
@@ -211,7 +231,8 @@ impl ScriptRunner for LaunchpadMiniMk3 {
                     }
                     TryRecvError::Lagged(_) => {
                         info!("Lagged");
-                        break;
+
+                        return self.run(script).await;
                     }
                 },
             }
