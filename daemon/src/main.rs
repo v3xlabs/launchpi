@@ -1,8 +1,6 @@
 use std::{
     process,
-    sync::{Arc, Mutex},
-    thread,
-    time::Duration,
+    sync::{Arc, Mutex}, collections::HashMap,
 };
 
 use tokio::select;
@@ -12,7 +10,11 @@ mod api;
 mod controllers;
 mod scripts;
 mod sound;
+mod bootstrap;
 mod state;
+
+type ArcMutexVec<T> = Arc<Mutex<Vec<T>>>;
+type ArcBox<T> = Arc<Box<T>>;
 
 #[tokio::main]
 async fn main() {
@@ -20,38 +22,26 @@ async fn main() {
 
     info!("Starting daemon");
 
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel(1);
+
     let (controller_tx, mut controller_rx) = tokio::sync::mpsc::channel(32);
-    let controllers: Arc<Mutex<Vec<Arc<Box<dyn controllers::Alles>>>>> =
+    let controllers: ArcMutexVec<ArcBox<dyn controllers::Alles>> =
         Arc::new(Mutex::new(Vec::new()));
 
     let state = Arc::new(state::AppState {
         controller_tx,
         controllers,
+        shutdown_tx,
+        running_scripts: Arc::new(Mutex::new(HashMap::new())),
     });
-
-    // let mut controllers: Vec<Arc<Box<dyn Alles>>> = Vec::new();
-
-    // let controller: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk1::guess().unwrap());
-    // controllers.push(controller.clone());
-    // let controller2: Arc<Box<dyn Alles>> = Arc::new(LaunchpadMiniMk3::guess().unwrap());
-    // controllers.push(controller2.clone());
-
-    // controller.initialize().unwrap();
-    // controller2.initialize().unwrap();
-
-    // let mut script = scripts::ping::PingScript::new();
-
-    // let controller1 = controller.clone();
-    // tokio::spawn(async move { controller1.run(&mut script).unwrap() });
-
-    // let mut script2 = scripts::soundboard::SoundboardScript::new();
-
-    // let controller21 = controller2.clone();
-    // tokio::spawn(async move { controller21.run(&mut script2).unwrap() });
 
     select! {
         _ = api::serve(state.clone()) => {},
         _ = add_controller(&mut controller_rx, state.clone()) => {},
+        _ = bootstrap::bootstrap(state.clone()) => {},
+        _ = shutdown_rx.recv() => {
+            info!("Received shutdown signal, shutting down");
+        },
         _ = tokio::signal::ctrl_c() => {
             info!("Received SIGINT, shutting down");
         },
@@ -60,8 +50,6 @@ async fn main() {
     drop(state);
 
     info!("Dropping state");
-    // controller.clear().unwrap();
-    // controller2.clear().unwrap();
 
     process::exit(0);
 }

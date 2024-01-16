@@ -18,19 +18,30 @@ impl Default for PadState {
     }
 }
 
-pub struct DemoScript {
+pub struct CoverScript {
     stream_handle: OutputStreamHandle,
 
     board_state: [[PadState; 8]; 8],
     board_audio: [[Option<String>; 8]; 8],
+    board_colors: [[u8; 8]; 8],
+
+    size: [u8; 2],
+    offset: [u8; 2],
 }
 
-impl Script for DemoScript {
+impl Script for CoverScript {
     fn name(&self) -> &'static str {
         "demo"
     }
 
     fn on_press(&mut self, x: u8, y: u8, controller: &dyn Controller) {
+        let (x, y) = (x - self.offset[0], y - self.offset[1]);
+        
+        if x >= self.size[0] || y >= self.size[1] {
+            info!("Out of board button press");
+            return;
+        }
+
         info!("Demo! {} {}", x, y);
 
         let desired_state = match &self.board_state[x as usize][y as usize] {
@@ -65,8 +76,15 @@ impl Script for DemoScript {
     }
 
     fn on_release(&mut self, x: u8, y: u8, controller: &dyn Controller) {
+        let (x, y) = (x - self.offset[0], y - self.offset[1]);
+        
         info!("Demo! {} {}", x, y);
-
+        
+        if x >= self.size[0] || y >= self.size[1] {
+            info!("Out of board button press");
+            return;
+        }
+        
         let desired_state = PadState::Idle;
 
         // match desired_state {
@@ -94,24 +112,41 @@ impl Script for DemoScript {
         std::mem::forget(stream);
 
         let mut board_audio: [[Option<String>; 8]; 8] = Default::default();
+        let mut board_colors: [[u8; 8]; 8] = Default::default();
 
         // TODO: load board_audio
+        // load `assets/soundboard.toml`
+        let board_config = std::fs::read_to_string("assets/soundboard.toml").unwrap();
+        let board_config: toml::Value = board_config.parse().unwrap();
+        let board_config = board_config.get("pad").unwrap().as_array().unwrap();
+
+        for pad in board_config {
+            let x = pad.get("x").unwrap().as_integer().unwrap() as usize;
+            let y = pad.get("y").unwrap().as_integer().unwrap() as usize;
+            let file = pad.get("path").unwrap().as_str().unwrap().to_string();
+
+            board_audio[x][y] = Some(file);
+            board_colors[x][y] = pad.get("color").unwrap().as_integer().unwrap() as u8;
+        }
 
         Self {
+            size: [8, 8],
+            offset: [0, 1],
             stream_handle,
             board_state: Default::default(),
+            board_colors,
             board_audio,
         }
     }
 }
 
-impl DemoScript {
+impl CoverScript {
     fn update_board(&mut self, controller: &dyn super::Controller) {
         for x in 0..8 {
             for y in 0..8 {
                 let color = match self.board_state[x][y] {
                     PadState::Idle => match self.board_audio[x][y].as_ref() {
-                        Some(_) => 1,
+                        Some(_) => self.board_colors[x][y],
                         None => 0,
                     },
                     PadState::Playing(_) => 2,

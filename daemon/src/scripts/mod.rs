@@ -2,6 +2,7 @@ use crate::controllers::Controller;
 
 pub mod ping;
 pub mod demo;
+pub mod cover;
 pub mod soundboard;
 
 pub trait Script: Send {

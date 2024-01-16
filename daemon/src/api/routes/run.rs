@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::{
-    controllers::{Alles, Controller},
-    state::AppState, scripts::{soundboard::SoundboardScript, Script},
+    controllers::Alles,
+    scripts::{soundboard::SoundboardScript, Script},
+    state::AppState,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -41,12 +42,23 @@ pub async fn post(
     if let Some(controller) = first_controller {
         info!("Controller found");
 
+        let mut running_scripts = state.running_scripts.lock().unwrap();
+
+        let running_script = running_scripts.get(&device_id);
+
+        if let Some(running_script) = running_script {
+            info!("Script already running, dropping");
+            running_script.abort();
+        }
+
         // controller
         let mut script = SoundboardScript::new();
 
-        tokio::spawn(async move {
+        let x = tokio::spawn(async move {
             controller.run(&mut script).await.unwrap();
         });
+
+        running_scripts.insert(device_id, x);
     }
 
     Json(ConnectResult {})

@@ -1,9 +1,7 @@
-use std::{fs::File, io::BufReader};
-
-use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{Decoder, OutputStreamHandle, Sink};
-use tracing::info;
 use crate::controllers::Controller;
+use cpal::traits::{DeviceTrait, HostTrait};
+use rodio::OutputStreamHandle;
+use tracing::info;
 
 use super::Script;
 
