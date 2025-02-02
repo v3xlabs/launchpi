@@ -5,8 +5,8 @@ use std::{
     time::Duration,
 };
 
+use futures::select;
 use scripts::Script;
-use tokio::select;
 use tracing::info;
 
 use crate::controllers::{
@@ -18,7 +18,7 @@ mod controllers;
 mod scripts;
 mod state;
 
-#[tokio::main]
+#[async_std::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
@@ -48,14 +48,13 @@ async fn main() {
     let mut script2 = scripts::soundboard::SoundboardScript::new();
 
     let controller21 = controller2.clone();
-    tokio::spawn(async move { controller21.run(&mut script2).unwrap() });
 
-    select! {
-        _ = api::serve(state) => {},
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received SIGINT, shutting down");
-        },
-    }
+    controller21.run(&mut script2).unwrap();
+
+    // tokio::spawn();
+
+    // async move { controller21.run(&mut script2).unwrap() };
+    // _ = api::serve(state) => {},
 
     // controller.clear().unwrap();
     controller2.clear().unwrap();
