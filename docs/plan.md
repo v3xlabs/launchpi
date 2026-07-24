@@ -33,8 +33,28 @@ The http integration allows for making http calls, fetching status via http and 
 Launchpi aims to be fully config based, configuration changes can be made in the webui and saved as config file, and config file should be able to be declarative (via for example nix).
 Ease of expansion for future integrations and custom scripting.
 
+## Delivery Roadmap
+
+1. Complete native Elgato network support before expanding the UI framework.
+   - Stream Deck Studio: render key state, receive key events, and manage connections from the API.
+   - Stream Deck Network Dock: discover the dock, enumerate its attached child Stream Deck, then render and receive input through the child TCP endpoint.
+   - Persist managed network surfaces and their panel assignments in configuration.
+2. Replace the React frontend with SolidJS after the network surfaces have a stable API.
+   - Preserve the surface-management workflow while migrating components incrementally.
+    - Add a panel editor and live surface preview driven by the daemon API.
+
+## Configuration Model
+
+Devices are physical hardware endpoints. Each device declares its layout and
+capabilities, and may select one compatible active panel. Panels are reusable
+virtual control grids with default and pressed feedback per control. Device
+configuration is stored in `devices.toml`; reusable panels are stored in
+`panels.toml` and can also be exported independently.
+
+The Stream Deck Studio profile is a horizontal 16-column by 2-row grid. A
+Stream Deck XL profile is 4 columns by 8 rows.
+
 ## Inspiration
 
 Heavy inspiration and attribution is given to [bitfocus](https://github.com/bitfocus/companion) buttons, not only for sharing an open-source selfhostable solution for control services;
 but also for providing most of the inspiration for this project.
-

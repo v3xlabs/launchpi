@@ -1,11 +1,21 @@
-import { createRoot } from 'react-dom/client';
+import { RouterProvider } from '@tanstack/solid-router';
+import { render } from 'solid-js/web';
 
-import { App } from './App';
+import { InventoryProvider } from './context/InventoryContext';
 import { Document } from './Document';
+import { router } from './router';
 
-// eslint-disable-next-line no-undef
-createRoot(document.querySelector('#root')).render(
-    <Document>
-        <App />
-    </Document>
-);
+const root = document.getElementById('root');
+
+if (root !== null) {
+    render(
+        () => (
+            <Document>
+                <InventoryProvider>
+                    <RouterProvider router={router} />
+                </InventoryProvider>
+            </Document>
+        ),
+        root,
+    );
+}

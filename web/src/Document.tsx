@@ -1,5 +1,5 @@
-import { FC, PropsWithChildren } from 'react';
+import { ParentComponent } from 'solid-js';
 
-export const Document: FC<PropsWithChildren> = ({ children }) => {
-    return <>{children}</>;
+export const Document: ParentComponent = (props) => {
+    return <>{props.children}</>;
 };

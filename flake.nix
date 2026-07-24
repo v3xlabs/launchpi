@@ -42,6 +42,9 @@
 
             nodejs_24
             pnpm_11
+            alsa-lib
+            jack2
+            pkg-config
           ];
 
           shellHook = ''

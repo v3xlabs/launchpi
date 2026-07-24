@@ -3,10 +3,53 @@
 @tailwind utilities;
 @tailwind variants;
 
-h1 {
-    @apply text-2xl pl-2;
-}
+body { @apply bg-neutral-950 text-neutral-100 antialiased; }
+button, input, select { font: inherit; }
 
-h2 {
-    @apply font-bold italic;
-}
+.page { @apply px-6 py-6 sm:px-8; }
+
+.primary-button { @apply inline-flex min-h-10 items-center justify-center gap-2 bg-cyan-300 px-3.5 py-2 text-sm font-bold text-neutral-950 transition hover:bg-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400; }
+.secondary-button { @apply inline-flex min-h-10 items-center justify-center gap-2 border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-sm font-semibold text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950 disabled:cursor-not-allowed disabled:opacity-60; }
+.icon-button { @apply inline-grid h-10 w-10 place-items-center border border-neutral-700 bg-neutral-900 text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950; }
+.link-button { @apply text-xs font-semibold text-cyan-300 underline-offset-2 transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200; }
+
+.section-title { @apply text-xs font-bold uppercase tracking-[0.14em] text-neutral-300; }
+.eyebrow { @apply text-xs font-bold uppercase tracking-[0.2em] text-cyan-300; }
+.field-label { @apply grid gap-1.5 text-sm font-medium text-neutral-200; }
+.field-input { @apply min-h-11 w-full border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-cyan-300 focus:ring-1 focus:ring-cyan-300; }
+.empty-state { @apply border border-dashed border-neutral-700 px-4 py-5 text-sm leading-6 text-neutral-500; }
+.alert { @apply flex items-center justify-between gap-4 border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-sm text-rose-100; }
+
+/* Sidebar */
+.sidebar { @apply flex h-full flex-col bg-neutral-900; }
+.sidebar-section-heading { @apply px-2 pb-1 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-neutral-500; }
+.sidebar-item { @apply flex items-center gap-2.5 px-2.5 py-2 text-neutral-300 no-underline transition hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200; }
+.sidebar-item[data-status="active"] { @apply bg-cyan-400/10 text-cyan-50; }
+.sidebar-child { @apply ml-3 border-l border-neutral-800 pl-2.5; }
+.sidebar-empty { @apply px-2.5 py-1 text-xs text-neutral-600; }
+.sidebar-discovered { @apply block px-2.5 py-1.5 text-xs text-cyan-300/80 no-underline transition hover:bg-neutral-800; }
+
+/* Dialogs */
+.dialog-overlay { @apply fixed inset-0 z-40 bg-neutral-950/75 backdrop-blur-sm; }
+.dialog-positioner { @apply fixed inset-0 z-50 flex items-center justify-center p-4; }
+.dialog-content { @apply w-full max-w-md border border-neutral-700 bg-neutral-900 p-5 shadow-2xl shadow-black/50 sm:p-6; }
+.dialog-heading, .dialog-actions { @apply flex items-start justify-between gap-4; }
+.dialog-actions { @apply mt-2 justify-end; }
+
+/* Discovery */
+.discovery-device { @apply inline-flex min-h-11 items-center gap-3 border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-semibold text-neutral-200 transition hover:border-cyan-300 disabled:cursor-not-allowed disabled:opacity-60; }
+
+/* Panel editor */
+.clipboard-banner { @apply flex items-center gap-3 border border-cyan-400/30 bg-cyan-400/5 px-3 py-2 text-sm text-cyan-100; }
+.editor-body { @apply grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]; }
+.control-editor { @apply border-t border-neutral-800 pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0; }
+.grid-frame { @apply overflow-x-auto border border-neutral-800 bg-neutral-950 p-3 sm:p-5; }
+.control-grid { display: grid; grid-template-columns: repeat(var(--columns), minmax(3.75rem, 1fr)); gap: 0.5rem; min-width: max-content; }
+.grid-control { @apply relative flex aspect-square w-16 flex-col items-center justify-center overflow-hidden border border-white/10 p-1 text-center text-xs font-bold shadow-inner shadow-black/30 transition hover:border-cyan-200 focus:z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 sm:w-20; }
+.grid-control-empty { @apply border-dashed border-white/5 bg-neutral-950 text-neutral-600; }
+.grid-control-paste { @apply border-cyan-300/50 text-cyan-300; }
+.grid-control-selected { @apply z-10 ring-2 ring-cyan-200 ring-offset-2 ring-offset-neutral-950; }
+.capability-toggle { @apply flex min-h-9 items-center gap-2 border border-neutral-700 bg-neutral-950 px-2.5 text-sm text-neutral-300; }
+.capability-toggle input { @apply h-4 w-4 accent-cyan-300; }
+.color-input { @apply h-11 w-full cursor-pointer border border-neutral-700 bg-neutral-950 p-1; }
+.pressed-fields { @apply grid gap-3 border-l-2 border-cyan-400/50 pl-3; }

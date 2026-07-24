@@ -1,13 +1,15 @@
 use crate::controllers::Controller;
 
-pub mod ping;
 pub mod demo;
+pub mod ping;
 pub mod soundboard;
 
 pub trait Script: Send {
     fn name(&self) -> &'static str;
 
-    fn new() -> Self where Self: Sized;
+    fn new() -> Self
+    where
+        Self: Sized;
 
     fn initialize(&mut self, _controller: &dyn Controller) {}
 

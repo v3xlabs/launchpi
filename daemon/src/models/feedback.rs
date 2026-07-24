@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::{
-    identifiers::IntegrationId,
-    rendered_state::RenderedStateOverride,
-};
+use crate::models::{identifiers::IntegrationId, rendered_state::RenderedStateOverride};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FeedbackBinding {

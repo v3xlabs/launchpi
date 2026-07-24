@@ -1,10 +1,14 @@
-use std::{fs::File, io::BufReader, sync::{Arc, Mutex}};
+use std::{
+    fs::File,
+    io::BufReader,
+    sync::{Arc, Mutex},
+};
 
+use crate::controllers::Controller;
 use cpal::traits::{DeviceTrait, HostTrait};
 use lazy_static::lazy_static;
-use rodio::{Decoder, OutputStreamHandle, Sink, OutputStream};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use tracing::info;
-use crate::controllers::Controller;
 
 use super::Script;
 
@@ -75,7 +79,7 @@ impl Script for DemoScript {
         //     PadState::Playing(_) => controller.set_button_color(x, y, 3).unwrap(),
         // }
         self.board_state[x as usize][y as usize] = desired_state;
-        
+
         self.update_board(controller);
     }
 

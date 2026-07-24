@@ -9,11 +9,17 @@ pub mod launchpad_mini_mk3;
 
 #[async_trait::async_trait]
 pub trait Controller: Send {
-    fn from_connection(device: &DeviceInfo) -> Result<Box<Self>, ()> where Self: Sized;
+    fn from_connection(device: &DeviceInfo) -> Result<Box<Self>, ()>
+    where
+        Self: Sized;
 
-    fn detect_all() -> Result<Vec<DeviceInfo>, ()> where Self: Sized;
+    fn detect_all() -> Result<Vec<DeviceInfo>, ()>
+    where
+        Self: Sized;
 
-    fn guess() -> Result<Box<Self>, MidiError> where Self: Sized;
+    fn guess() -> Result<Box<Self>, MidiError>
+    where
+        Self: Sized;
 
     // -device specific starts here-
 
@@ -50,4 +56,3 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>, ()> {
 
     Ok(list)
 }
-

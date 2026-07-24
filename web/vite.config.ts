@@ -1,9 +1,14 @@
-import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import solid from 'vite-plugin-solid';
 
 export default defineConfig({
-    plugins: [react()],
+    plugins: [solid()],
     define: { global: 'globalThis' },
+    server: {
+        proxy: {
+            '/api': { target: 'http://localhost:3000', ws: true },
+        },
+    },
     build: {
         rollupOptions: {},
         commonjsOptions: {
