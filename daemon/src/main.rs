@@ -15,6 +15,7 @@ use crate::controllers::{
 
 mod api;
 mod controllers;
+mod models;
 mod scripts;
 mod state;
 
