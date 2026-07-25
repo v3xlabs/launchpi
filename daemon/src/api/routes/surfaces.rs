@@ -13,18 +13,19 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::{
     api::error::ApiError,
-    controllers::streamdeck::studio,
-    models::{
-        control::Control,
-        identifiers::PanelId,
-        network_surface::{
-            AddNetworkSurface, DeviceInventory, KeyRendering, ManagedNetworkSurface,
-            NetworkSurfaceStatus, UpdateNetworkSurface,
+    drivers::streamdeck::studio,
+    identifiers::PanelId,
+    panels::{control::Control, Panel, PanelLayout},
+    state::AppState,
+    surfaces::{
+        command::KeyRendering,
+        defaults::studio_capabilities,
+        inventory::DeviceInventory,
+        layout::{SurfaceCapabilities, SurfaceLayout},
+        managed::{
+            AddNetworkSurface, ManagedNetworkSurface, NetworkSurfaceStatus, UpdateNetworkSurface,
         },
-        panel::{Panel, PanelLayout},
-        surface::SurfaceCapabilities,
     },
-    state::{studio_capabilities, AppState},
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -35,7 +36,7 @@ struct PanelRequest {
     capabilities: SurfaceCapabilities,
     controls: Vec<Control>,
     #[serde(default)]
-    dial_colors: Vec<crate::models::rendered_state::RgbaColor>,
+    dial_colors: Vec<crate::panels::rendered_state::RgbaColor>,
     #[serde(default)]
     dial_ring_levels: Vec<u8>,
 }
@@ -132,9 +133,9 @@ async fn add_device(
         serial_number: request.serial_number,
         model: request.kind.model_name().to_string(),
         layout: if is_network_dock {
-            crate::models::surface::SurfaceLayout::Freeform
+            SurfaceLayout::Freeform
         } else {
-            crate::models::surface::SurfaceLayout::Grid {
+            SurfaceLayout::Grid {
                 columns: 16,
                 rows: 2,
             }
@@ -188,9 +189,9 @@ async fn add_discovered_device(
         serial_number: discovered.serial_number,
         model: discovered.model,
         layout: if is_network_dock {
-            crate::models::surface::SurfaceLayout::Freeform
+            SurfaceLayout::Freeform
         } else {
-            crate::models::surface::SurfaceLayout::Grid {
+            SurfaceLayout::Grid {
                 columns: 16,
                 rows: 2,
             }

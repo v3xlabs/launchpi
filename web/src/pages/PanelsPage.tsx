@@ -12,7 +12,7 @@ import {
   Control,
   Device,
   displayName,
-  fetchPanelConfiguration,
+  fetchPanelConfig,
   layoutLabel,
   Panel,
   panelDialCount,
@@ -270,7 +270,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                   <TbDownload class="h-3.5 w-3.5" />
                   Export TOML
                 </button>
-                <CopyTomlButton load={() => fetchPanelConfiguration(panel().panel_id)} />
+                <CopyTomlButton load={() => fetchPanelConfig(panel().panel_id)} />
                 <button
                   type="button"
                   class="primary-button"

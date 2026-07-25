@@ -10,7 +10,6 @@ use serde_json::Value as JsonValue;
 use tracing::debug;
 
 use crate::{
-    models::network_surface::SurfaceLogLevel,
     plugins::{
         builtin::http::config::{extract_value, HttpConfig, PollConfig, MAX_BODY_VARIABLE_LENGTH},
         instance::InstanceConfig,
@@ -19,8 +18,9 @@ use crate::{
             VariableKind,
         },
         plugin::{Plugin, PluginContext, PluginError, PluginFactory},
-        variables::VariableValue,
     },
+    surfaces::logs::SurfaceLogLevel,
+    variables::VariableValue,
 };
 
 pub const FACTORY: PluginFactory = PluginFactory {
@@ -348,11 +348,9 @@ fn number_parameter(parameters: &JsonValue, key: &str) -> Result<f64, PluginErro
 mod tests {
     use super::*;
     use crate::{
-        models::identifiers::IntegrationId,
-        plugins::{
-            plugin::cancellation,
-            variables::{VariableRef, VariableStore},
-        },
+        identifiers::IntegrationId,
+        plugins::plugin::cancellation,
+        variables::{VariableRef, VariableStore},
     };
     use std::time::Duration;
     use tokio::{

@@ -6,34 +6,73 @@ This document records the design of the launchpi plugin system: how an
 integration is compiled in, configured, instantiated, and how the values it
 publishes end up as pixels on a key.
 
-The models it builds on already exist. `Action`, `ActionBinding`,
-`ActionTrigger`, `Feedback` and `FeedbackBinding` were defined in
-`daemon/src/models/action.rs` and `daemon/src/models/feedback.rs` before any
-executor existed. They serialize, they round-trip through `panels.toml`, and
-until now nothing ever read them. This design fills that seam rather than
-replacing it.
+The action half builds on models that already existed. `Action`,
+`ActionBinding` and `ActionTrigger` were defined before any executor did, and
+this design fills that seam rather than replacing it.
+
+The value half replaced an earlier draft. That draft had plugins expose both
+named variables and separately declared boolean feedbacks; the Concepts section
+explains why the two collapsed into one.
 
 ## Concepts
 
-Five concepts, all namespaced by instance.
+Four concepts, all namespaced by instance.
 
 | Concept | Meaning |
 | --- | --- |
 | Plugin type | A capability compiled into the daemon, named by a `&'static str` such as `http` or `mpris`. |
 | Instance | A configured copy of a type, identified as `<type>.<name>`, for example `http.weather`. |
 | Action | Something an instance can do, invoked when a gesture fires. |
-| Variable | A named value an instance publishes, referenced as `$(http.weather:temperature)`. |
-| Feedback | A declared boolean query with parameters that overlays a style onto a button. |
+| Value | Anything an instance knows, published as it changes and referenced as `$(http.weather:temperature)`. |
 
-Variables carry content and feedbacks carry style. The split is deliberate.
-Showing a song title is interpolation into text; turning a key amber because a
-light is on is a style overlay. Collapsing the two would force every dynamic
-label through a declared query with parameters, and collapsing them the other
-way would require an expression language before the first plugin could ship.
+There is deliberately no separate feedback concept. An earlier draft of this
+design split values from boolean feedback queries — values carrying content,
+queries carrying style — and that split turned out to be the thing standing in
+the way of the most obvious request anyone makes: bind a key's colour to a
+light's colour. A boolean cannot carry a colour. One kind of thing, referenced
+the same way everywhere, does both jobs.
 
-Both are declared in the plugin's manifest, so the web UI offers pickers rather
-than free-text fields, and a typo becomes a validation error instead of a blank
-button.
+A value name is free-form and may be structured, so
+`$(hass.home:light.kitchen.color)` is a single reference whose name happens to
+identify an entity and an attribute. This is what keeps a large installation
+tractable: an instance publishes what something is actually watching rather than
+everything it can see. See Subscriptions below.
+
+Values come from three places — plugins publish them, surfaces publish them (a
+dial's position, a key's pressed state), and configuration derives them from
+other values. Downstream they are all the same thing.
+
+Actions are declared in the plugin's manifest so the web UI can offer pickers
+rather than free-text fields. Values are not declared exhaustively, because a
+plugin generally cannot know them ahead of time; the manifest lists the ones
+worth suggesting, and a plugin may publish any name.
+
+## Bindings
+
+Anything a control displays is either a literal or a reference:
+
+```toml
+[panels.controls.default_state]
+text             = "$(mpris.default:title)"
+image            = "$(mpris.default:art)"
+background_color = "$(hass.home:light.kitchen.color)"
+```
+
+A field holding a reference resolves at render time and repaints the control
+whenever the referenced value changes. A field holding a literal never does.
+
+Bare references are the whole of the binding language today. A later phase adds
+operators — comparison, boolean logic, a ternary and a few functions — so a
+field can choose between values:
+
+```text
+$(hass.home:light_a.state) == 'on' ? $(hass.home:light_a.color) : $(hass.home:light_b.color)
+```
+
+Derived values will hoist an expression like that under a name, so several
+controls share one definition and a change trickles through it to everything
+reading it. The dependency graph below already propagates that way; only the
+evaluator is missing.
 
 ## Instance Identity
 
@@ -47,9 +86,9 @@ The filename grammar is `<type>.<name>.toml`, where `name` matches
 instance in the `Error` state rather than failing the daemon's boot, so an
 unknown or misspelled plugin surfaces in the UI with a readable reason.
 
-`IntegrationId`, already defined in `daemon/src/models/identifiers.rs`, holds
-the composed `<type>.<name>` string. Every `Action::InvokeIntegration` and
-every `Feedback` references an instance through it.
+`IntegrationId` holds the composed `<type>.<name>` string. Every
+`Action::InvokeIntegration` and every value reference names an instance through
+it.
 
 ## The Plugin Trait
 
@@ -62,9 +101,7 @@ WASM sandbox, and no dynamic loading. A plugin that needs D-Bus depends on
 pub trait Plugin: Send + Sync {
     async fn invoke(&self, action_name: &str, parameters: &JsonValue)
         -> Result<(), PluginError>;
-    async fn evaluate(&self, feedback_name: &str, parameters: &JsonValue)
-        -> Result<bool, PluginError>;
-    async fn subscribe(&self, _subscriptions: &[Subscription])
+    async fn subscribe(&self, _wanted: &[ValueRef])
         -> Result<(), PluginError> { Ok(()) }
     async fn shutdown(&self) {}
 }
@@ -81,17 +118,16 @@ pub struct PluginFactory {
 built as a plain static slice. Registering a plugin is one entry there plus a
 module; no registration crate is involved.
 
-`evaluate` is pull-based and is expected to be cheap and in-memory. The plugin
-keeps its own view of the world and the engine asks it questions. When that view
-changes the plugin calls `ctx.invalidate_feedbacks()`, and the engine
-re-evaluates only the feedback instances that actually have subscribers, then
-diffs the results. A plugin never pushes render commands.
+A plugin is push-only for values: when its view of the world moves it calls
+`ctx.set_value`, and the engine works out what that repaints. It never pushes
+render commands and is never asked to compute anything during a render, which is
+what keeps the render path free of I/O.
 
 The boundary is deliberately message-shaped: an action is a name plus JSON, a
-feedback is a name plus JSON returning a bool, and everything a plugin publishes
-travels through sinks rather than through shared state. Nothing in the trait
-assumes the implementation is in-process, so an out-of-process transport can
-later be added as a second implementation without reshaping plugin code.
+value is a name plus a scalar, and everything a plugin publishes travels through
+sinks rather than shared state. Nothing in the trait assumes the implementation
+is in-process, so an out-of-process transport can later be added as a second
+implementation without reshaping plugin code.
 
 ## Lifecycle
 
@@ -105,9 +141,8 @@ pub struct PluginContext {
     pub assets: AssetStore,
     pub cancel: CancellationToken,
     // sinks
-    // set_variable(name, VariableValue)
+    // set_value(name, Value)
     // set_image(name, bytes) -> AssetId
-    // invalidate_feedbacks()
     // log(level, message)
 }
 ```
@@ -133,80 +168,75 @@ Configuration errors, including an unresolvable secret reference, produce
 ## Manifest
 
 The manifest is what makes the web UI possible without hand-writing a form per
-plugin. It declares the configuration schema, the actions, the feedbacks and
-the variables, and the same `ConfigField` shape drives every generated input:
-the instance configuration form, the action parameter editor, and the feedback
-parameter editor.
+plugin. It declares the configuration schema, the actions, and the values worth
+suggesting, and the same `ConfigField` shape drives every generated input: the
+instance configuration form and the action parameter editor.
 
 | Item | Declares |
 | --- | --- |
 | `ConfigField` | key, label, kind, required, placeholder, help |
 | `ActionDefinition` | name, label, description, parameters |
-| `FeedbackDefinition` | name, label, description, parameters |
-| `VariableDefinition` | name, label, description, value kind |
+| `ValueDefinition` | name, label, description, value kind |
 
 `ConfigField::kind` is one of text, number, boolean, select with options, or
 secret. A secret field never round-trips its value to the browser; the UI edits
 which form the reference takes, not what it contains.
 
-Declared variables are also what populates the variable picker in the button
-editor, so a user inserts `$(mpris.default:title)` from a list rather than
-remembering the spelling.
+Declared values populate the reference picker in the button editor, so a user
+inserts `$(mpris.default:title)` from a list rather than remembering the
+spelling. The list is a suggestion, not a constraint — a plugin may publish any
+name, and a reference to a name the manifest never mentioned resolves normally.
 
-## Variables
+## Values
 
-A variable is `(IntegrationId, name)` holding a `VariableValue`, which is text,
-a number, a boolean, or an `AssetId` for an image. Instances publish through
-`ctx.set_variable`; the `user` namespace is reserved for `Action::SetVariable`,
-so an unqualified variable name written by a button becomes `$(user:foo)`.
+A value is `(IntegrationId, name)` holding text, a number, a boolean, a colour,
+or an `AssetId` for an image. Instances publish through `ctx.set_value`; the
+`user` namespace is reserved for `Action::SetVariable`, so an unqualified name
+written by a button becomes `$(user:foo)`.
 
-References are written `$(instance:name)` and are interpolated into any
-`RenderedState.text` and into `RenderedState.image`. `$$` is a literal dollar.
-A reference to an unknown variable renders as empty rather than as its own
-source text, and a malformed reference is left alone — an unmatched `$(` is far
-more likely to be intentional text than a broken binding worth hiding.
+Publishing is idempotent. Setting a value to what it already holds marks nothing
+dirty and repaints nothing, so a poll loop running every second against a
+reading that changes hourly costs one comparison per tick.
+
+References are written `$(instance:name)`. `$$` is a literal dollar. A reference
+to an unknown value renders as empty rather than as its own source text, and a
+malformed reference is left alone — an unmatched `$(` is far more likely to be
+intentional text than a broken binding worth hiding. A malformed reference never
+consumes a well-formed one that follows it.
 
 The parser is hand-rolled; there is no regex dependency.
 
-## Feedbacks
-
-A `FeedbackBinding` pairs a `Feedback` — instance, name, parameters — with a
-`RenderedStateOverride`. When the query evaluates true the override is applied
-field by field on top of the current state. Bindings apply in declaration
-order, so a later binding wins on any field it sets and contributes nothing on
-the fields it leaves as `None`.
-
-Feedback results are cached by `FeedbackKey`, which is the instance, the
-feedback name, and a hash of the canonicalized parameter JSON. Two buttons
-watching the same light share one cache entry and one evaluation.
+Colours are the one place where a reference and a literal look different. A
+literal colour is a table (`{ red, green, blue, alpha }`); a bound colour is the
+string `"$(...)"`. The daemon accepts either and a plugin publishing a colour
+value is responsible for producing something a colour field can use.
 
 ## Render Path
 
-`rendering_for_control` in `daemon/src/state.rs` is a pure function today with
-no notion of live state. It gains a `&RenderContext` — a variable snapshot plus
-the feedback cache — and resolves in this order:
+`rendering_for_control` resolves a control against a `RenderContext`, which is a
+snapshot of the value store:
 
 ```text
 base   = if pressed { pressed_state ?? default_state } else { default_state }
-for binding in control.feedback_bindings, in order:
-    if ctx.feedback(&binding.feedback) == Some(true):
-        base = base.overlay(&binding.state)
-text   = ctx.interpolate(base.text)
+text   = ctx.resolve_text(base.text)
 image  = ctx.resolve_asset(base.image)
+colors = ctx.resolve_color(base.foreground), ctx.resolve_color(base.background)
 -> KeyRendering { key_index, text, image, progress, foreground, background }
 ```
+
+Every field goes through the same resolution: a literal passes through, a
+reference is looked up. There is no separate overlay pass, because there are no
+boolean feedbacks to overlay.
 
 `KeyRendering` grows `image` and `progress`. Both already exist on
 `RenderedState` and are silently dropped by the current implementation.
 
 ### Reverse Index
 
-The engine keeps two maps from what a button depends on to the keys that depend
-on it:
+The engine keeps a map from each value to the keys that read it:
 
 ```text
-VariableRef -> {(SurfaceId, key_index)}
-FeedbackKey -> {(SurfaceId, key_index)}
+ValueRef -> {(SurfaceId, key_index)}
 ```
 
 They are rebuilt whenever the set of visible controls changes: `upsert_panel`,
@@ -215,36 +245,38 @@ the same four call sites that already trigger a full `render_active_panel`.
 
 ### Subscriptions
 
-Rebuilding the index also yields, per instance, the set of variables and
-feedback instances anything is actually watching. That set is pushed to
-`Plugin::subscribe`. It is how `mpris` learns that nobody wants track art and
-can skip fetching it, and how `hass` learns which entities to watch instead of
-mirroring an entire installation. An instance with no subscribers stays running
-but is free to idle.
+Rebuilding the index also yields, per instance, the set of value names anything
+is actually watching. That set is pushed to `Plugin::subscribe`. It is how
+`mpris` learns that nobody wants track art and can skip fetching it, and how
+`hass` learns which entities to watch instead of mirroring an entire
+installation. An instance with no subscribers stays running but is free to idle.
+
+Because a value name is free-form, a subscription is the plugin's own vocabulary
+coming back to it: `hass` receives `light.kitchen.color` and knows exactly which
+entity and attribute that means. Nothing in the daemon parses those names.
 
 ### Dirty Dispatch
 
-Variable and feedback changes land in a coalescing queue drained on a short
-tick, currently 50 ms. Each drain unions the dirty key sets and re-resolves
-only those keys. Everything downstream is unchanged: the bounded per-surface
+Value changes land in a coalescing queue drained on a short tick, currently
+50 ms. Each drain unions the dirty key sets and re-resolves only those keys. Everything downstream is unchanged: the bounded per-surface
 `mpsc<SurfaceCommand>`, the `PendingRenders` coalescing in
 `daemon/src/streamdeck/studio.rs`, and the write loop.
 
 A tick matters because update rates differ by two orders of magnitude. An
-`mpris` position variable ticks once a second; a Home Assistant state firehose
-does not pace itself at all.
+`mpris` position value ticks once a second; a Home Assistant state firehose does
+not pace itself at all.
 
 ### Deduplication
 
 Every dispatch currently re-encodes a 96 by 96 JPEG unconditionally. That is
 acceptable when repaints only follow a key press, and is not acceptable once a
-variable can change on its own. The registry keeps a hash of the last resolved
+value can change on its own. The registry keeps a hash of the last resolved
 `KeyRendering` per `(surface, key)` and drops an identical resolution before it
 reaches the queue.
 
 This is a prerequisite of the feature, not an optimization of it. Without it a
-single one-hertz variable on a 16 by 2 Studio would re-encode thirty-two images
-a second to change one of them.
+single one-hertz value on a 16 by 2 Studio would re-encode thirty-two images a
+second to change one of them.
 
 ## Action Execution
 
@@ -287,7 +319,7 @@ hash:<sha256>       an entry in the content-addressed cache
 in-memory LRU of already decoded and resized buffers, so the render path never
 decodes the same album art twice. Plugins fetch remote images themselves through
 `ctx.http` and call `ctx.set_image`, which stores the bytes and publishes the
-resulting `AssetId` as a variable.
+resulting `AssetId` as a value.
 
 The renderer draws the image layer first, scaled to cover and centre-cropped,
 then the icon, then text, then a progress bar along the bottom edge when
@@ -326,6 +358,6 @@ and what the copy-TOML buttons emit.
 ## References
 
 - [bitfocus/companion](https://github.com/bitfocus/companion), the source of the
-  action, feedback and variable vocabulary this design follows
+  action and value vocabulary this design follows
 - [MPRIS D-Bus Interface Specification](https://specifications.freedesktop.org/mpris-spec/latest/)
 - [Home Assistant WebSocket API](https://developers.home-assistant.io/docs/api/websocket)

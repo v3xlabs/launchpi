@@ -3,7 +3,7 @@ import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/t
 import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
-import { fetchFullConfiguration as fetchFullConfig } from "../api/inventory";
+import { fetchFullConfig as fetchFullConfig } from "../api/inventory";
 import {
   coerceConfigValue,
   ConfigField,
@@ -252,6 +252,17 @@ const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
               </p>
             </div>
             <div class="flex gap-2">
+              <button
+                type="button"
+                class="secondary-button"
+                disabled={store.isSaving()}
+                onClick={() =>
+                  void store.updatePluginInstance(found().integration_id, {
+                    is_enabled: !found().is_enabled,
+                  })}
+              >
+                {found().is_enabled ? "Disable" : "Enable"}
+              </button>
               <button
                 type="button"
                 class="secondary-button"

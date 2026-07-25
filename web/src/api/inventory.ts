@@ -9,8 +9,6 @@ import {
 } from "./guards";
 import { isPluginInstance, PluginInstance } from "./plugins";
 
-export { getErrorMessage, isNumber, isOptionalString, isRecord, isString, request };
-
 export type DeviceStatus = "connecting" | "connected" | "unavailable" | "disabled";
 export type RgbaColor = { red: number; green: number; blue: number; alpha: number; };
 export type Capabilities = {
@@ -37,15 +35,15 @@ export type RenderedStateOverride = {
   background_color: RgbaColor | null;
   progress: unknown | null;
 };
-export type ActionTrigger =
-  | "press"
-  | "release"
-  | "rotate_clockwise"
-  | "rotate_counter_clockwise"
-  | "value_changed"
-  | { hold: { duration_ms: number; }; };
-export type Action =
-  | {
+export type ActionTrigger
+  = | "press"
+    | "release"
+    | "rotate_clockwise"
+    | "rotate_counter_clockwise"
+    | "value_changed"
+    | { hold: { duration_ms: number; }; };
+export type Action
+  = | {
     type: "invoke_integration";
     integration_id: string;
     action_name: string;
@@ -387,10 +385,12 @@ export const updatePanel = (panelId: string, payload: PanelPayload): Promise<Res
   request(`/api/panels/${encodeURIComponent(panelId)}`, "PATCH", payload);
 export const deletePanel = (panelId: string): Promise<Response> =>
   request(`/api/panels/${encodeURIComponent(panelId)}`, "DELETE");
-export const saveConfiguration = (): Promise<Response> => request("/api/config", "POST");
+export const saveConfig = (): Promise<Response> => request("/api/config", "POST");
 
-export const fetchPanelConfiguration = (panelId: string): Promise<string> =>
+export const fetchPanelConfig = (panelId: string): Promise<string> =>
   fetchText(`/api/panels/${encodeURIComponent(panelId)}/config`);
-export const fetchDeviceConfiguration = (surfaceId: string): Promise<string> =>
+export const fetchDeviceConfig = (surfaceId: string): Promise<string> =>
   fetchText(`/api/devices/${encodeURIComponent(surfaceId)}/config`);
-export const fetchFullConfiguration = (): Promise<string> => fetchText("/api/config/export");
+export const fetchFullConfig = (): Promise<string> => fetchText("/api/config/export");
+
+export { getErrorMessage, isNumber, isOptionalString, isRecord, isString, request } from "./guards";

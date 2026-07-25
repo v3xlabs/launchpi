@@ -9,13 +9,10 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     api::error::ApiError,
-    models::identifiers::IntegrationId,
-    plugins::{
-        instance::PluginInstance,
-        manifest::PluginManifest,
-        variables::{VariableRef, VariableValue},
-    },
+    identifiers::IntegrationId,
+    plugins::{instance::PluginInstance, manifest::PluginManifest},
     state::AppState,
+    variables::{VariableRef, VariableValue},
 };
 
 pub fn router() -> Router<AppState> {

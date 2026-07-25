@@ -1,6 +1,6 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{models::identifiers::IntegrationId, plugins::secret::SecretRef};
+use crate::{config::secret::SecretRef, identifiers::IntegrationId};
 
 pub const INSTANCE_DOCUMENT_VERSION: u8 = 1;
 

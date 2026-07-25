@@ -1,0 +1,30 @@
+use serde::{Deserialize, Serialize};
+
+pub mod control;
+pub mod rendered_state;
+
+use crate::{
+    identifiers::PanelId,
+    panels::{control::Control, rendered_state::RgbaColor},
+    surfaces::layout::SurfaceCapabilities,
+};
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Panel {
+    pub panel_id: PanelId,
+    pub name: String,
+    pub layout: PanelLayout,
+    #[serde(default)]
+    pub capabilities: SurfaceCapabilities,
+    pub controls: Vec<Control>,
+    #[serde(default)]
+    pub dial_colors: Vec<RgbaColor>,
+    #[serde(default)]
+    pub dial_ring_levels: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PanelLayout {
+    pub columns: u16,
+    pub rows: u16,
+}

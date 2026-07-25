@@ -59,6 +59,26 @@ export const asDialStateEvent = (value: Record<string, unknown>): DialStateEvent
       }
     : null);
 
+export type DeviceStatusEvent = {
+  type: "device_status";
+  surface_id: string;
+  status: string;
+  last_error: string | null;
+};
+
+/** Patched into the existing device row rather than triggering a refetch. */
+export const asDeviceStatusEvent = (value: Record<string, unknown>): DeviceStatusEvent | null =>
+  (value.type === "device_status"
+    && typeof value.surface_id === "string"
+    && typeof value.status === "string"
+    ? {
+        type: "device_status",
+        surface_id: value.surface_id,
+        status: value.status,
+        last_error: typeof value.last_error === "string" ? value.last_error : null,
+      }
+    : null);
+
 export type VariableChangedEvent = {
   type: "variable_changed";
   integration_id: string;

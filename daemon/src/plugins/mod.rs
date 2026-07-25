@@ -1,14 +1,8 @@
 pub mod builtin;
-pub mod config;
 pub mod engine;
-pub mod feedback;
-pub mod index;
 pub mod instance;
 pub mod manifest;
 pub mod plugin;
-pub mod render;
-pub mod secret;
-pub mod variables;
 
 use crate::plugins::plugin::PluginFactory;
 

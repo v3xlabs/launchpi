@@ -8,7 +8,7 @@ import {
   deviceGridLayout,
   DiscoveredDevice,
   displayName,
-  fetchDeviceConfiguration,
+  fetchDeviceConfig,
   isPanelCompatible,
   layoutLabel,
   Panel,
@@ -103,7 +103,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
           </div>
         </div>
         <div class="flex gap-2">
-          <CopyTomlButton load={() => fetchDeviceConfiguration(properties.device.surface_id)} />
+          <CopyTomlButton load={() => fetchDeviceConfig(properties.device.surface_id)} />
           <button
             type="button"
             class="secondary-button"

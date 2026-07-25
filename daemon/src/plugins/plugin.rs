@@ -6,13 +6,10 @@ use tokio::sync::{mpsc, watch};
 use tracing::warn;
 
 use crate::{
-    models::{identifiers::IntegrationId, network_surface::SurfaceLogLevel},
-    plugins::{
-        engine::EngineSignal,
-        instance::InstanceConfig,
-        manifest::PluginManifest,
-        variables::{self, VariableRef, VariableStore, VariableValue},
-    },
+    identifiers::IntegrationId,
+    plugins::{engine::EngineSignal, instance::InstanceConfig, manifest::PluginManifest},
+    surfaces::logs::SurfaceLogLevel,
+    variables::{template, VariableRef, VariableStore, VariableValue},
 };
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -118,7 +115,7 @@ impl PluginContext {
     /// Resolves `$(instance:name)` references against live variables, so an action's parameters
     /// can depend on what other plugins are publishing.
     pub fn interpolate(&self, template: &str) -> String {
-        variables::interpolate(template, |reference| self.variables.text(reference))
+        template::interpolate(template, |reference| self.variables.text(reference))
     }
 
     pub fn set_variable(&self, name: impl Into<String>, value: VariableValue) {

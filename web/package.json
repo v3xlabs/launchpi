@@ -26,7 +26,7 @@
     "devDependencies": {
         "@typescript-eslint/parser": "^6.15.0",
         "eslint": "^10.8.0",
-        "eslint-plugin-v3xlabs": "^1.8.0",
+        "eslint-plugin-v3xlabs": "^1.8.1",
         "typescript": "^5.3.3",
         "vite-plugin-solid": "^2.11.8"
     }

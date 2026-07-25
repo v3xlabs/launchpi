@@ -12,6 +12,7 @@ import {
 import { createStore, produce, reconcile } from "solid-js/store";
 
 import {
+  asDeviceStatusEvent,
   asDialPressEvent,
   asDialStateEvent,
   asEventFrame,
@@ -21,6 +22,7 @@ import {
 import * as api from "../api/inventory";
 import {
   Control,
+  Device,
   DialPress,
   DialState,
   Inventory,
@@ -102,7 +104,7 @@ export type InventoryStore = {
   savePanel: (panel: Panel) => Promise<void>;
   deletePanel: (panelId: string) => Promise<boolean>;
   exportPanel: (panel: Panel) => Promise<void>;
-  saveConfiguration: () => Promise<void>;
+  saveConfig: () => Promise<void>;
   clipboard: Accessor<ControlClipboard | null>;
   copyControl: (control: Control) => void;
   clearClipboard: () => void;
@@ -307,6 +309,23 @@ export const InventoryProvider: ParentComponent = (properties) => {
         return;
       }
 
+      const deviceStatus = asDeviceStatusEvent(parsed);
+
+      if (deviceStatus !== null) {
+        // Patched in place. An unreachable surface flips status on every reconnect attempt, and
+        // refetching the whole inventory on that cadence made the entire UI churn.
+        setSnapshot(
+          "devices",
+          device => device.surface_id === deviceStatus.surface_id,
+          produce((device) => {
+            device.status = deviceStatus.status as Device["status"];
+            device.last_error = deviceStatus.last_error;
+          }),
+        );
+
+        return;
+      }
+
       if (parsed.type === "changed") scheduleResync();
     };
 
@@ -425,7 +444,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
       }),
     exportPanel: async (panel) => {
       try {
-        const content = await api.fetchPanelConfiguration(panel.panel_id);
+        const content = await api.fetchPanelConfig(panel.panel_id);
         const url = URL.createObjectURL(new Blob([content], { type: "application/toml" }));
         const link = document.createElement("a");
         const slug = panel.name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")
@@ -444,9 +463,9 @@ export const InventoryProvider: ParentComponent = (properties) => {
         );
       }
     },
-    saveConfiguration: async () => {
+    saveConfig: async () => {
       await run(async () => {
-        await api.saveConfiguration();
+        await api.saveConfig();
       });
     },
     clipboard,

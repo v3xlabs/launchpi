@@ -12,17 +12,12 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use crate::{
-    models::{
-        action::{Action, ActionTrigger},
-        control::Control,
-        identifiers::{ControlId, IntegrationId, SurfaceId},
-        network_surface::{ServerEvent, SurfaceLogLevel},
-        panel::Panel,
-    },
+    bindings::action::{Action, ActionTrigger},
+    config::plugins::{export_document, InstanceFile, PluginDirectory},
+    events::ServerEvent,
+    identifiers::{ControlId, IntegrationId, SurfaceId},
+    panels::{control::Control, Panel},
     plugins::{
-        config::{export_document, InstanceFile, PluginDirectory},
-        feedback::FeedbackCache,
-        index::{DependencyIndex, RenderTarget},
         instance::{
             parse_instance_stem, InstanceConfig, InstanceDocument, InstanceIdentity,
             PluginInstance, PluginInstanceStatus, INSTANCE_DOCUMENT_VERSION,
@@ -30,9 +25,13 @@ use crate::{
         manifest::PluginManifest,
         plugin::{cancellation, CancelHandle, Plugin, PluginContext, PluginError},
         registry,
-        variables::{VariableRef, VariableStore, VariableValue},
     },
-    state::SurfaceRegistry,
+    rendering::{
+        feedback::FeedbackCache,
+        index::{DependencyIndex, RenderTarget},
+    },
+    surfaces::{logs::SurfaceLogLevel, registry::SurfaceRegistry},
+    variables::{VariableRef, VariableStore, VariableValue},
 };
 
 /// How long the engine waits after the first change before repainting, so a burst of variable
