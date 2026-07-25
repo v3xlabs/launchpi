@@ -9,8 +9,12 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     api::error::ApiError,
+    config::values::UserValue,
     identifiers::IntegrationId,
-    plugins::{instance::PluginInstance, manifest::PluginManifest},
+    plugins::{
+        instance::PluginInstance,
+        manifest::{ConfigField, PluginManifest},
+    },
     state::AppState,
     variables::{VariableRef, VariableValue},
 };
@@ -33,6 +37,92 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/devices/:surface_id/config", get(export_device))
         .route("/api/config/export", get(export_configuration))
+        .route("/api/values", get(list_all_values).post(upsert_user_value))
+        .route(
+            "/api/values/:name",
+            axum::routing::delete(delete_user_value),
+        )
+}
+
+/// Everything the daemon currently knows, from every source, plus the catalogue of what can be
+/// done with it. One request backs the whole Values page.
+#[derive(Serialize)]
+struct ValueCatalogue {
+    values: Vec<VariableEntry>,
+    user_values: Vec<UserValue>,
+    actions: Vec<AvailableAction>,
+}
+
+#[derive(Serialize)]
+struct AvailableAction {
+    integration_id: IntegrationId,
+    instance_name: String,
+    name: String,
+    label: String,
+    description: Option<String>,
+    parameters: Vec<ConfigField>,
+}
+
+async fn list_all_values(State(state): State<AppState>) -> Json<ValueCatalogue> {
+    let manifests = state.plugins.manifests();
+    let actions = state
+        .plugins
+        .instances()
+        .into_iter()
+        .flat_map(|instance| {
+            let manifest = manifests
+                .iter()
+                .find(|manifest| manifest.plugin_type == instance.plugin_type);
+            manifest
+                .map(|manifest| manifest.actions.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .map(move |action| AvailableAction {
+                    integration_id: instance.integration_id.clone(),
+                    instance_name: instance.display_name.clone(),
+                    name: action.name,
+                    label: action.label,
+                    description: action.description,
+                    parameters: action.parameters,
+                })
+        })
+        .collect();
+
+    Json(ValueCatalogue {
+        values: state
+            .plugins
+            .variable_snapshot()
+            .into_iter()
+            .map(entry_of)
+            .collect(),
+        user_values: state.plugins.user_values(),
+        actions,
+    })
+}
+
+async fn upsert_user_value(
+    State(state): State<AppState>,
+    Json(value): Json<UserValue>,
+) -> Result<StatusCode, ApiError> {
+    state
+        .plugins
+        .set_user_value(value)
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(ApiError::bad_request)
+}
+
+async fn delete_user_value(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    state
+        .plugins
+        .remove_user_value(&name)
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(|reason| ApiError {
+            status: StatusCode::NOT_FOUND,
+            message: reason,
+        })
 }
 
 #[derive(Serialize)]

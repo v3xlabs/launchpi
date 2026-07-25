@@ -1,5 +1,9 @@
 import { Link } from "@tanstack/solid-router";
-import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/tb";
+import {
+  TbFillCirclePlus as TbPlus,
+  TbFillClipboard as TbCopy,
+  TbFillTrash as TbTrash,
+} from "solid-icons/tb";
 import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
@@ -9,16 +13,16 @@ import {
   ConfigField,
   fetchInstanceConfig,
   PluginInstance,
-  PluginManifest,
   statusLabel,
   statusReason,
   statusTone,
   variableReference,
   withoutUntouchedSecrets,
 } from "../api/plugins";
-import { ConfigFieldInput, TextField } from "../components/fields";
+import { ConfigFieldInput } from "../components/fields";
 import { StatusDot } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
+import { AddPluginDialog } from "../dialogs/AddPluginDialog";
 
 const InstanceRow: Component<{ instance: PluginInstance; }> = (properties) => {
   const store = useInventory();
@@ -27,22 +31,24 @@ const InstanceRow: Component<{ instance: PluginInstance; }> = (properties) => {
     <div class="row">
       <StatusDot status={statusTone(properties.instance.status)} />
       <div class="row-main">
-        <Link to="/plugins/$integrationId" params={{ integrationId: properties.instance.integration_id }}>
-          <p class="row-title">{properties.instance.display_name}</p>
-        </Link>
-        <p class="row-meta">
-          <span class="mono">{properties.instance.integration_id}</span>
-          <span class="meta-sep">-</span>
-          {statusLabel(properties.instance.status)}
-          <Show when={statusReason(properties.instance.status)}>
-            {reason => (
-              <>
-                <span class="meta-sep">-</span>
-                {reason()}
-              </>
-            )}
-          </Show>
-        </p>
+        <div class="min-w-0 flex-1">
+          <Link to="/plugins/$integrationId" params={{ integrationId: properties.instance.integration_id }}>
+            <p class="row-title">{properties.instance.display_name}</p>
+          </Link>
+          <p class="row-meta">
+            <span class="mono">{properties.instance.integration_id}</span>
+            <span class="meta-sep">-</span>
+            {statusLabel(properties.instance.status)}
+            <Show when={statusReason(properties.instance.status)}>
+              {reason => (
+                <>
+                  <span class="meta-sep">-</span>
+                  {reason()}
+                </>
+              )}
+            </Show>
+          </p>
+        </div>
       </div>
       <button
         type="button"
@@ -56,37 +62,6 @@ const InstanceRow: Component<{ instance: PluginInstance; }> = (properties) => {
         {properties.instance.is_enabled ? "Disable" : "Enable"}
       </button>
     </div>
-  );
-};
-
-const AddInstance: Component<{ manifest: PluginManifest; }> = (properties) => {
-  const store = useInventory();
-  const [name, setName] = createSignal("");
-  const submit = async (event: SubmitEvent): Promise<void> => {
-    event.preventDefault();
-
-    if (name().trim() === "") return;
-
-    const created = await store.createPluginInstance({
-      plugin_type: properties.manifest.plugin_type,
-      name: name().trim(),
-      display_name: null,
-      config: {},
-    });
-
-    if (created) setName("");
-  };
-
-  return (
-    <form class="flex items-end gap-2" onSubmit={event => void submit(event)}>
-      <TextField
-        label="Instance name"
-        value={name()}
-        placeholder="home"
-        onChange={setName}
-      />
-      <button type="submit" class="primary-button" disabled={store.isSaving()}>Add</button>
-    </form>
   );
 };
 
@@ -105,7 +80,17 @@ const PluginsOverview: Component = () => {
             .
           </p>
         </div>
-        <CopyConfigButton />
+        <div class="flex gap-2">
+          <AddPluginDialog
+            trigger={(
+              <button type="button" class="primary-button">
+                <TbPlus class="h-3.5 w-3.5" />
+                Add plugin
+              </button>
+            )}
+          />
+          <CopyConfigButton />
+        </div>
       </div>
 
       <div class="card">
@@ -137,20 +122,29 @@ const PluginsOverview: Component = () => {
               {manifest => (
                 <div class="row">
                   <div class="row-main">
-                    <p class="row-title">{manifest.display_name}</p>
-                    <p class="row-meta">{manifest.description}</p>
-                    <p class="row-meta">
-                      <span class="chip chip-muted">
-                        {manifest.actions.length}
-                        {" actions"}
-                      </span>
-                      <span class="chip chip-muted">
-                        {manifest.feedbacks.length}
-                        {" feedbacks"}
-                      </span>
-                    </p>
+                    <div class="min-w-0 flex-1">
+                      <p class="row-title">{manifest.display_name}</p>
+                      <p class="row-meta">{manifest.description}</p>
+                      <p class="row-meta">
+                        <span class="chip chip-muted">
+                          {manifest.actions.length}
+                          {" actions"}
+                        </span>
+                        <span class="chip chip-muted">
+                          {manifest.feedbacks.length}
+                          {" feedbacks"}
+                        </span>
+                      </p>
+                    </div>
                   </div>
-                  <AddInstance manifest={manifest} />
+                  <AddPluginDialog
+                    trigger={(
+                      <button type="button" class="secondary-button">
+                        <TbPlus class="h-3.5 w-3.5" />
+                        Add
+                      </button>
+                    )}
+                  />
                 </div>
               )}
             </For>

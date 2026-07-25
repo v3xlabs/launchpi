@@ -5,6 +5,7 @@ import { PanelsPage } from "./pages/PanelsPage";
 import { PluginsPage } from "./pages/PluginsPage";
 import { RootLayout } from "./pages/RootLayout";
 import { SupportedDevicesPage } from "./pages/SupportedDevicesPage";
+import { ValuesPage } from "./pages/ValuesPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -70,6 +71,12 @@ const pluginRoute = createRoute({
   },
 });
 
+const valuesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "values",
+  component: () => <ValuesPage />,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   devicesRoute,
@@ -79,6 +86,7 @@ const routeTree = rootRoute.addChildren([
   panelRoute,
   pluginsRoute,
   pluginRoute,
+  valuesRoute,
 ]);
 
 export const router = createRouter({ routeTree });

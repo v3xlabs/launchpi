@@ -1,10 +1,14 @@
 import { Link, useLocation } from "@tanstack/solid-router";
-import { TbFillExchange as TbRefresh } from "solid-icons/tb";
+import {
+  TbFillCirclePlus as TbPlus,
+  TbFillExchange as TbRefresh,
+} from "solid-icons/tb";
 import { Component, createMemo, For, Match, Show, Switch } from "solid-js";
 
 import { Device, deviceGridLayout, displayName, layoutLabel, Panel } from "../api/inventory";
 import { statusTone } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
+import { AddPluginDialog } from "../dialogs/AddPluginDialog";
 import { DeviceImage } from "./DeviceImage";
 import { PanelThumbnail } from "./PanelPreview";
 import { StatusDot } from "./StatusDot";
@@ -104,10 +108,24 @@ const PluginNav: Component = () => {
 
   return (
     <section class="nav">
-      <Link to="/plugins" class="nav-heading">
-        Plugins
-        <span class="chip chip-muted">{store.plugins().instances.length}</span>
-      </Link>
+      <div class="nav-heading-row">
+        <Link to="/plugins" class="nav-heading flex-1">
+          Plugins
+          <span class="chip chip-muted">{store.plugins().instances.length}</span>
+        </Link>
+        <AddPluginDialog
+          trigger={(
+            <button
+              type="button"
+              class="icon-button"
+              aria-label="Add a plugin"
+              title="Add a plugin"
+            >
+              <TbPlus class="h-4 w-4" />
+            </button>
+          )}
+        />
+      </div>
       <Show
         when={store.plugins().instances.length > 0}
         fallback={<p class="nav-empty">No plugins configured.</p>}
@@ -132,6 +150,64 @@ const PluginNav: Component = () => {
   );
 };
 
+const ValueNav: Component = () => {
+  const store = useInventory();
+  const sources = createMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const entry of store.values().values) {
+      counts.set(entry.integration_id, (counts.get(entry.integration_id) ?? 0) + 1);
+    }
+
+    return [...counts].map(([integrationId, count]) => ({ integrationId, count }));
+  });
+
+  return (
+    <section class="nav">
+      <Link to="/values" class="nav-heading">
+        Values
+        <span class="chip chip-muted">{store.values().values.length}</span>
+      </Link>
+      <Link to="/values" class="nav-item">
+        <span class="min-w-0 flex-1">
+          <span class="nav-item-title block">Your values</span>
+          <span class="nav-item-meta block">
+            {store.values().user_values.length}
+            {" "}
+            defined
+          </span>
+        </span>
+      </Link>
+      <Show when={sources().length > 0} fallback={<p class="nav-empty">Nothing published yet.</p>}>
+        <For each={sources()}>
+          {source => (
+            <Link to="/values" class="nav-item">
+              <span class="min-w-0 flex-1">
+                <span class="nav-item-title block mono">{source.integrationId}</span>
+                <span class="nav-item-meta block">
+                  {source.count}
+                  {" "}
+                  values
+                </span>
+              </span>
+            </Link>
+          )}
+        </For>
+      </Show>
+      <Link to="/values" class="nav-item">
+        <span class="min-w-0 flex-1">
+          <span class="nav-item-title block">Actions</span>
+          <span class="nav-item-meta block">
+            {store.values().actions.length}
+            {" "}
+            available
+          </span>
+        </span>
+      </Link>
+    </section>
+  );
+};
+
 export const ContextSidebar: Component = () => {
   const store = useInventory();
   const location = useLocation();
@@ -141,6 +217,8 @@ export const ContextSidebar: Component = () => {
     if (path.startsWith("/panels")) return "panels";
 
     if (path.startsWith("/plugins")) return "plugins";
+
+    if (path.startsWith("/values")) return "values";
 
     return "devices";
   };
@@ -163,6 +241,7 @@ export const ContextSidebar: Component = () => {
         <Switch fallback={<DeviceNav />}>
           <Match when={section() === "panels"}><PanelNav /></Match>
           <Match when={section() === "plugins"}><PluginNav /></Match>
+          <Match when={section() === "values"}><ValueNav /></Match>
         </Switch>
       </div>
     </aside>

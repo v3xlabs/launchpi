@@ -3,6 +3,7 @@ import {
   TbFillDeviceRemote as TbDeviceRemote,
   TbFillLayoutGrid as TbLayoutGrid,
   TbFillPuzzle as TbPuzzle,
+  TbFillTag as TbTag,
 } from "solid-icons/tb";
 import { Component } from "solid-js";
 
@@ -56,6 +57,14 @@ export const IconRail: Component = () => (
       title="Plugins"
     >
       <TbPuzzle class="h-5 w-5" />
+    </Link>
+    <Link
+      to="/values"
+      class="rail-item"
+      aria-label="Values"
+      title="Values"
+    >
+      <TbTag class="h-5 w-5" />
     </Link>
     <DaemonStatus />
   </nav>

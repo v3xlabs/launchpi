@@ -71,6 +71,7 @@ button, input, select, textarea { font: inherit; }
 
 /* Navigation */
 .nav { @apply flex flex-col gap-3 py-2; }
+.nav-heading-row { @apply flex items-center gap-1 pr-2; }
 .nav-heading { @apply flex items-center justify-between gap-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-neutral-500 no-underline transition hover:text-neutral-300; }
 .nav-heading[data-status="active"] { @apply text-neutral-200; }
 .nav-item { @apply flex min-w-0 items-center gap-2 px-3 py-1.5 text-neutral-400 no-underline transition hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400; }

@@ -21,6 +21,10 @@ export type PluginStore = {
   variables: Record<string, string>;
   setVariable: (integrationId: string, name: string, rendered: string) => void;
   copyToClipboard: (load: () => Promise<string>) => Promise<boolean>;
+  values: Accessor<pluginApi.ValueCatalogue>;
+  refreshValues: () => Promise<void>;
+  saveUserValue: (value: pluginApi.UserValue) => Promise<boolean>;
+  removeUserValue: (name: string) => Promise<boolean>;
 };
 
 /**
@@ -32,11 +36,22 @@ export const createPluginStore = (
   setError: (message: string | null) => void,
 ): PluginStore => {
   const [catalogue, setCatalogue] = createSignal<pluginApi.PluginCatalogue>(pluginApi.emptyCatalogue);
+  const [values, setValues] = createSignal<pluginApi.ValueCatalogue>(pluginApi.emptyValueCatalogue);
   const [variables, setVariables] = createStore<Record<string, string>>({});
+
+  const refreshValues = async (): Promise<void> => {
+    try {
+      setValues(await pluginApi.fetchValues());
+    }
+    catch (valuesError) {
+      setError(valuesError instanceof Error ? valuesError.message : "Unable to load values.");
+    }
+  };
 
   const refreshPlugins = async (): Promise<void> => {
     try {
       setCatalogue(await pluginApi.fetchPlugins());
+      await refreshValues();
     }
     catch (pluginError) {
       setError(pluginError instanceof Error ? pluginError.message : "Unable to load plugins.");
@@ -78,6 +93,16 @@ export const createPluginStore = (
     variables,
     setVariable: (integrationId, name, rendered) =>
       setVariables(`${integrationId}:${name}`, rendered),
+    values,
+    refreshValues,
+    saveUserValue: value =>
+      runPlugin(async () => {
+        await pluginApi.upsertUserValue(value);
+      }),
+    removeUserValue: name =>
+      runPlugin(async () => {
+        await pluginApi.deleteUserValue(name);
+      }),
     copyToClipboard: async (load) => {
       try {
         await navigator.clipboard.writeText(await load());

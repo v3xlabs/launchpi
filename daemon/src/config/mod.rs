@@ -4,6 +4,7 @@ pub mod plugins;
 pub mod runtime;
 pub mod secret;
 pub mod store;
+pub mod values;
 
 use std::{
     env, fs,

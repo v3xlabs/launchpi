@@ -181,6 +181,76 @@ export const fetchVariables = async (integrationId: string): Promise<VariableEnt
   return data;
 };
 
+export type UserValue = { name: string; value: unknown; description: string | null; };
+export type AvailableAction = {
+  integration_id: string;
+  instance_name: string;
+  name: string;
+  label: string;
+  description: string | null;
+  parameters: ConfigField[];
+};
+export type ValueCatalogue = {
+  values: VariableEntry[];
+  user_values: UserValue[];
+  actions: AvailableAction[];
+};
+
+export const emptyValueCatalogue: ValueCatalogue = { values: [], user_values: [], actions: [] };
+
+const isUserValue = (value: unknown): value is UserValue =>
+  isRecord(value) && isString(value.name);
+const isAvailableAction = (value: unknown): value is AvailableAction =>
+  isRecord(value)
+  && isString(value.integration_id)
+  && isString(value.name)
+  && isString(value.label)
+  && Array.isArray(value.parameters)
+  && value.parameters.every(isConfigField);
+
+export const fetchValues = async (): Promise<ValueCatalogue> => {
+  const response = await fetch("/api/values");
+
+  if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+
+  const data: unknown = await response.json();
+
+  if (
+    !isRecord(data)
+    || !Array.isArray(data.values)
+    || !data.values.every(isVariableEntry)
+    || !Array.isArray(data.user_values)
+    || !data.user_values.every(isUserValue)
+    || !Array.isArray(data.actions)
+    || !data.actions.every(isAvailableAction)
+  ) {
+    throw new Error("The daemon returned an invalid value catalogue.");
+  }
+
+  return { values: data.values, user_values: data.user_values, actions: data.actions };
+};
+
+export const upsertUserValue = (value: UserValue): Promise<Response> =>
+  request("/api/values", "POST", value);
+export const deleteUserValue = (name: string): Promise<Response> =>
+  request(`/api/values/${encodeURIComponent(name)}`, "DELETE");
+
+/**
+ * TOML distinguishes a number from the string "1", and a value typed into a text box arrives as a
+ * string either way. Guessing from the shape is what lets a user write `12` and get a number.
+ */
+export const parseUserValue = (raw: string): unknown => {
+  const trimmed = raw.trim();
+
+  if (trimmed === "true") return true;
+
+  if (trimmed === "false") return false;
+
+  if (trimmed !== "" && !Number.isNaN(Number(trimmed))) return Number(trimmed);
+
+  return raw;
+};
+
 export type CreateInstanceInput = {
   plugin_type: string;
   name: string;

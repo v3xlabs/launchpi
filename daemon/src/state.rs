@@ -21,7 +21,8 @@ impl AppState {
             panels.push(default_panel());
         }
         let surfaces = Arc::new(SurfaceRegistry::from_configuration(devices, panels));
-        let directory = PluginDirectory::open(&crate::config::config_directory()?)?;
+        let config_directory = crate::config::config_directory()?;
+        let directory = PluginDirectory::open(&config_directory)?;
         let input = surfaces
             .take_input_receiver()
             .expect("the input receiver has not been taken yet");
@@ -30,6 +31,7 @@ impl AppState {
             surfaces.variables(),
             surfaces.feedbacks(),
             directory,
+            config_directory.join("values.toml"),
             input,
         )
         .await;

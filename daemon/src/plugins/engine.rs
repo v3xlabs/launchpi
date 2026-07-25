@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
@@ -13,7 +14,10 @@ use tracing::{debug, info, warn};
 
 use crate::{
     bindings::action::{Action, ActionTrigger},
-    config::plugins::{export_document, InstanceFile, PluginDirectory},
+    config::{
+        plugins::{export_document, InstanceFile, PluginDirectory},
+        values::{self, UserValue},
+    },
     events::ServerEvent,
     identifiers::{ControlId, IntegrationId, SurfaceId},
     panels::{control::Control, Panel},
@@ -100,6 +104,7 @@ pub struct PluginEngine {
     variables: Arc<VariableStore>,
     feedbacks: Arc<FeedbackCache>,
     directory: PluginDirectory,
+    values_path: PathBuf,
     http: reqwest::Client,
     instances: RwLock<HashMap<IntegrationId, RunningInstance>>,
     index: RwLock<DependencyIndex>,
@@ -115,6 +120,7 @@ impl PluginEngine {
         variables: Arc<VariableStore>,
         feedbacks: Arc<FeedbackCache>,
         directory: PluginDirectory,
+        values_path: PathBuf,
         input: mpsc::Receiver<InputEvent>,
     ) -> Arc<Self> {
         let (signals, signal_receiver) = mpsc::channel(SIGNAL_QUEUE_SIZE);
@@ -123,6 +129,7 @@ impl PluginEngine {
             variables,
             feedbacks,
             directory,
+            values_path,
             http: reqwest::Client::new(),
             instances: RwLock::default(),
             index: RwLock::default(),
@@ -132,6 +139,7 @@ impl PluginEngine {
             hold_timers: Mutex::default(),
         });
 
+        engine.load_user_values();
         engine.load_instances().await;
         engine.rebuild_index().await;
 
@@ -164,6 +172,67 @@ impl PluginEngine {
 
     pub fn variable_snapshot(&self) -> Vec<(VariableRef, VariableValue)> {
         self.variables.snapshot()
+    }
+
+    /// Seeds the `user` namespace from `values.toml`. A user value is the one kind worth
+    /// persisting; everything else is re-derived from its source when an instance starts.
+    fn load_user_values(&self) {
+        match values::load(&self.values_path) {
+            Ok(values) => {
+                for value in values {
+                    self.variables
+                        .set(VariableRef::user(&value.name), value.as_variable());
+                }
+            }
+            Err(error) => warn!(%error, "unable to read user values"),
+        }
+    }
+
+    pub fn user_values(&self) -> Vec<UserValue> {
+        values::load(&self.values_path).unwrap_or_default()
+    }
+
+    pub fn set_user_value(&self, value: UserValue) -> Result<(), String> {
+        if value.name.trim().is_empty() {
+            return Err("a value needs a name".to_string());
+        }
+        let mut values = self.user_values();
+        match values
+            .iter_mut()
+            .find(|existing| existing.name == value.name)
+        {
+            Some(existing) => *existing = value.clone(),
+            None => values.push(value.clone()),
+        }
+        values.sort_by(|left, right| left.name.cmp(&right.name));
+        values::save(&self.values_path, values).map_err(|error| error.to_string())?;
+        self.publish_user_value(&value.name, value.as_variable());
+        Ok(())
+    }
+
+    pub fn remove_user_value(&self, name: &str) -> Result<(), String> {
+        let mut values = self.user_values();
+        let before = values.len();
+        values.retain(|existing| existing.name != name);
+        if values.len() == before {
+            return Err(format!("{name} was not found"));
+        }
+        values::save(&self.values_path, values).map_err(|error| error.to_string())?;
+        let reference = VariableRef::user(name);
+        self.variables.clear_one(&reference);
+        let targets = self.index.read().unwrap().targets_for_variable(&reference);
+        self.mark_dirty(targets);
+        self.surfaces.emit_event(ServerEvent::Changed);
+        Ok(())
+    }
+
+    fn publish_user_value(&self, name: &str, value: VariableValue) {
+        let reference = VariableRef::user(name);
+        if self.variables.set(reference.clone(), value) {
+            let targets = self.index.read().unwrap().targets_for_variable(&reference);
+            self.mark_dirty(targets);
+        }
+        self.surfaces.emit_event(ServerEvent::Changed);
     }
 
     pub fn export_instance(
