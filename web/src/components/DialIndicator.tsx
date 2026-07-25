@@ -1,10 +1,10 @@
-import { Component } from 'solid-js';
+import { Component } from "solid-js";
 
-import { RgbaColor } from '../api/inventory';
-import { toHex } from '../utils/rendered';
+import { RgbaColor } from "../api/inventory";
+import { toHex } from "../utils/rendered";
 
-const unsetColor = '#262626';
-const trackColor = '#262626';
+const unsetColor = "#262626";
+const trackColor = "#262626";
 
 // The Studio ring is 24 discrete LED segments, lit from the bottom of the circle clockwise.
 const ringSegments = 24;
@@ -19,44 +19,46 @@ export const litRingSegments = (level: number): number => Math.floor((level * ri
 export const totalRingSegments = ringSegments;
 
 const ringBackground = (color: string, level: number): string => {
-    const lit = litRingSegments(level);
-    const stops = Array.from({ length: ringSegments }, (_, index) => {
-        const start = index * segmentAngle;
-        const litStart = start + segmentGapAngle / 2;
-        const litEnd = start + segmentAngle - segmentGapAngle / 2;
-        const fill = index < lit ? color : trackColor;
-        return [
-            `transparent ${start}deg ${litStart}deg`,
-            `${fill} ${litStart}deg ${litEnd}deg`,
-            `transparent ${litEnd}deg ${start + segmentAngle}deg`,
-        ].join(', ');
-    });
-    return `conic-gradient(from ${ringStartAngle}deg, ${stops.join(', ')})`;
+  const lit = litRingSegments(level);
+  const stops = Array.from({ length: ringSegments }, (_, index) => {
+    const start = index * segmentAngle;
+    const litStart = start + segmentGapAngle / 2;
+    const litEnd = start + segmentAngle - segmentGapAngle / 2;
+    const fill = index < lit ? color : trackColor;
+
+    return [
+      `transparent ${start}deg ${litStart}deg`,
+      `${fill} ${litStart}deg ${litEnd}deg`,
+      `transparent ${litEnd}deg ${start + segmentAngle}deg`,
+    ].join(", ");
+  });
+
+  return `conic-gradient(from ${ringStartAngle}deg, ${stops.join(", ")})`;
 };
 
-type DialIndicatorProps = {
-    index: number;
-    color: RgbaColor | null;
-    level: number;
-    isPressed?: boolean;
+type DialIndicatorProperties = {
+  index: number;
+  color: RgbaColor | null;
+  level: number;
+  isPressed?: boolean;
 };
 
 // A picture of the hardware, nothing else: the knob takes the dial colour and the ring lights up
 // to the level. Any readout belongs next to the editor, not on the surface preview.
-export const DialIndicator: Component<DialIndicatorProps> = (props) => {
-    const hex = () => toHex(props.color, unsetColor);
-    const level = () => Math.min(100, Math.max(0, Math.round(props.level)));
+export const DialIndicator: Component<DialIndicatorProperties> = (properties) => {
+  const hex = () => toHex(properties.color, unsetColor);
+  const level = () => Math.min(100, Math.max(0, Math.round(properties.level)));
 
-    return (
-        <div
-            class="dial-ring"
-            data-pressed={props.isPressed === true}
-            style={{ background: ringBackground(hex(), level()), '--dial-color': hex() }}
-            title={`Dial ${props.index + 1} · ${level()}% · ${litRingSegments(level())}/${ringSegments} segments · ${
-                props.color === null ? 'no colour' : hex()
-            }${props.isPressed === true ? ' · pressed' : ''}`}
-        >
-            <div class="dial-hub" />
-        </div>
-    );
+  return (
+    <div
+      class="dial-ring"
+      data-pressed={properties.isPressed === true}
+      style={{ "background": ringBackground(hex(), level()), "--dial-color": hex() }}
+      title={`Dial ${properties.index + 1} · ${level()}% · ${litRingSegments(level())}/${ringSegments} segments · ${
+        properties.color === null ? "no colour" : hex()
+      }${properties.isPressed === true ? " · pressed" : ""}`}
+    >
+      <div class="dial-hub" />
+    </div>
+  );
 };

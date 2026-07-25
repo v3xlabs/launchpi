@@ -1,3 +1,6 @@
 allowBuilds:
   esbuild: false
-  
+  unrs-resolver: false
+minimumReleaseAgeExclude:
+  - eslint-plugin-v3xlabs@1.8.0
+  - eslint@10.8.0

@@ -1,69 +1,71 @@
-import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/solid-router';
+import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/solid-router";
 
-import { DevicesPage } from './pages/DevicesPage';
-import { PanelsPage } from './pages/PanelsPage';
-import { RootLayout } from './pages/RootLayout';
-import { SupportedDevicesPage } from './pages/SupportedDevicesPage';
+import { DevicesPage } from "./pages/DevicesPage";
+import { PanelsPage } from "./pages/PanelsPage";
+import { RootLayout } from "./pages/RootLayout";
+import { SupportedDevicesPage } from "./pages/SupportedDevicesPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
 const indexRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/',
-    beforeLoad: () => {
-        throw redirect({ to: '/devices' });
-    },
+  getParentRoute: () => rootRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/devices" });
+  },
 });
 
 const devicesRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: 'devices',
-    component: () => <DevicesPage />,
+  getParentRoute: () => rootRoute,
+  path: "devices",
+  component: () => <DevicesPage />,
 });
 
 const supportedDevicesRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: 'devices/supported',
-    component: () => <SupportedDevicesPage />,
+  getParentRoute: () => rootRoute,
+  path: "devices/supported",
+  component: () => <SupportedDevicesPage />,
 });
 
 const deviceRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: 'devices/$surfaceId',
-    component: () => {
-        const params = deviceRoute.useParams();
-        return <DevicesPage surfaceId={params().surfaceId} />;
-    },
+  getParentRoute: () => rootRoute,
+  path: "devices/$surfaceId",
+  component: () => {
+    const parameters = deviceRoute.useParams();
+
+    return <DevicesPage surfaceId={parameters().surfaceId} />;
+  },
 });
 
 const panelsRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: 'panels',
-    component: () => <PanelsPage />,
+  getParentRoute: () => rootRoute,
+  path: "panels",
+  component: () => <PanelsPage />,
 });
 
 const panelRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: 'panels/$panelId',
-    component: () => {
-        const params = panelRoute.useParams();
-        return <PanelsPage panelId={params().panelId} />;
-    },
+  getParentRoute: () => rootRoute,
+  path: "panels/$panelId",
+  component: () => {
+    const parameters = panelRoute.useParams();
+
+    return <PanelsPage panelId={parameters().panelId} />;
+  },
 });
 
 const routeTree = rootRoute.addChildren([
-    indexRoute,
-    devicesRoute,
-    supportedDevicesRoute,
-    deviceRoute,
-    panelsRoute,
-    panelRoute,
+  indexRoute,
+  devicesRoute,
+  supportedDevicesRoute,
+  deviceRoute,
+  panelsRoute,
+  panelRoute,
 ]);
 
 export const router = createRouter({ routeTree });
 
-declare module '@tanstack/solid-router' {
-    interface Register {
-        router: typeof router;
-    }
+declare module "@tanstack/solid-router" {
+  interface Register {
+    router: typeof router;
+  }
 }
