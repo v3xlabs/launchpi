@@ -273,9 +273,10 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
   );
 };
 
+const pad = (value: number, length = 2) => String(value).padStart(length, "0");
+
 const logTime = (atMs: number): string => {
   const at = new Date(atMs);
-  const pad = (value: number, length = 2) => String(value).padStart(length, "0");
 
   return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}.${pad(
     at.getMilliseconds(),
@@ -297,9 +298,10 @@ const DeviceLog: Component<{ surfaceId: string; }> = (properties) => {
 
   // Tails like a terminal: follow new lines unless the reader has scrolled up to look at something.
   createEffect(() => {
-    entries().length;
+    const lineCount = entries().length;
 
-    if (isPinned() && container !== undefined) container.scrollTop = container.scrollHeight;
+    if (container !== undefined && lineCount > 0 && isPinned())
+      container.scrollTop = container.scrollHeight;
   });
 
   return (
@@ -309,7 +311,7 @@ const DeviceLog: Component<{ surfaceId: string; }> = (properties) => {
         <span class="chip chip-muted">{entries().length}</span>
       </div>
       <Show when={entries().length > 0} fallback={<p class="empty">No events yet.</p>}>
-        <div class="log" ref={container} onScroll={onScroll}>
+        <div class="log" ref={element => (container = element)} onScroll={onScroll}>
           <For each={entries()}>
             {entry => (
               <div class="log-row" data-level={entry.level}>

@@ -1,59 +1,59 @@
-import { Link, useNavigate } from '@tanstack/solid-router';
+import { Link, useNavigate } from "@tanstack/solid-router";
 import {
-    TbFillCircleCheck as TbCheck,
-    TbFillClipboard as TbCopy,
-    TbFillFileDownload as TbDownload,
-    TbFillTrash as TbTrash,
-} from 'solid-icons/tb';
-import { Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
-import { createStore, produce } from 'solid-js/store';
+  TbFillCircleCheck as TbCheck,
+  TbFillClipboard as TbCopy,
+  TbFillFileDownload as TbDownload,
+  TbFillTrash as TbTrash,
+} from "solid-icons/tb";
+import { Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createStore, produce } from "solid-js/store";
 
 import {
-    Control,
-    Device,
-    displayName,
-    layoutLabel,
-    Panel,
-    panelDialCount,
-    RgbaColor,
-    studioDialCount,
-} from '../api/inventory';
-import { PanelInspector, PanelSelection } from '../components/PanelInspector';
-import { PanelStage, PanelThumbnail } from '../components/PanelPreview';
-import { StatusDot } from '../components/StatusDot';
-import { ControlClipboard, useInventory } from '../context/InventoryContext';
-import { CreatePanelDialog } from '../dialogs/CreatePanelDialog';
-import { DeletePanelDialog } from '../dialogs/DeletePanelDialog';
-import { newState } from '../utils/rendered';
+  Control,
+  Device,
+  displayName,
+  layoutLabel,
+  Panel,
+  panelDialCount,
+  RgbaColor,
+  studioDialCount,
+} from "../api/inventory";
+import { PanelInspector, PanelSelection } from "../components/PanelInspector";
+import { PanelStage, PanelThumbnail } from "../components/PanelPreview";
+import { StatusDot } from "../components/StatusDot";
+import { ControlClipboard, useInventory } from "../context/InventoryContext";
+import { CreatePanelDialog } from "../dialogs/CreatePanelDialog";
+import { DeletePanelDialog } from "../dialogs/DeletePanelDialog";
+import { newState } from "../utils/rendered";
 
-const cloneState = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const cloneState = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-const padded = <T>(values: T[], length: number, fallback: T): T[] =>
+const padded = <T,>(values: T[], length: number, fallback: T): T[] =>
   Array.from({ length }, (_, index) => values[index] ?? fallback);
 
 const defaultDialColor: RgbaColor = { red: 30, green: 41, blue: 59, alpha: 255 };
 
 export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
-    const store = useInventory();
-    const navigate = useNavigate();
-    const [draft, setDraft] = createStore<{ panel: Panel | null; dirty: boolean }>({
-        panel: null,
-        dirty: false,
-    });
-    const [selection, setSelection] = createSignal<PanelSelection | null>(null);
+  const store = useInventory();
+  const navigate = useNavigate();
+  const [draft, setDraft] = createStore<{ panel: Panel | null; dirty: boolean; }>({
+    panel: null,
+    dirty: false,
+  });
+  const [selection, setSelection] = createSignal<PanelSelection | null>(null);
 
-    const serverPanel = createMemo(
-        () => store.inventory().panels.find((panel) => panel.panel_id === properties.panelId) ?? null,
-    );
-    const pressedKeys = createMemo(() => store.pressedKeysForPanel(properties.panelId ?? ''));
-    const dialLevels = createMemo(() => store.dialLevelsForPanel(properties.panelId ?? ''));
-    const pressedDials = createMemo(() => store.pressedDialsForPanel(properties.panelId ?? ''));
-    const assignedDevices = createMemo(() =>
-        store.inventory().devices.filter((device) => device.active_panel_id === properties.panelId),
-    );
+  const serverPanel = createMemo(
+    () => store.inventory().panels.find(panel => panel.panel_id === properties.panelId) ?? null,
+  );
+  const pressedKeys = createMemo(() => store.pressedKeysForPanel(properties.panelId ?? ""));
+  const dialLevels = createMemo(() => store.dialLevelsForPanel(properties.panelId ?? ""));
+  const pressedDials = createMemo(() => store.pressedDialsForPanel(properties.panelId ?? ""));
+  const assignedDevices = createMemo(() =>
+    store.inventory().devices.filter(device => device.active_panel_id === properties.panelId),
+  );
 
-    createEffect(() => {
-        const panelId = properties.panelId;
+  createEffect(() => {
+    const panelId = properties.panelId;
     const server = serverPanel();
 
     if (draft.panel?.panel_id !== panelId) {
@@ -82,7 +82,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
 
   const mutatePanel = (mutate: (panel: Panel) => void) => {
     setDraft(
-      'panel',
+      "panel",
       produce((panel) => {
         if (panel) mutate(panel);
       }),
@@ -152,7 +152,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     for (let row = 0; row < panel.layout.rows; row += 1) {
       for (let column = 0; column < panel.layout.columns; column += 1) {
         const occupied = panel.controls.some(
-          (control) => control.position.column === column && control.position.row === row,
+          control => control.position.column === column && control.position.row === row,
         );
 
         if (!occupied) return { column, row };
@@ -238,16 +238,20 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                 <div class="meta-line">
                   <span>
                     {panel().controls.length}
-{' '}
-of{" "}
+                    {" "}
+                    of
+                    {" "}
                     {panel().layout.columns * panel().layout.rows}
-{' '}
-keys assigned
-</span>
+                    {" "}
+                    keys assigned
+                  </span>
                   <Show when={panelDialCount(panel()) > 0}>
                     <span class="meta-sep">·</span>
                     <span>
-{panelDialCount(panel())} dials</span>
+                      {panelDialCount(panel())}
+                      {" "}
+                      dials
+                    </span>
                   </Show>
                   <Show when={draft.dirty}>
                     <span class="meta-sep">·</span>
@@ -262,8 +266,8 @@ keys assigned
                   onClick={() => void store.exportPanel(panel())}
                 >
                   <TbDownload class="h-3.5 w-3.5" />
-                                  Export TOML
-                                </button>
+                  Export TOML
+                </button>
                 <button
                   type="button"
                   class="primary-button"
@@ -277,15 +281,15 @@ keys assigned
                   panel={panel()}
                   onDeleted={() => navigate({ to: "/panels" })}
                   trigger={(
-                                        <button
-                                            type="button"
-                                            class="danger-button"
-                                            aria-label={`Delete ${panel().name}`}
-                                            title="Delete panel"
-                                        >
-                                            <TbTrash class="h-4 w-4" />
-                                        </button>
-                                      )}
+                    <button
+                      type="button"
+                      class="danger-button"
+                      aria-label={`Delete ${panel().name}`}
+                      title="Delete panel"
+                    >
+                      <TbTrash class="h-4 w-4" />
+                    </button>
+                  )}
                 />
               </div>
             </div>
@@ -295,18 +299,20 @@ keys assigned
                 <div class="clipboard-banner">
                   <TbCopy class="h-3.5 w-3.5 shrink-0" />
                   <span class="min-w-0 flex-1 truncate">
-                                      Copied <strong>{clip().name}</strong>
-{' '}
-— click an empty key to paste, Esc to
-                                        clear.
-</span>
+                    Copied
+                    {" "}
+                    <strong>{clip().name}</strong>
+                    {" "}
+                    — click an empty key to paste, Esc to
+                    clear.
+                  </span>
                   <button
                     type="button"
                     class="link-button"
                     onClick={() => store.clearClipboard()}
                   >
-                                      Clear
-                                    </button>
+                    Clear
+                  </button>
                 </div>
               )}
             </Show>
@@ -318,8 +324,9 @@ keys assigned
                     <p class="card-title">Surface</p>
                     <span class="chip chip-muted">
                       {panel().layout.columns}
-{' '}
-×{panel().layout.rows}
+                      {" "}
+                      ×
+                      {panel().layout.rows}
                     </span>
                   </div>
                   <PanelStage
@@ -369,58 +376,63 @@ keys assigned
   );
 };
 
-const AssignedDeviceRow: Component<{ device: Device; }> = props => (
+const AssignedDeviceRow: Component<{ device: Device; }> = properties => (
   <Link
     to="/devices/$surfaceId"
-    params={{ surfaceId: props.device.surface_id }}
+    params={{ surfaceId: properties.device.surface_id }}
     class="row row-main no-underline"
   >
-    <StatusDot status={props.device.status} />
+    <StatusDot status={properties.device.status} />
     <span class="min-w-0 flex-1">
-      <span class="row-title block">{displayName(props.device.name)}</span>
+      <span class="row-title block">{displayName(properties.device.name)}</span>
       <span class="row-meta block">
-        {props.device.model}
-{' '}
-·{props.device.host}
+        {properties.device.model}
+        {" "}
+        ·
+        {properties.device.host}
       </span>
     </span>
   </Link>
 );
 
 const PanelCard: Component<{ panel: Panel; }> = (properties) => {
-    const store = useInventory();
-    const pressedKeys = createMemo(() => store.pressedKeysForPanel(properties.panel.panel_id));
-    const dialLevels = createMemo(() => store.dialLevelsForPanel(properties.panel.panel_id));
-    const pressedDials = createMemo(() => store.pressedDialsForPanel(properties.panel.panel_id));
-    const assignedCount = () =>
-        store.inventory().devices.filter((device) => device.active_panel_id === properties.panel.panel_id).length;
+  const store = useInventory();
+  const pressedKeys = createMemo(() => store.pressedKeysForPanel(properties.panel.panel_id));
+  const dialLevels = createMemo(() => store.dialLevelsForPanel(properties.panel.panel_id));
+  const pressedDials = createMemo(() => store.pressedDialsForPanel(properties.panel.panel_id));
+  const assignedCount = () =>
+    store.inventory().devices.filter(device => device.active_panel_id === properties.panel.panel_id).length;
 
-    return (
-        <Link
-            to="/panels/$panelId"
-            params={{ panelId: properties.panel.panel_id }}
-            class="card no-underline transition hover:border-neutral-700"
-        >
-            <div class="card-head">
-                <p class="row-title">{properties.panel.name}</p>
-                <span class="chip">{layoutLabel(properties.panel.layout)}</span>
-            </div>
-            <PanelThumbnail
-                panel={properties.panel}
-                pressedKeys={pressedKeys()}
-                dialLevels={dialLevels()}
-                pressedDials={pressedDials()}
-            />
-            <div class="flex items-center justify-between gap-3 border-t border-neutral-800 px-3 py-2 text-xs text-neutral-500">
-                <span>{properties.panel.controls.length}
-{' '}
-controls
-</span>
+  return (
+    <Link
+      to="/panels/$panelId"
+      params={{ panelId: properties.panel.panel_id }}
+      class="card no-underline transition hover:border-neutral-700"
+    >
+      <div class="card-head">
+        <p class="row-title">{properties.panel.name}</p>
+        <span class="chip">{layoutLabel(properties.panel.layout)}</span>
+      </div>
+      <PanelThumbnail
+        panel={properties.panel}
+        pressedKeys={pressedKeys()}
+        dialLevels={dialLevels()}
+        pressedDials={pressedDials()}
+      />
+      <div class="flex items-center justify-between gap-3 border-t border-neutral-800 px-3 py-2 text-xs text-neutral-500">
+        <span>
+          {properties.panel.controls.length}
+          {" "}
+          controls
+        </span>
         <Show when={assignedCount() > 0} fallback={<span>Unassigned</span>}>
           <span class="text-neutral-400">
-                      On {assignedCount()}
-{' '}
-device{assignedCount() === 1 ? "" : "s"}
+            On
+            {" "}
+            {assignedCount()}
+            {" "}
+            device
+            {assignedCount() === 1 ? "" : "s"}
           </span>
         </Show>
       </div>
@@ -437,24 +449,24 @@ const PanelsOverview: Component = () => {
         <div>
           <h1 class="page-title">Panels</h1>
           <p class="page-subtitle">
-                      Reusable key layouts. A panel runs on any device with a matching grid and capabilities.
-                    </p>
+            Reusable key layouts. A panel runs on any device with a matching grid and capabilities.
+          </p>
         </div>
         <CreatePanelDialog
           trigger={(
-                        <button type="button" class="primary-button">
-                            New panel
-                        </button>
-                      )}
+            <button type="button" class="primary-button">
+              New panel
+            </button>
+          )}
         />
       </div>
       <Show
         when={store.inventory().panels.length > 0}
         fallback={(
-                    <div class="card">
-                        <p class="empty">No panels yet. Create one to begin.</p>
-                    </div>
-                  )}
+          <div class="card">
+            <p class="empty">No panels yet. Create one to begin.</p>
+          </div>
+        )}
       >
         <div class="grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           <For each={store.inventory().panels}>{panel => <PanelCard panel={panel} />}</For>

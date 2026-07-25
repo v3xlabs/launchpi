@@ -114,7 +114,7 @@ export const emptyInventory: Inventory = {
   logs: [],
 };
 
-export const logLevels: LogLevel[] = ["input", "info", "warning"];
+const logLevels = new Set<string>(["input", "info", "warning"] satisfies LogLevel[]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -173,9 +173,9 @@ const isDevice = (value: unknown): value is Device =>
   && isCapabilities(value.capabilities)
   && isOptionalString(value.active_panel_id)
   && typeof value.is_enabled === "boolean"
-    && (value.parent_surface_id === undefined || isOptionalString(value.parent_surface_id))
-    && ["connecting", "connected", "unavailable", "disabled"].includes(String(value.status))
-    && isOptionalString(value.last_error);
+  && (value.parent_surface_id === undefined || isOptionalString(value.parent_surface_id))
+  && ["connecting", "connected", "unavailable", "disabled"].includes(String(value.status))
+  && isOptionalString(value.last_error);
 const isDiscoveredDevice = (value: unknown): value is DiscoveredDevice =>
   isRecord(value)
   && isString(value.discovery_id)
@@ -197,7 +197,7 @@ const isDialPress = (value: unknown): value is DialPress =>
   && isNumber(value.dial_index)
   && typeof value.is_pressed === "boolean";
 const isLogLevel = (value: unknown): value is LogLevel =>
-  isString(value) && logLevels.includes(value);
+  isString(value) && logLevels.has(value);
 
 export const isLogEntry = (value: unknown): value is LogEntry =>
   isRecord(value)
@@ -218,11 +218,11 @@ const isInventory = (value: unknown): value is Inventory =>
   && value.recent_key_events.every(isKeyEvent)
   && (value.key_states === undefined
     || (Array.isArray(value.key_states) && value.key_states.every(isKeyEvent)))
-    && (value.dial_states === undefined
-      || (Array.isArray(value.dial_states) && value.dial_states.every(isDialState)))
-    && (value.dial_presses === undefined
-      || (Array.isArray(value.dial_presses) && value.dial_presses.every(isDialPress)))
-    && (value.logs === undefined || (Array.isArray(value.logs) && value.logs.every(isLogEntry)));
+  && (value.dial_states === undefined
+    || (Array.isArray(value.dial_states) && value.dial_states.every(isDialState)))
+  && (value.dial_presses === undefined
+    || (Array.isArray(value.dial_presses) && value.dial_presses.every(isDialPress)))
+  && (value.logs === undefined || (Array.isArray(value.logs) && value.logs.every(isLogEntry)));
 
 export const deviceGridLayout = (value: unknown): GridLayout | null => {
   if (isGridLayout(value)) return value;

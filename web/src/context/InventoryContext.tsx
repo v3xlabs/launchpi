@@ -11,6 +11,7 @@ import {
 } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 
+import { asDialPressEvent, asDialStateEvent, asEventFrame, asKeyStateEvent } from "../api/events";
 import * as api from "../api/inventory";
 import {
   Control,
@@ -27,18 +28,6 @@ import {
 /** Mirrors the daemon's per-surface ring buffer, so the tail stays bounded on a long session. */
 const logCapacity = 400;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-type KeyStateEvent = { type: "key_state"; surface_id: string; key_index: number; is_pressed: boolean; };
-const asKeyStateEvent = (value: Record<string, unknown>): KeyStateEvent | null =>
-  (value.type === "key_state"
-    && typeof value.surface_id === "string"
-    && typeof value.key_index === "number"
-    && typeof value.is_pressed === "boolean"
-    ? { type: "key_state", surface_id: value.surface_id, key_index: value.key_index, is_pressed: value.is_pressed }
-    : null);
-
 const groupPressedKeys = (keyStates: KeyEvent[]): Record<string, number[]> => {
   const grouped: Record<string, number[]> = {};
 
@@ -50,34 +39,6 @@ const groupPressedKeys = (keyStates: KeyEvent[]): Record<string, number[]> => {
 
   return grouped;
 };
-
-type DialStateEvent = { type: "dial_state"; surface_id: string; dial_index: number; level: number; };
-const asDialStateEvent = (value: Record<string, unknown>): DialStateEvent | null =>
-  (value.type === "dial_state"
-    && typeof value.surface_id === "string"
-    && typeof value.dial_index === "number"
-    && typeof value.level === "number"
-    ? {
-        type: "dial_state",
-        surface_id: value.surface_id,
-        dial_index: value.dial_index,
-        level: value.level,
-      }
-    : null);
-
-type DialPressEvent = { type: "dial_press"; surface_id: string; dial_index: number; is_pressed: boolean; };
-const asDialPressEvent = (value: Record<string, unknown>): DialPressEvent | null =>
-  (value.type === "dial_press"
-    && typeof value.surface_id === "string"
-    && typeof value.dial_index === "number"
-    && typeof value.is_pressed === "boolean"
-    ? {
-        type: "dial_press",
-        surface_id: value.surface_id,
-        dial_index: value.dial_index,
-        is_pressed: value.is_pressed,
-      }
-    : null);
 
 const groupLogs = (logs: LogEntry[]): Record<string, LogEntry[]> => {
   const grouped: Record<string, LogEntry[]> = {};
@@ -292,16 +253,9 @@ export const InventoryProvider: ParentComponent = (properties) => {
     };
 
     const handleMessage = (raw: string) => {
-      let parsed: unknown;
+      const parsed = asEventFrame(raw);
 
-      try {
-        parsed = JSON.parse(raw);
-      }
-      catch {
-        return;
-      }
-
-      if (!isRecord(parsed)) return;
+      if (parsed === null) return;
 
       const keyState = asKeyStateEvent(parsed);
 
