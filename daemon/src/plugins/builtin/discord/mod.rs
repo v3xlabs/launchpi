@@ -310,6 +310,11 @@ fn handle_guild_create(plugin: &Arc<DiscordPlugin>, data: &JsonValue) {
             }
         }
     }
+    if let Some(members) = data.get("members").and_then(JsonValue::as_array) {
+        for member in members {
+            update_member(&mut state, member);
+        }
+    }
     if let Some(voice_states) = data.get("voice_states").and_then(JsonValue::as_array) {
         for voice_state in voice_states {
             update_state(&mut state, voice_state);
@@ -317,6 +322,8 @@ fn handle_guild_create(plugin: &Arc<DiscordPlugin>, data: &JsonValue) {
     }
     drop(state);
     publish(plugin);
+    let plugin = Arc::clone(plugin);
+    tokio::spawn(async move { hydrate_missing_members(plugin).await });
 }
 
 fn handle_voice_state_update(plugin: &Arc<DiscordPlugin>, data: &JsonValue) {
@@ -334,11 +341,7 @@ fn update_state(state: &mut DiscordState, data: &JsonValue) {
         return;
     };
     if let Some(member) = data.get("member") {
-        if let Some(user) = member.get("user") {
-            state
-                .users
-                .insert(user_id.to_string(), user_from_json(user_id, member, user));
-        }
+        update_member(state, member);
     }
     let channel_id = data
         .get("channel_id")
@@ -351,6 +354,81 @@ fn update_state(state: &mut DiscordState, data: &JsonValue) {
             .voice_states
             .insert(user_id.to_string(), VoiceState { channel_id });
     }
+}
+
+fn update_member(state: &mut DiscordState, member: &JsonValue) {
+    let Some(user) = member.get("user") else {
+        return;
+    };
+    let Some(user_id) = user.get("id").and_then(JsonValue::as_str) else {
+        return;
+    };
+    state
+        .users
+        .insert(user_id.to_string(), user_from_json(user_id, member, user));
+}
+
+async fn hydrate_missing_members(plugin: Arc<DiscordPlugin>) {
+    let missing_ids = {
+        let state = plugin.state.lock().unwrap();
+        let channel_id = selected_channel_id(&plugin.settings, &state);
+        state
+            .voice_states
+            .iter()
+            .filter(|(_, voice_state)| voice_state.channel_id == channel_id)
+            .filter_map(|(user_id, _)| {
+                (!state.users.contains_key(user_id)).then_some(user_id.clone())
+            })
+            .collect::<Vec<_>>()
+    };
+
+    for user_id in missing_ids {
+        let guild_id = plugin.settings.guild_id.as_deref().unwrap_or_default();
+        let response = match plugin
+            .context
+            .http
+            .get(format!(
+                "https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}"
+            ))
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bot {}", plugin.token),
+            )
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                response.json::<JsonValue>().await.ok()
+            }
+            _ => None,
+        };
+        if let Some(member) = response {
+            update_member_if_present(&plugin, &member, &user_id);
+        }
+    }
+    publish(&plugin);
+}
+
+fn update_member_if_present(plugin: &DiscordPlugin, member: &JsonValue, user_id: &str) {
+    let Some(user) = member.get("user") else {
+        return;
+    };
+    let mut state = plugin.state.lock().unwrap();
+    if state.voice_states.contains_key(user_id) {
+        state
+            .users
+            .insert(user_id.to_string(), user_from_json(user_id, member, user));
+    }
+}
+
+fn selected_channel_id(settings: &DiscordConfig, state: &DiscordState) -> Option<String> {
+    settings.channel_id.clone().or_else(|| {
+        settings
+            .user_id
+            .as_ref()
+            .and_then(|user_id| state.voice_states.get(user_id))
+            .and_then(|voice_state| voice_state.channel_id.clone())
+    })
 }
 
 fn user_from_json(id: &str, member: &JsonValue, user: &JsonValue) -> DiscordUser {
@@ -385,14 +463,7 @@ fn avatar_index(id: &str) -> u64 {
 fn publish(plugin: &Arc<DiscordPlugin>) {
     let generation = plugin.publish_generation.fetch_add(1, Ordering::Relaxed) + 1;
     let state = plugin.state.lock().unwrap();
-    let channel_id = plugin.settings.channel_id.clone().or_else(|| {
-        plugin
-            .settings
-            .user_id
-            .as_ref()
-            .and_then(|user_id| state.voice_states.get(user_id))
-            .and_then(|voice_state| voice_state.channel_id.clone())
-    });
+    let channel_id = selected_channel_id(&plugin.settings, &state);
     let mut members: Vec<_> = state
         .voice_states
         .iter()
