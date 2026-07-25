@@ -34,12 +34,35 @@ use crate::{
         },
         plugin::{Plugin, PluginContext, PluginError, PluginFactory, Subscription},
     },
+    variables::VariableValue,
     surfaces::logs::SurfaceLogLevel,
 };
 
 /// The value name whose presence on a panel is what turns position polling on. MPRIS never signals
 /// the elapsed time, so it is the one reading this plugin has to ask for.
 const POSITION_VALUE: &str = "position";
+const ART_URL_VALUE: &str = "art_url";
+const ART_VALUE: &str = "art";
+
+/// `file://` URLs arrive percent-encoded, and cover art lives in directories with spaces in them
+/// more often than not.
+fn percent_decoded(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' && at + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&value[at + 1..at + 3], 16) {
+                out.push(byte);
+                at += 3;
+                continue;
+            }
+        }
+        out.push(bytes[at]);
+        at += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
 
 pub const FACTORY: PluginFactory = PluginFactory {
     plugin_type: "mpris",
@@ -122,6 +145,8 @@ fn manifest() -> PluginManifest {
             VariableDefinition::new("title", VariableKind::Text),
             VariableDefinition::new("artist", VariableKind::Text),
             VariableDefinition::new("album", VariableKind::Text),
+            VariableDefinition::new("art", VariableKind::Image)
+                .description("The cover art itself, ready to show as a key background."),
             VariableDefinition::new("art_url", VariableKind::Text)
                 .description("Where the player says its cover art lives."),
             VariableDefinition::new("status", VariableKind::Text)
@@ -148,6 +173,8 @@ async fn start(
         context: context.clone(),
         watched: Mutex::new(Watched::new(settings.preferred_player.clone())),
         wants_position: AtomicBool::new(false),
+        wants_art: AtomicBool::new(false),
+        fetched_art: Arc::new(Mutex::new(String::new())),
     });
 
     tokio::spawn(watch(plugin.clone()));
@@ -194,6 +221,10 @@ struct MprisPlugin {
     context: PluginContext,
     watched: Mutex<Watched>,
     wants_position: AtomicBool,
+    wants_art: AtomicBool,
+    /// The art URL whose bytes are already stored, so a track that keeps its cover is fetched once
+    /// rather than on every property change.
+    fetched_art: Arc<Mutex<String>>,
 }
 
 /// Follows the bus for as long as the instance lives: property changes from every player, and the
@@ -477,10 +508,89 @@ impl MprisPlugin {
 
     fn publish(&self) {
         let values = self.watched.lock().unwrap().roster.published_values();
+        let mut art_url = String::new();
         for (name, value) in values {
+            if name == ART_URL_VALUE {
+                art_url = value.to_string();
+            }
             self.context.set_value(name, value);
         }
+        self.refresh_art(art_url);
     }
+
+    /// Fetched off the publish path: the render path never waits on a download, and the `art` value
+    /// only changes once the bytes are actually stored.
+    fn refresh_art(&self, url: String) {
+        if !self.wants_art.load(Ordering::Relaxed) {
+            return;
+        }
+        {
+            let mut fetched = self.fetched_art.lock().unwrap();
+            if *fetched == url {
+                return;
+            }
+            fetched.clone_from(&url);
+        }
+        if url.is_empty() {
+            self.context.set_value(ART_VALUE, VariableValue::Text(String::new()));
+            return;
+        }
+
+        let context = self.context.clone();
+        let fetched = self.fetched_art.clone();
+        tokio::spawn(async move {
+            match load_art(&context, &url).await {
+                Ok(bytes) => {
+                    if let Err(error) = context.set_image(ART_VALUE, &bytes) {
+                        context.log(
+                            SurfaceLogLevel::Warning,
+                            format!("could not store the cover art: {error}"),
+                        );
+                    }
+                }
+                Err(reason) => {
+                    // A missing cover is ordinary, so this stays a log line rather than an error
+                    // state, but the URL that failed is worth having. Clearing the record lets the
+                    // next announcement of the same track try again.
+                    context.log(
+                        SurfaceLogLevel::Warning,
+                        format!("could not load cover art from {url}: {reason}"),
+                    );
+                    fetched.lock().unwrap().clear();
+                }
+            }
+        });
+    }
+
+}
+
+/// Local players hand out `file://` URLs for cover art, which no HTTP client will fetch.
+async fn load_art(context: &PluginContext, url: &str) -> Result<Vec<u8>, String> {
+    {
+        if let Some(path) = url.strip_prefix("file://") {
+            let path = percent_decoded(path);
+            return tokio::fs::read(&path)
+                .await
+                .map_err(|error| format!("{path}: {error}"));
+        }
+        let response = context
+            .http
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("answered {}", response.status().as_u16()));
+        }
+        response
+            .bytes()
+            .await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|error| error.to_string())
+    }
+}
+
+impl MprisPlugin {
 
     fn warn(&self, message: String) {
         self.context.log(SurfaceLogLevel::Warning, message);
@@ -526,6 +636,12 @@ impl Plugin for MprisPlugin {
             .iter()
             .any(|subscription| subscription.name == POSITION_VALUE);
         self.wants_position.store(wants_position, Ordering::Relaxed);
+        self.wants_art.store(
+            subscriptions
+                .iter()
+                .any(|subscription| subscription.name == ART_VALUE),
+            Ordering::Relaxed,
+        );
         if wants_position {
             self.refresh_position(false).await;
         }

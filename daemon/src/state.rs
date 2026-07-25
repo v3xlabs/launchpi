@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
+    assets::AssetStore,
     config::{plugins::PluginDirectory, store::Persistence},
     identifiers::SurfaceId,
     plugins::engine::PluginEngine,
@@ -11,6 +12,7 @@ use crate::{
 pub struct AppState {
     pub surfaces: Arc<SurfaceRegistry>,
     pub plugins: Arc<PluginEngine>,
+    pub assets: Arc<AssetStore>,
     persistence: Arc<Persistence>,
 }
 
@@ -23,6 +25,8 @@ impl AppState {
         let surfaces = Arc::new(SurfaceRegistry::from_configuration(devices, panels));
         let config_directory = crate::config::config_directory()?;
         let directory = PluginDirectory::open(&config_directory)?;
+        let assets = Arc::new(AssetStore::open(crate::config::cache_directory()?)?);
+        let assets_for_engine = assets.clone();
         let input = surfaces
             .take_input_receiver()
             .expect("the input receiver has not been taken yet");
@@ -31,12 +35,14 @@ impl AppState {
             surfaces.variables(),
             directory,
             config_directory.join("values.toml"),
+            assets_for_engine,
             input,
         )
         .await;
         Ok(Self {
             surfaces,
             plugins,
+            assets,
             persistence: Arc::new(persistence),
         })
     }

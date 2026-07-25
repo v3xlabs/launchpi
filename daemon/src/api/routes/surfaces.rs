@@ -112,8 +112,11 @@ async fn list_panels(State(state): State<AppState>) -> Json<Vec<Panel>> {
     Json(state.surfaces.panels())
 }
 
-async fn render_key(Json(rendering): Json<KeyRendering>) -> Result<impl IntoResponse, ApiError> {
-    let image = studio::render_key(&rendering).map_err(|error| ApiError {
+async fn render_key(
+    State(state): State<AppState>,
+    Json(rendering): Json<KeyRendering>,
+) -> Result<impl IntoResponse, ApiError> {
+    let image = studio::render_key(&rendering, Some(state.assets.as_ref())).map_err(|error| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         message: error,
     })?;

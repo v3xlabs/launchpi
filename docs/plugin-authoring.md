@@ -355,6 +355,32 @@ refresh_token = { file = "/run/agenix/spotify-refresh" }
 | Feedbacks | `is_playing`, `device_is` |
 | Variables | `title`, `artist`, `album`, `art`, `device`, `progress`, `duration` |
 
+### discord
+
+Discord voice-channel tracking through a Discord bot Gateway connection. The bot must be invited to
+the guild and have access to the selected voice channel. The `GUILD_VOICE_STATES` intent must be
+enabled in the Discord Developer Portal.
+
+```toml
+version = 1
+enabled = true
+
+[config]
+token = { env = "LAUNCHPI_DISCORD_TOKEN" }
+guild_id = "123456789012345678"
+user_id = "234567890123456789" # mutually exclusive with channel_id
+max_members = 4
+```
+
+Use `channel_id` instead of `user_id` to follow a fixed voice channel. Values are published as
+`channel_id`, `channel_name`, `member_count`, and indexed names such as
+`channel_members_0`, `channel_members_0_id`, `channel_members_0_avatar`, and
+`channel_members_0_image`. Indexed image values can be bound directly to a control's `image` field.
+
+| Actions | `mute_member`, `deafen_member`, `disconnect_member` |
+| --- | --- |
+| Variables | Current channel metadata and indexed member names, IDs, avatar URLs and images |
+
 ## References
 
 - `plugins.md` for the design and the render path

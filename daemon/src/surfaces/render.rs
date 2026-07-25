@@ -108,6 +108,8 @@ fn rendering_for_control(
         key_index: key_index_for(control, columns)?,
         text: state.text,
         icon: None,
+        image: state.image,
+        progress: state.progress,
         foreground_color: state.foreground_color,
         background_color: state.background_color,
     })

@@ -35,6 +35,12 @@ pub enum ConfigFieldKind {
     Select {
         options: Vec<SelectOption>,
     },
+    /// Options the instance supplies at runtime, fetched from
+    /// `GET /api/plugins/:id/lookup/:source`. Free text stays valid, so a raw id still works when
+    /// the instance is offline or the thing you want is not in the list.
+    Lookup {
+        source: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -70,6 +76,15 @@ impl ConfigField {
 
     pub fn secret(key: impl Into<String>) -> Self {
         Self::new(key, ConfigFieldKind::Secret)
+    }
+
+    pub fn lookup(key: impl Into<String>, source: impl Into<String>) -> Self {
+        Self::new(
+            key,
+            ConfigFieldKind::Lookup {
+                source: source.into(),
+            },
+        )
     }
 
     pub fn select<I, S>(key: impl Into<String>, options: I) -> Self

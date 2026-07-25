@@ -17,8 +17,9 @@ use tokio::{
 use tracing::{debug, info, info_span, trace, warn, Instrument};
 
 use crate::{
+    assets::AssetStore,
     identifiers::SurfaceId,
-    panels::rendered_state::RgbaColor,
+    panels::rendered_state::{Progress, RgbaColor},
     state::AppState,
     surfaces::{
         command::{KeyIcon, KeyRendering, SurfaceCommand},
@@ -179,6 +180,7 @@ impl PendingRenders {
         transport: TransportMode,
         flip_image: bool,
         reports_written: &AtomicU64,
+        assets: Option<&AssetStore>,
     ) -> Result<(), String> {
         for (dial_index, (color, lit_segments)) in std::mem::take(&mut self.dials) {
             if self.knob_colors.get(&dial_index) != Some(&color) {
@@ -190,7 +192,7 @@ impl PendingRenders {
             reports_written.fetch_add(1, Ordering::Relaxed);
         }
         for (_, rendering) in std::mem::take(&mut self.keys) {
-            send_key_image(writer, transport, rendering, flip_image).await?;
+            send_key_image(writer, transport, rendering, flip_image, assets).await?;
             reports_written.fetch_add(1, Ordering::Relaxed);
         }
         Ok(())
@@ -383,6 +385,7 @@ async fn handle_connection(
                     transport,
                     rendering,
                     surface.model == "Stream Deck XL",
+                    Some(state.assets.as_ref()),
                 )
                 .await?;
             }
@@ -488,6 +491,7 @@ async fn write_loop<W: AsyncWrite + Unpin>(
     io: &ConnectionIo<'_>,
 ) -> Result<(), String> {
     let (transport, reports_written) = (io.transport, io.reports_written);
+    let assets = Some(io.state.assets.as_ref());
     let flip_image = io.surface.model == "Stream Deck XL";
     let mut child_query_interval = interval(CHILD_QUERY_INTERVAL);
     child_query_interval.tick().await;
@@ -518,7 +522,9 @@ async fn write_loop<W: AsyncWrite + Unpin>(
                     coalesced += 1;
                 }
                 let started = Instant::now();
-                pending.flush(&mut writer, transport, flip_image, reports_written).await?;
+                pending
+                    .flush(&mut writer, transport, flip_image, reports_written, assets)
+                    .await?;
                 let elapsed = started.elapsed();
                 if elapsed > SLOW_WRITE_WARNING {
                     warn!(
@@ -1135,8 +1141,9 @@ async fn send_key_image<W: AsyncWrite + Unpin>(
     transport: TransportMode,
     rendering: KeyRendering,
     flip_image: bool,
+    assets: Option<&AssetStore>,
 ) -> Result<(), String> {
-    let image = render_key_image(&rendering, flip_image)?;
+    let image = render_key_image(&rendering, flip_image, assets)?;
     let chunk_size = LEGACY_RESPONSE_SIZE - IMAGE_REPORT_HEADER_SIZE;
     let chunk_count = (image.len() + chunk_size - 1) / chunk_size;
 
@@ -1258,11 +1265,37 @@ async fn send_report<W: AsyncWrite + Unpin>(
     }
 }
 
-pub fn render_key(rendering: &KeyRendering) -> Result<Vec<u8>, String> {
-    render_key_image(rendering, false)
+pub fn render_key(rendering: &KeyRendering, assets: Option<&AssetStore>) -> Result<Vec<u8>, String> {
+    render_key_image(rendering, false, assets)
 }
 
-fn render_key_image(rendering: &KeyRendering, flip_image: bool) -> Result<Vec<u8>, String> {
+/// A progress bar along the bottom edge. Two rows of pixels: enough to read at arm's length,
+/// little enough that it never competes with the label for the key.
+fn draw_progress(pixels: &mut [u8], progress: &Progress, color: (u8, u8, u8)) {
+    const BAR_HEIGHT: usize = 6;
+
+    if progress.maximum_value == 0 {
+        return;
+    }
+    let fraction = f64::from(progress.value.min(progress.maximum_value))
+        / f64::from(progress.maximum_value);
+    let filled = (fraction * STUDIO_KEY_IMAGE_SIZE as f64).round() as usize;
+
+    for row in STUDIO_KEY_IMAGE_SIZE - BAR_HEIGHT..STUDIO_KEY_IMAGE_SIZE {
+        for column in 0..filled.min(STUDIO_KEY_IMAGE_SIZE) {
+            let at = (row * STUDIO_KEY_IMAGE_SIZE + column) * 3;
+            pixels[at] = color.0;
+            pixels[at + 1] = color.1;
+            pixels[at + 2] = color.2;
+        }
+    }
+}
+
+fn render_key_image(
+    rendering: &KeyRendering,
+    flip_image: bool,
+    assets: Option<&AssetStore>,
+) -> Result<Vec<u8>, String> {
     let background = rendering.background_color.as_ref().map_or((0, 0, 0), rgb);
     let foreground = rendering
         .foreground_color
@@ -1274,11 +1307,21 @@ fn render_key_image(rendering: &KeyRendering, flip_image: bool) -> Result<Vec<u8
         pixel.copy_from_slice(&[background.0, background.1, background.2]);
     }
 
+    if let Some(art) = rendering
+        .image
+        .as_ref()
+        .and_then(|asset| assets.and_then(|store| store.decoded(asset, STUDIO_KEY_IMAGE_SIZE as u32)))
+    {
+        pixels.copy_from_slice(art.as_raw());
+    }
     if let Some(icon) = &rendering.icon {
         draw_icon(&mut pixels, icon, foreground);
     }
     if let Some(text) = &rendering.text {
         draw_text(&mut pixels, text, foreground, rendering.icon.is_some());
+    }
+    if let Some(progress) = &rendering.progress {
+        draw_progress(&mut pixels, progress, foreground);
     }
 
     if flip_image {
@@ -1458,6 +1501,7 @@ mod tests {
                 TransportMode::Legacy,
                 false,
                 &AtomicU64::new(0),
+                None,
             )
             .await
             .expect("writing to a buffer should not fail");
@@ -1607,6 +1651,8 @@ mod tests {
     fn renders_a_jpeg_for_text_icon_and_color() {
         let image = render_key_image(
             &KeyRendering {
+                image: None,
+                progress: None,
                 key_index: 0,
                 text: Some("Hello".to_string()),
                 icon: Some(KeyIcon::Circle),
@@ -1624,6 +1670,7 @@ mod tests {
                 }),
             },
             false,
+            None,
         )
         .expect("key rendering should encode");
 

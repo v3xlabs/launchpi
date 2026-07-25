@@ -13,6 +13,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use crate::{
+    assets::AssetStore,
     bindings::action::{Action, ActionTrigger},
     config::{
         plugins::{export_document, InstanceFile, PluginDirectory},
@@ -101,6 +102,7 @@ pub struct PluginEngine {
     directory: PluginDirectory,
     values_path: PathBuf,
     http: reqwest::Client,
+    assets: Arc<AssetStore>,
     instances: RwLock<HashMap<IntegrationId, RunningInstance>>,
     index: RwLock<DependencyIndex>,
     dirty: Mutex<HashSet<RenderTarget>>,
@@ -115,6 +117,7 @@ impl PluginEngine {
         variables: Arc<VariableStore>,
         directory: PluginDirectory,
         values_path: PathBuf,
+        assets: Arc<AssetStore>,
         input: mpsc::Receiver<InputEvent>,
     ) -> Arc<Self> {
         let (signals, signal_receiver) = mpsc::channel(SIGNAL_QUEUE_SIZE);
@@ -124,6 +127,7 @@ impl PluginEngine {
             directory,
             values_path,
             http: reqwest::Client::new(),
+            assets,
             instances: RwLock::default(),
             index: RwLock::default(),
             dirty: Mutex::default(),
@@ -324,7 +328,8 @@ impl PluginEngine {
             self.signals.clone(),
             cancel_token,
             self.http.clone(),
-        );
+        )
+        .with_assets(self.assets.clone());
         let config = InstanceConfig {
             integration_id: integration_id.clone(),
             values: document.config.clone(),

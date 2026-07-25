@@ -15,5 +15,6 @@ pub fn registry() -> &'static [PluginFactory] {
         builtin::http::FACTORY,
         builtin::mpris::FACTORY,
         builtin::hass::FACTORY,
+        builtin::discord::FACTORY,
     ]
 }

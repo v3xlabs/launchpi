@@ -1,11 +1,13 @@
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tokio::sync::{mpsc, watch};
 use tracing::warn;
 
 use crate::{
+    assets::AssetStore,
     identifiers::IntegrationId,
     plugins::{engine::EngineSignal, instance::InstanceConfig, manifest::PluginManifest},
     surfaces::logs::SurfaceLogLevel,
@@ -32,6 +34,13 @@ pub trait Plugin: Send + Sync {
     /// replace rather than merge.
     async fn subscribe(&self, _subscriptions: &[Subscription]) -> Result<(), PluginError> {
         Ok(())
+    }
+
+    /// Options for a `ConfigFieldKind::Lookup` field, so the UI can offer real choices instead of
+    /// asking someone to remember an identifier. Answered from what the instance already knows;
+    /// like `evaluate` used to be, this must not go to the network.
+    async fn lookup(&self, _source: &str) -> Result<Vec<LookupOption>, PluginError> {
+        Ok(Vec::new())
     }
 
     async fn shutdown(&self) {}
@@ -64,6 +73,15 @@ pub struct Subscription {
     pub name: String,
 }
 
+/// One choice for a lookup field. `group` is what the UI sorts and labels by — a domain, a device
+/// type, whatever the plugin's own vocabulary is.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LookupOption {
+    pub value: String,
+    pub label: String,
+    pub group: Option<String>,
+}
+
 pub struct PluginFactory {
     pub plugin_type: &'static str,
     pub manifest: fn() -> PluginManifest,
@@ -81,6 +99,8 @@ pub struct PluginContext {
     pub cancel: CancelToken,
     /// Shared across every instance so connection pools and DNS caching are not duplicated.
     pub http: reqwest::Client,
+    /// Absent only in tests that never publish an image; `set_image` says so rather than panicking.
+    assets: Option<Arc<AssetStore>>,
     variables: Arc<VariableStore>,
     signals: mpsc::Sender<EngineSignal>,
 }
@@ -97,6 +117,7 @@ impl PluginContext {
             integration_id,
             cancel,
             http,
+            assets: None,
             variables,
             signals,
         }
@@ -106,6 +127,25 @@ impl PluginContext {
     /// can depend on what other plugins are publishing.
     pub fn interpolate(&self, template: &str) -> String {
         template::interpolate(template, |reference| self.variables.text(reference))
+    }
+
+    pub fn with_assets(mut self, assets: Arc<AssetStore>) -> Self {
+        self.assets = Some(assets);
+        self
+    }
+
+    /// Stores bytes and publishes the resulting id as a value, so a key can show them. Identical
+    /// bytes produce the same id, which means re-announcing the same artwork repaints nothing.
+    pub fn set_image(&self, name: impl Into<String>, bytes: &[u8]) -> Result<(), PluginError> {
+        let assets = self
+            .assets
+            .as_ref()
+            .ok_or_else(|| PluginError::Upstream("no asset store is available".to_string()))?;
+        let asset = assets
+            .insert_bytes(bytes)
+            .map_err(|error| PluginError::Upstream(error.to_string()))?;
+        self.set_value(name, VariableValue::Image(asset));
+        Ok(())
     }
 
     pub fn set_value(&self, name: impl Into<String>, value: VariableValue) {

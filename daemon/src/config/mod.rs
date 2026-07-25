@@ -25,6 +25,17 @@ pub fn config_directory() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".config/launchpi"))
 }
 
+pub fn cache_directory() -> Result<PathBuf> {
+    if let Some(path) = env::var_os("LAUNCHPI_CACHE_DIR") {
+        return Ok(PathBuf::from(path));
+    }
+    if let Some(path) = env::var_os("XDG_CACHE_HOME") {
+        return Ok(PathBuf::from(path).join("launchpi"));
+    }
+    let home = env::var_os("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join(".cache/launchpi"))
+}
+
 pub fn state_directory() -> Result<PathBuf> {
     if let Some(path) = env::var_os("LAUNCHPI_STATE_DIR") {
         return Ok(PathBuf::from(path));

@@ -15,8 +15,9 @@ rodio = "0.17.3"
 
 ab_glyph = "0.2"
 axum = { version = "0.7", features = ["ws"] }
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 jpeg-encoder = "0.6"
+sha2 = "0.10"
 mdns-sd = "0.20"
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots", "handshake"] }
 zbus = { version = "4", default-features = false, features = ["tokio"] }

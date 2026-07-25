@@ -120,12 +120,11 @@ impl HttpPlugin {
             }
         };
 
-        let status = response.status().as_u16();
         let body = response.text().await.unwrap_or_default();
-        let (variable, value) = match &poll.extract {
+        let variable = match &poll.extract {
             Some(path) => match serde_json::from_str::<JsonValue>(&body) {
                 Ok(document) => match extract_value(&document, path) {
-                    Some(found) => (json_to_variable(found), found.clone()),
+                    Some(found) => json_to_variable(found),
                     None => {
                         debug!(
                             integration_id = self.context.integration_id.0,
@@ -133,7 +132,7 @@ impl HttpPlugin {
                             path,
                             "the response had no value at that path"
                         );
-                        (VariableValue::Text(String::new()), JsonValue::Null)
+                        VariableValue::Text(String::new())
                     }
                 },
                 Err(error) => {
@@ -141,13 +140,10 @@ impl HttpPlugin {
                         SurfaceLogLevel::Warning,
                         format!("{}: response is not JSON: {error}", poll.name),
                     );
-                    (VariableValue::Text(String::new()), JsonValue::Null)
+                    VariableValue::Text(String::new())
                 }
             },
-            None => {
-                let text: String = body.chars().take(MAX_BODY_VARIABLE_LENGTH).collect();
-                (VariableValue::Text(text.clone()), JsonValue::String(text))
-            }
+            None => VariableValue::Text(body.chars().take(MAX_BODY_VARIABLE_LENGTH).collect()),
         };
 
         self.context.set_value(poll.name.clone(), variable);

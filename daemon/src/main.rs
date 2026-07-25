@@ -1,6 +1,7 @@
 use tracing::{error, info, warn, Level};
 
 mod api;
+mod assets;
 mod bindings;
 mod config;
 mod drivers;
