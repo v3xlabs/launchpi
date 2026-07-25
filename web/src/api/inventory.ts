@@ -21,12 +21,21 @@ export type Capabilities = {
 export type GridLayout = { columns: number; rows: number; };
 /** A colour is either written out (a table) or read from a value (a `$(...)` string). */
 export type ColorBinding = RgbaColor | string;
+export type Anchor9
+  = | "top_start" | "top_center" | "top_end"
+    | "center_start" | "center" | "center_end"
+    | "bottom_start" | "bottom_center" | "bottom_end";
+export type ContentLayout = { text_anchor: Anchor9; };
+export type SubpanelPlacement
+  = | "top_start" | "top_center" | "top_end" | "start_center"
+    | "bottom_start" | "bottom_center" | "bottom_end" | "end_center";
 export type RenderedState = {
   text: string | null;
   image: string | null;
   foreground_color: ColorBinding | null;
   background_color: ColorBinding | null;
   progress: unknown | null;
+  content_layout: ContentLayout;
   is_pressed: boolean;
 };
 export type ActionTrigger
@@ -45,6 +54,14 @@ export type Action
   }
   | { type: "set_variable"; variable_name: string; value: unknown; }
   | { type: "change_panel"; panel_id: string; }
+  | {
+    type: "open_subpanel";
+    panel_id: string;
+    placement: SubpanelPlacement;
+    offset_columns: number;
+    offset_rows: number;
+  }
+  | { type: "close_subpanel"; }
   | { type: "wait"; duration_ms: number; };
 export type ActionBinding = { gesture: ActionTrigger; actions: Action[]; };
 export type Control = {
@@ -74,10 +91,16 @@ export type Device = {
   layout: unknown;
   capabilities: Capabilities;
   active_panel_id: string | null;
+  open_subpanels: Array<{ panel_id: string; column: number; row: number; }>;
   is_enabled: boolean;
   parent_surface_id: string | null;
   status: DeviceStatus;
   last_error: string | null;
+};
+export type SurfacePresentation = {
+  columns: number;
+  rows: number;
+  controls: Array<{ control: Control; key_index: number; is_dimmed: boolean; }>;
 };
 export type DiscoveredDevice = {
   discovery_id: string;
@@ -134,6 +157,7 @@ export const emptyCapabilities: Capabilities = {
   supports_brightness: false,
   supports_haptics: false,
 };
+export const defaultContentLayout: ContentLayout = { text_anchor: "center" };
 export const emptyInventory: Inventory = {
   discovered: [],
   devices: [],
@@ -200,6 +224,7 @@ const isDevice = (value: unknown): value is Device =>
   && isString(value.model)
   && isCapabilities(value.capabilities)
   && isOptionalString(value.active_panel_id)
+  && (value.open_subpanels === undefined || Array.isArray(value.open_subpanels))
   && typeof value.is_enabled === "boolean"
   && (value.parent_surface_id === undefined || isOptionalString(value.parent_surface_id))
   && ["connecting", "connected", "unavailable", "disabled"].includes(String(value.status))
@@ -345,6 +370,7 @@ export const fetchInventory = async (): Promise<Inventory> => {
     devices: data.devices.map(device => ({
       ...device,
       parent_surface_id: device.parent_surface_id ?? null,
+      open_subpanels: device.open_subpanels ?? [],
     })),
     panels: data.panels.map(panel => ({
       ...panel,
@@ -368,6 +394,27 @@ export const removeDevice = (surfaceId: string): Promise<Response> =>
   request(`/api/devices/${encodeURIComponent(surfaceId)}`, "DELETE");
 export const assignActivePanel = (surfaceId: string, panelId: string): Promise<Response> =>
   request(`/api/devices/${encodeURIComponent(surfaceId)}/active-panel`, "PUT", { panel_id: panelId });
+export const fetchDevicePresentation = async (surfaceId: string): Promise<SurfacePresentation> => {
+  const response = await fetch(`/api/devices/${encodeURIComponent(surfaceId)}/presentation`);
+
+  if (!response.ok) throw new Error(await getErrorMessage(response));
+
+  const data: unknown = await response.json();
+
+  if (!isRecord(data) || !isNumber(data.columns) || !isNumber(data.rows) || !Array.isArray(data.controls)) {
+    throw new Error("The daemon returned an invalid device presentation.");
+  }
+
+  const controls = data.controls.flatMap((entry) => {
+    if (!isRecord(entry) || !isControl(entry.control) || !isNumber(entry.key_index) || typeof entry.is_dimmed !== "boolean") return [];
+
+    return [{ control: entry.control, key_index: entry.key_index, is_dimmed: entry.is_dimmed }];
+  });
+
+  if (controls.length !== data.controls.length) throw new Error("The daemon returned an invalid device presentation.");
+
+  return { columns: data.columns, rows: data.rows, controls };
+};
 export const createPanel = (input: CreatePanelInput): Promise<Response> => request("/api/panels", "POST", input);
 export const updatePanel = (panelId: string, payload: PanelPayload): Promise<Response> =>
   request(`/api/panels/${encodeURIComponent(panelId)}`, "PATCH", payload);

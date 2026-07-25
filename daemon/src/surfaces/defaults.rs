@@ -39,6 +39,7 @@ pub(super) fn default_device(
         },
         capabilities: studio_capabilities(),
         active_panel_id,
+        open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
         status: NetworkSurfaceStatus::Connecting,
@@ -65,6 +66,7 @@ pub(crate) fn default_panel() -> Panel {
                 background_color: Some(color(35, 88, 165).into()),
                 image: None,
                 progress: None,
+                content_layout: Default::default(),
                 is_pressed: false,
             },
             pressed_state: Some(RenderedState {
@@ -73,6 +75,7 @@ pub(crate) fn default_panel() -> Panel {
                 background_color: Some(color(18, 44, 83).into()),
                 image: None,
                 progress: None,
+                content_layout: Default::default(),
                 is_pressed: true,
             }),
             action_bindings: Vec::new(),

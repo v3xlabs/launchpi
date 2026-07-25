@@ -13,8 +13,8 @@ struct PanelsDocument {
 
 /// Version 2 tags `Action` and `ActionTrigger` for readable TOML. Version 1 files parse
 /// identically because no `action_bindings` written under it were ever non-empty.
-const PANEL_DOCUMENT_VERSION: u8 = 2;
-const SUPPORTED_PANEL_VERSIONS: [u8; 2] = [1, PANEL_DOCUMENT_VERSION];
+const PANEL_DOCUMENT_VERSION: u8 = 3;
+const SUPPORTED_PANEL_VERSIONS: [u8; 3] = [1, 2, PANEL_DOCUMENT_VERSION];
 
 pub fn load(path: &Path) -> Result<Vec<Panel>> {
     if !path.exists() {

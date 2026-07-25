@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{atomic::AtomicU64, Arc, Mutex, RwLock},
 };
 
@@ -8,7 +8,7 @@ use tracing::warn;
 
 use crate::{
     events::ServerEvent,
-    panels::Panel,
+    panels::{control::Control, Panel},
     plugins::engine::{InputEvent, INPUT_QUEUE_SIZE},
     rendering::ledger::RenderLedger,
     surfaces::{
@@ -27,6 +27,8 @@ pub struct SurfaceRegistry {
     pub(super) panels: RwLock<HashMap<String, Panel>>,
     pub(super) active_connections: RwLock<HashMap<String, ActiveConnection>>,
     pub(super) key_states: RwLock<HashMap<(String, u8), bool>>,
+    pub(super) pressed_controls: RwLock<HashMap<(String, u8), Control>>,
+    pub(super) dismissed_overlay_keys: RwLock<HashSet<(String, u8)>>,
     pub(super) recent_key_events: RwLock<VecDeque<SurfaceKeyEvent>>,
     /// Lit ring segments per dial while a surface is connected, keyed by (surface, dial index).
     /// Absent means "wherever the active panel says the dial starts".
@@ -94,6 +96,8 @@ impl SurfaceRegistry {
             ),
             active_connections: RwLock::default(),
             key_states: RwLock::default(),
+            pressed_controls: RwLock::default(),
+            dismissed_overlay_keys: RwLock::default(),
             recent_key_events: RwLock::default(),
             dial_positions: RwLock::default(),
             dial_presses: RwLock::default(),

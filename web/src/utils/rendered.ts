@@ -1,4 +1,4 @@
-import { ColorBinding, RenderedState, RgbaColor } from "../api/inventory";
+import { ColorBinding, defaultContentLayout, RenderedState, RgbaColor } from "../api/inventory";
 
 export const isReference = (color: ColorBinding | null): color is string => typeof color === "string";
 
@@ -49,5 +49,6 @@ export const newState = (isPressed: boolean): RenderedState => ({
   foreground_color: { red: 255, green: 255, blue: 255, alpha: 255 },
   background_color: { red: 30, green: 41, blue: 59, alpha: 255 },
   progress: null,
+  content_layout: defaultContentLayout,
   is_pressed: isPressed,
 });

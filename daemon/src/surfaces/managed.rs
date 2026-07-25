@@ -13,6 +13,13 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OpenSubpanel {
+    pub panel_id: PanelId,
+    pub column: i16,
+    pub row: i16,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkSurfaceStatus {
     Connecting,
@@ -50,6 +57,8 @@ pub struct ManagedNetworkSurface {
     #[serde(default = "default_stream_deck_capabilities")]
     pub capabilities: SurfaceCapabilities,
     pub active_panel_id: Option<PanelId>,
+    #[serde(skip_deserializing, default)]
+    pub open_subpanels: Vec<OpenSubpanel>,
     pub is_enabled: bool,
     #[serde(default)]
     pub parent_surface_id: Option<SurfaceId>,

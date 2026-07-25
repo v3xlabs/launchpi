@@ -18,6 +18,9 @@ pub struct SurfaceKeyEvent {
 impl SurfaceRegistry {
     /// The control a key belongs to on whatever panel the surface is showing.
     pub fn control_at(&self, surface_id: &SurfaceId, key_index: u8) -> Option<Control> {
+        if self.has_open_subpanel(surface_id) {
+            return self.top_subpanel_control_at(surface_id, key_index);
+        }
         let device = self.managed(surface_id)?;
         let panel = self.panel(&device.active_panel_id?.0)?;
         panel
@@ -51,6 +54,38 @@ impl SurfaceRegistry {
         if previous_state == Some(is_pressed) {
             return false;
         }
+        drop(key_states);
+        if is_pressed && self.has_open_subpanel(surface_id) && self.top_subpanel_control_at(surface_id, key_index).is_none() {
+            self.dismissed_overlay_keys
+                .write()
+                .unwrap()
+                .insert((surface_id.0.clone(), key_index));
+            self.close_subpanel(surface_id);
+            return true;
+        }
+        if !is_pressed && self
+            .dismissed_overlay_keys
+            .write()
+            .unwrap()
+            .remove(&(surface_id.0.clone(), key_index))
+        {
+            return true;
+        }
+        let control = if is_pressed {
+            let control = self.control_at(surface_id, key_index);
+            if let Some(control) = &control {
+                self.pressed_controls
+                    .write()
+                    .unwrap()
+                    .insert((surface_id.0.clone(), key_index), control.clone());
+            }
+            control
+        } else {
+            self.pressed_controls
+                .write()
+                .unwrap()
+                .remove(&(surface_id.0.clone(), key_index))
+        };
         let mut events = self.recent_key_events.write().unwrap();
         events.push_front(SurfaceKeyEvent {
             surface_id: surface_id.clone(),
@@ -79,6 +114,7 @@ impl SurfaceRegistry {
             surface_id: surface_id.clone(),
             key_index,
             is_pressed,
+            control,
         });
         true
     }

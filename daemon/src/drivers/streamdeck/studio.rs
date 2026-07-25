@@ -903,6 +903,7 @@ fn register_network_dock_child(state: &AppState, parent_surface_id: &SurfaceId, 
         layout,
         capabilities: crate::surfaces::defaults::studio_capabilities(),
         active_panel_id,
+        open_subpanels: Vec::new(),
         parent_surface_id: Some(parent_surface_id.clone()),
     };
     let child = state.surfaces.add_managed_child(parent_surface_id, child);
@@ -1678,6 +1679,8 @@ mod tests {
                     blue: 30,
                     alpha: u8::MAX,
                 }),
+                content_layout: Default::default(),
+                is_dimmed: false,
             },
             false,
             None,

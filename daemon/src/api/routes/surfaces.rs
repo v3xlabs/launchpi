@@ -14,7 +14,7 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::{
     api::error::ApiError,
     drivers::streamdeck::studio,
-    identifiers::PanelId,
+    identifiers::{PanelId, SurfaceId},
     panels::{control::Control, rendered_state::RenderedState, Panel, PanelLayout},
     rendering::context::RenderContext,
     state::AppState,
@@ -57,6 +57,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/devices/:surface_id/active-panel",
             put(assign_active_panel),
+        )
+        .route(
+            "/api/devices/:surface_id/presentation",
+            get(device_presentation),
         )
         .route(
             "/api/discovered/:discovery_id/devices",
@@ -145,6 +149,8 @@ async fn render_key(
         progress: resolved.progress,
         foreground_color: resolved.foreground_color,
         background_color: resolved.background_color,
+        content_layout: resolved.content_layout,
+        is_dimmed: false,
     };
     let image = studio::render_key(&rendering, Some(&state.assets)).map_err(|error| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -188,6 +194,7 @@ async fn add_device(
                     .map(|panel| panel.panel_id)
             })
             .flatten(),
+        open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
         status: NetworkSurfaceStatus::Connecting,
@@ -244,6 +251,7 @@ async fn add_discovered_device(
                     .map(|panel| panel.panel_id)
             })
             .flatten(),
+        open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
         status: NetworkSurfaceStatus::Connecting,
@@ -292,6 +300,17 @@ async fn assign_active_panel(
         .map_err(ApiError::bad_request)?;
     let _ = state.persist_configuration();
     Ok(Json(device))
+}
+
+async fn device_presentation(
+    State(state): State<AppState>,
+    Path(surface_id): Path<String>,
+) -> Result<Json<crate::surfaces::presentation::SurfacePresentation>, ApiError> {
+    state
+        .surfaces
+        .presentation(&SurfaceId(surface_id))
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("device presentation"))
 }
 
 async fn create_panel(

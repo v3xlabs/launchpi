@@ -32,7 +32,7 @@ use crate::{
         registry,
     },
     rendering::index::{DependencyIndex, RenderTarget},
-    surfaces::{logs::SurfaceLogLevel, registry::SurfaceRegistry},
+    surfaces::{layout::SurfacePosition, logs::SurfaceLogLevel, registry::SurfaceRegistry},
     variables::{VariableRef, VariableStore, VariableValue},
 };
 
@@ -91,6 +91,7 @@ pub enum InputEvent {
         surface_id: SurfaceId,
         key_index: u8,
         is_pressed: bool,
+        control: Option<Control>,
     },
 }
 
@@ -652,10 +653,11 @@ impl PluginEngine {
             .managed_surfaces()
             .into_iter()
             .filter(|device| device.is_enabled)
-            .filter_map(|device| {
-                let panel_id = device.active_panel_id?;
-                let panel = self.surfaces.panel(&panel_id.0)?;
-                Some((device.surface_id, panel))
+            .flat_map(|device| {
+                self.surfaces
+                    .presentation_panels(&device.surface_id)
+                    .into_iter()
+                    .map(move |panel| (device.surface_id.clone(), panel))
             })
             .collect()
     }
@@ -701,10 +703,11 @@ impl PluginEngine {
     async fn handle_input(self: &Arc<Self>, event: InputEvent) {
         let InputEvent::Key {
             surface_id,
-            key_index,
             is_pressed,
+            control,
+            ..
         } = event;
-        let Some(control) = self.surfaces.control_at(&surface_id, key_index) else {
+        let Some(control) = control else {
             return;
         };
         if is_pressed {
@@ -725,7 +728,8 @@ impl PluginEngine {
             let engine = self.clone();
             let surface_id = surface_id.clone();
             let actions = binding.actions.clone();
-            tokio::spawn(async move { engine.run_actions(surface_id, actions).await });
+            let anchor = control.position.clone();
+            tokio::spawn(async move { engine.run_actions(surface_id, actions, Some(anchor)).await });
         }
     }
 
@@ -740,9 +744,10 @@ impl PluginEngine {
             .map(|(duration_ms, actions)| {
                 let engine = self.clone();
                 let surface_id = surface_id.clone();
+                let anchor = control.position.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_millis(duration_ms)).await;
-                    engine.run_actions(surface_id, actions).await;
+                    engine.run_actions(surface_id, actions, Some(anchor)).await;
                 })
             })
             .collect();
@@ -766,7 +771,12 @@ impl PluginEngine {
         }
     }
 
-    async fn run_actions(&self, surface_id: SurfaceId, actions: Vec<Action>) {
+    async fn run_actions(
+        &self,
+        surface_id: SurfaceId,
+        actions: Vec<Action>,
+        anchor: Option<SurfacePosition>,
+    ) {
         for action in actions {
             match action {
                 Action::InvokeIntegration {
@@ -800,6 +810,33 @@ impl PluginEngine {
                             format!("could not switch to panel {}: {reason}", panel_id.0),
                         );
                     }
+                }
+                Action::OpenSubpanel {
+                    panel_id,
+                    placement,
+                    offset_columns,
+                    offset_rows,
+                } => {
+                    let Some(anchor) = anchor.clone() else {
+                        continue;
+                    };
+                    if let Err(reason) = self.surfaces.open_subpanel(
+                        &surface_id,
+                        &panel_id.0,
+                        anchor,
+                        placement,
+                        offset_columns,
+                        offset_rows,
+                    ) {
+                        self.surfaces.log(
+                            &surface_id,
+                            SurfaceLogLevel::Warning,
+                            format!("unable to open subpanel {}: {reason}", panel_id.0),
+                        );
+                    }
+                }
+                Action::CloseSubpanel => {
+                    self.surfaces.close_subpanel(&surface_id);
                 }
                 Action::Wait { duration_ms } => {
                     tokio::time::sleep(Duration::from_millis(duration_ms)).await

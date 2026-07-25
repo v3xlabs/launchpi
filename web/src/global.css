@@ -121,6 +121,7 @@ button, input, select, textarea { font: inherit; }
 .key-selected::after, .key-pressed::after { @apply pointer-events-none absolute inset-0 border-2; content: ''; }
 .key-selected::after { @apply border-blue-400; }
 .key-pressed::after { @apply border-emerald-400; }
+.key-dimmed { @apply brightness-[0.35]; }
 
 /* Dials - sized by their container, never by themselves */
 .dial-ring { @apply grid w-full place-items-center rounded-full; aspect-ratio: 1; }

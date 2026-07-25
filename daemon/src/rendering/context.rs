@@ -2,7 +2,7 @@ use crate::{
     identifiers::AssetId,
     panels::{
         control::Control,
-        rendered_state::{ColorBinding, Progress, RenderedState, RgbaColor},
+        rendered_state::{ColorBinding, ContentLayout, Progress, RenderedState, RgbaColor},
     },
     variables::{template, VariableStore},
 };
@@ -16,6 +16,7 @@ pub struct ResolvedState {
     pub foreground_color: Option<RgbaColor>,
     pub background_color: Option<RgbaColor>,
     pub progress: Option<Progress>,
+    pub content_layout: ContentLayout,
 }
 
 /// The live state a control resolves against. Cheap to build: it borrows the store and takes a
@@ -68,6 +69,7 @@ impl<'a> RenderContext<'a> {
             foreground_color: self.resolve_color(state.foreground_color.as_ref()),
             background_color: self.resolve_color(state.background_color.as_ref()),
             progress: state.progress.clone(),
+            content_layout: state.content_layout,
         }
     }
 

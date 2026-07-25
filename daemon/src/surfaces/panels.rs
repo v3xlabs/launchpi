@@ -59,6 +59,7 @@ impl SurfaceRegistry {
                             background_color: Some(color(30, 41, 59).into()),
                             image: None,
                             progress: None,
+                            content_layout: Default::default(),
                             is_pressed: false,
                         },
                         pressed_state: None,
@@ -114,13 +115,23 @@ impl SurfaceRegistry {
             let mut devices = self.managed.write().unwrap();
             devices
                 .values_mut()
-                .filter(|device| device.active_panel_id.as_ref() == Some(&removed.panel_id))
-                .map(|device| {
+                .filter_map(|device| {
+                    let closed_overlay = device
+                        .open_subpanels
+                        .last()
+                        .is_some_and(|layer| layer.panel_id == removed.panel_id);
+                    device
+                        .open_subpanels
+                        .retain(|layer| layer.panel_id != removed.panel_id);
+                    if device.active_panel_id.as_ref() != Some(&removed.panel_id) {
+                        return closed_overlay.then(|| device.surface_id.0.clone());
+                    }
                     device.active_panel_id = remaining
                         .iter()
                         .find(|panel| is_compatible(device, panel))
                         .map(|panel| panel.panel_id.clone());
-                    device.surface_id.0.clone()
+                    device.open_subpanels.clear();
+                    Some(device.surface_id.0.clone())
                 })
                 .collect()
         };
@@ -149,6 +160,7 @@ impl SurfaceRegistry {
                 return Err("panel layout or capabilities are incompatible with device".to_string());
             }
             device.active_panel_id = Some(panel.panel_id);
+            device.open_subpanels.clear();
             device.clone()
         };
         self.reset_dial_positions(surface_id);

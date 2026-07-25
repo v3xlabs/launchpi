@@ -1,14 +1,18 @@
 import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/tb";
 import { Component, For, Match, Show, Switch } from "solid-js";
 
-import { capabilityLabels, Control, Panel, panelDial, RgbaColor } from "../api/inventory";
+import { Anchor9, capabilityLabels, Control, Panel, panelDial, RgbaColor } from "../api/inventory";
 import { newState, toHex } from "../utils/rendered";
 import { BindingsEditor } from "./BindingsEditor";
 import { DialIndicator, litRingSegments, totalRingSegments } from "./DialIndicator";
-import { ColorField, TextField } from "./fields";
+import { ColorField, SelectField, TextField } from "./fields";
 import { ValueField } from "./ValueField";
 
 export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "dial"; index: number; };
+
+const textAnchors: Anchor9[] = [
+  "top_start", "top_center", "top_end", "center_start", "center", "center_end", "bottom_start", "bottom_center", "bottom_end",
+];
 
 const PanelSettings: Component<{ panel: Panel; onMutate: (mutate: (panel: Panel) => void) => void; }> = properties => (
   <>
@@ -101,6 +105,20 @@ const ControlEditor: Component<{
           properties.onMutate((control) => {
             control.default_state.text = value || null;
           })}
+      />
+      <SelectField
+        label="Label position"
+        value={properties.control.default_state.content_layout.text_anchor}
+        options={[
+          { value: "top_start", label: "Left top" }, { value: "top_center", label: "Middle top" }, { value: "top_end", label: "Right top" },
+          { value: "center_start", label: "Left middle" }, { value: "center", label: "Middle middle" }, { value: "center_end", label: "Right middle" },
+          { value: "bottom_start", label: "Left bottom" }, { value: "bottom_center", label: "Middle bottom" }, { value: "bottom_end", label: "Right bottom" },
+        ]}
+        onChange={value => properties.onMutate((control) => {
+          const anchor = textAnchors.find(option => option === value);
+
+          if (anchor !== undefined) control.default_state.content_layout.text_anchor = anchor;
+        })}
       />
       <ValueField
         label="Image"

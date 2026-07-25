@@ -9,7 +9,30 @@ pub struct RenderedState {
     pub foreground_color: Option<ColorBinding>,
     pub background_color: Option<ColorBinding>,
     pub progress: Option<Progress>,
+    #[serde(default)]
+    pub content_layout: ContentLayout,
     pub is_pressed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ContentLayout {
+    #[serde(default)]
+    pub text_anchor: Anchor9,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Anchor9 {
+    TopStart,
+    TopCenter,
+    TopEnd,
+    CenterStart,
+    #[default]
+    Center,
+    CenterEnd,
+    BottomStart,
+    BottomCenter,
+    BottomEnd,
 }
 
 /// A colour is either written out or read from a value. Untagged so both forms are natural TOML:

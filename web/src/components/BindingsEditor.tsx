@@ -1,7 +1,7 @@
 import { TbFillTrash as TbTrash } from "solid-icons/tb";
 import { Component, createMemo, For, Show } from "solid-js";
 
-import { Action, ActionBinding, ActionTrigger, Control } from "../api/inventory";
+import { Action, ActionBinding, ActionTrigger, Control, SubpanelPlacement } from "../api/inventory";
 import { ActionDefinition, coerceConfigValue, PluginInstance } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
 import { ConfigFieldInput, SelectField } from "./fields";
@@ -13,6 +13,17 @@ const triggerOptions = [
   { value: "release", label: "Release" },
   { value: "hold", label: "Hold" },
 ];
+const placementOptions: Array<{ value: SubpanelPlacement; label: string; }> = [
+  { value: "top_start", label: "Top left" },
+  { value: "top_center", label: "Top center" },
+  { value: "top_end", label: "Top right" },
+  { value: "start_center", label: "Left middle" },
+  { value: "end_center", label: "Right middle" },
+  { value: "bottom_start", label: "Bottom left" },
+  { value: "bottom_center", label: "Bottom center" },
+  { value: "bottom_end", label: "Bottom right" },
+];
+const placementValues = placementOptions.map(option => option.value);
 
 const triggerName = (gesture: ActionTrigger): string =>
   (typeof gesture === "string" ? gesture : "hold");
@@ -174,6 +185,63 @@ const ActionRow: Component<{
           />
         )}
       </Show>
+
+      <Show when={properties.action.type === "open_subpanel" && properties.action}>
+        {open => (
+          <>
+            <SelectField
+              label="Subpanel"
+              value={open().type === "open_subpanel" ? open().panel_id : ""}
+              options={store.inventory().panels.map(panel => ({ value: panel.panel_id, label: panel.name }))}
+              onChange={value => editAction((action) => {
+                if (action.type === "open_subpanel") action.panel_id = value;
+              })}
+            />
+            <SelectField
+              label="Open from"
+              value={open().type === "open_subpanel" ? open().placement : "bottom_end"}
+              options={placementOptions}
+              onChange={value => editAction((action) => {
+                const placement = placementValues.find(option => option === value);
+
+                if (placement !== undefined && action.type === "open_subpanel") action.placement = placement;
+              })}
+            />
+            <div class="grid grid-cols-2 gap-2">
+              <label class="field-label">
+                Column offset
+                <input
+                  class="field-input"
+                  type="number"
+                  value={open().type === "open_subpanel" ? open().offset_columns : 0}
+                  onInput={(event) => {
+                    const offsetColumns = Number(event.currentTarget.value);
+
+                    editAction((action) => {
+                      if (action.type === "open_subpanel") action.offset_columns = offsetColumns;
+                    });
+                  }}
+                />
+              </label>
+              <label class="field-label">
+                Row offset
+                <input
+                  class="field-input"
+                  type="number"
+                  value={open().type === "open_subpanel" ? open().offset_rows : 0}
+                  onInput={(event) => {
+                    const offsetRows = Number(event.currentTarget.value);
+
+                    editAction((action) => {
+                      if (action.type === "open_subpanel") action.offset_rows = offsetRows;
+                    });
+                  }}
+                />
+              </label>
+            </div>
+          </>
+        )}
+      </Show>
     </div>
   );
 };
@@ -197,6 +265,12 @@ const newAction = (kind: Action["type"]): Action => {
     }
     case "change_panel": {
       return { type: "change_panel", panel_id: "" };
+    }
+    case "open_subpanel": {
+      return { type: "open_subpanel", panel_id: "", placement: "bottom_end", offset_columns: 0, offset_rows: 0 };
+    }
+    case "close_subpanel": {
+      return { type: "close_subpanel" };
     }
     case "set_variable": {
       return { type: "set_variable", variable_name: "", value: "" };
@@ -274,7 +348,7 @@ const ActionBindingCard: Component<{
     </For>
 
     <div class="flex flex-wrap gap-1.5">
-      <For each={["invoke_integration", "set_variable", "change_panel", "wait"] as const}>
+      <For each={["invoke_integration", "set_variable", "change_panel", "open_subpanel", "close_subpanel", "wait"] as const}>
         {kind => (
           <button
             type="button"

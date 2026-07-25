@@ -24,12 +24,28 @@ impl SurfaceRegistry {
         let Some(panel) = self.panel(&panel_id.0) else {
             return Vec::new();
         };
+        if self.has_open_subpanel(surface_id) {
+            let crate::surfaces::layout::SurfaceLayout::Grid { columns, rows } = device.layout else {
+                return Vec::new();
+            };
+            return (0..u32::from(columns) * u32::from(rows))
+                .filter_map(|index| {
+                    let key_index = u8::try_from(index).ok()?;
+                    self.rendering_for_key(surface_id, key_index, false).or(Some(KeyRendering {
+                        key_index,
+                        background_color: Some(RgbaColor::opaque(0, 0, 0)),
+                        is_dimmed: true,
+                        ..KeyRendering::default()
+                    }))
+                })
+                .collect();
+        }
         let context = self.render_context();
         panel
             .controls
             .iter()
             .filter_map(|control| {
-                rendering_for_control(control, false, panel.layout.columns, &context)
+                rendering_for_control(control, false, panel.layout.columns, false, &context)
             })
             .collect()
     }
@@ -43,12 +59,27 @@ impl SurfaceRegistry {
         let device = self.managed(surface_id)?;
         let panel_id = device.active_panel_id?;
         let panel = self.panel(&panel_id.0)?;
+        if self.has_open_subpanel(surface_id) {
+            if let Some(control) = self.top_subpanel_control_at(surface_id, key_index) {
+                let columns = match device.layout {
+                    crate::surfaces::layout::SurfaceLayout::Grid { columns, .. } => columns,
+                    crate::surfaces::layout::SurfaceLayout::Freeform => return None,
+                };
+                return rendering_for_control(&control, is_pressed, columns, false, &self.render_context());
+            }
+            return panel.controls.iter().find_map(|control| {
+                (key_index_for(control, panel.layout.columns) == Some(key_index)).then(|| {
+                    rendering_for_control(control, is_pressed, panel.layout.columns, true, &self.render_context())
+                })?
+            });
+        }
         panel.controls.iter().find_map(|control| {
             (key_index_for(control, panel.layout.columns) == Some(key_index)).then(|| {
                 rendering_for_control(
                     control,
                     is_pressed,
                     panel.layout.columns,
+                    false,
                     &self.render_context(),
                 )
             })?
@@ -108,6 +139,7 @@ fn rendering_for_control(
     control: &Control,
     is_pressed: bool,
     columns: u16,
+    is_dimmed: bool,
     context: &RenderContext<'_>,
 ) -> Option<KeyRendering> {
     let state = context.resolve(control, is_pressed);
@@ -119,6 +151,8 @@ fn rendering_for_control(
         progress: state.progress,
         foreground_color: state.foreground_color,
         background_color: state.background_color,
+        content_layout: state.content_layout,
+        is_dimmed,
     })
 }
 

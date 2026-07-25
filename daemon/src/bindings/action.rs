@@ -34,9 +34,33 @@ pub enum Action {
     ChangePanel {
         panel_id: PanelId,
     },
+    OpenSubpanel {
+        panel_id: PanelId,
+        #[serde(default)]
+        placement: SubpanelPlacement,
+        #[serde(default)]
+        offset_columns: i16,
+        #[serde(default)]
+        offset_rows: i16,
+    },
+    CloseSubpanel,
     Wait {
         duration_ms: u64,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubpanelPlacement {
+    TopStart,
+    TopCenter,
+    TopEnd,
+    StartCenter,
+    #[default]
+    BottomEnd,
+    BottomStart,
+    BottomCenter,
+    EndCenter,
 }
 
 #[cfg(test)]

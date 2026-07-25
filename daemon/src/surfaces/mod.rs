@@ -9,5 +9,6 @@ pub mod layout;
 pub mod logs;
 pub mod managed;
 pub mod panels;
+pub mod presentation;
 pub mod registry;
 pub mod render;
