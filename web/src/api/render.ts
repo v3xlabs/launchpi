@@ -34,8 +34,9 @@ const forget = (body: string): void => {
  * does not evict unrelated keys.
  */
 export const forgetRendersUsing = (asset: string): void => {
-  // Copied because `forget` deletes from the map being walked.
-  for (const body of [...cache.keys()]) {
+  // Deleting the entry currently being visited is defined behaviour for a Map iterator, so this
+  // walks safely even though `forget` removes from the map.
+  for (const body of cache.keys()) {
     const rendering: unknown = JSON.parse(body);
 
     if (

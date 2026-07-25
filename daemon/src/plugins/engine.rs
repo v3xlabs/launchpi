@@ -795,7 +795,9 @@ async fn run_flush(engine: Arc<PluginEngine>) {
 async fn watch_assets(engine: Arc<PluginEngine>, mut ready: mpsc::Receiver<String>) {
     while let Some(asset) = ready.recv().await {
         engine.surfaces.forget_renderings();
-        engine.surfaces.emit_event(ServerEvent::AssetReady { asset });
+        engine
+            .surfaces
+            .emit_event(ServerEvent::AssetReady { asset });
         let targets = engine.index.read().unwrap().every_target();
         engine.mark_dirty(targets);
     }

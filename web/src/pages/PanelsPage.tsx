@@ -44,6 +44,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   });
   const [selection, setSelection] = createSignal<PanelSelection | null>(null);
   const [pasteTarget, setPasteTarget] = createSignal<{ column: number; row: number; } | null>(null);
+  const [pendingPaste, setPendingPaste] = createSignal<{ column: number; row: number; name: string; } | null>(null);
 
   const serverPanel = createMemo(
     () => store.inventory().panels.find(panel => panel.panel_id === properties.panelId) ?? null,
@@ -62,6 +63,8 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     if (draft.panel?.panel_id !== panelId) {
       setDraft({ panel: server ? cloneState(server) : null, dirty: false });
       setSelection(null);
+      setPasteTarget(null);
+      setPendingPaste(null);
 
       return;
     }
@@ -131,9 +134,15 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       action_bindings: cloneState(template?.action_bindings ?? []),
     };
 
-    mutatePanel(entry => entry.controls.push(control));
+    mutatePanel((entry) => {
+      entry.controls = entry.controls.filter(existing =>
+        existing.position.column !== column || existing.position.row !== row,
+      );
+      entry.controls.push(control);
+    });
     setSelection({ kind: "control", controlId });
     setPasteTarget(null);
+    setPendingPaste(null);
   };
 
   const removeControl = () => {
@@ -168,7 +177,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const handleCellClick = (control: Control | undefined, column: number, row: number) => {
     if (control !== undefined) {
       setSelection({ kind: "control", controlId: control.control_id });
-      setPasteTarget(null);
+      setPasteTarget({ column, row });
 
       return;
     }
@@ -176,7 +185,21 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     placeControl(column, row, store.clipboard() ?? undefined);
   };
 
-  const handleCellFocus = (control: Control | undefined, column: number, row: number) => setPasteTarget(control === undefined ? { column, row } : null);
+  const handleCellFocus = (_control: Control | undefined, column: number, row: number) => setPasteTarget({ column, row });
+
+  const requestPaste = (column: number, row: number, clip: ControlClipboard) => {
+    const existing = draft.panel?.controls.find(control =>
+      control.position.column === column && control.position.row === row,
+    );
+
+    if (existing) {
+      setPendingPaste({ column, row, name: existing.name });
+
+      return;
+    }
+
+    placeControl(column, row, clip);
+  };
 
   const savePanel = async () => {
     const panel = draft.panel;
@@ -198,6 +221,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       store.clearClipboard();
       setSelection(null);
       setPasteTarget(null);
+      setPendingPaste(null);
 
       return;
     }
@@ -230,7 +254,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       const cell = pasteTarget() ?? firstFreeCell();
 
       if (cell !== null && clip !== null) {
-        placeControl(cell.column, cell.row, clip);
+        requestPaste(cell.column, cell.row, clip);
         event.preventDefault();
       }
     }
