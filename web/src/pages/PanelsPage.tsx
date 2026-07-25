@@ -15,9 +15,9 @@ import {
   fetchPanelConfig,
   layoutLabel,
   Panel,
+  PanelDial,
   panelDialCount,
   RgbaColor,
-  studioDialCount,
 } from "../api/inventory";
 import { CopyTomlButton } from "../components/CopyTomlButton";
 import { PanelInspector, PanelSelection } from "../components/PanelInspector";
@@ -29,11 +29,6 @@ import { DeletePanelDialog } from "../dialogs/DeletePanelDialog";
 import { newState } from "../utils/rendered";
 
 const cloneState = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-
-const padded = <T,>(values: T[], length: number, fallback: T): T[] =>
-  Array.from({ length }, (_, index) => values[index] ?? fallback);
-
-const defaultDialColor: RgbaColor = { red: 30, green: 41, blue: 59, alpha: 255 };
 
 export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const store = useInventory();
@@ -99,20 +94,21 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       if (control) mutate(control);
     });
 
-  const setDialColor = (index: number, color: RgbaColor) =>
+  const mutateDial = (index: number, mutate: (dial: PanelDial) => void) =>
     mutatePanel((panel) => {
-      const colors = padded(panel.dial_colors, studioDialCount, defaultDialColor);
+      const dial = panel.dials.find(entry => entry.index === index);
 
-      colors[index] = color;
-      panel.dial_colors = colors;
+      if (dial) mutate(dial);
+    });
+
+  const setDialColor = (index: number, color: RgbaColor) =>
+    mutateDial(index, (dial) => {
+      dial.color = color;
     });
 
   const setDialLevel = (index: number, level: number) =>
-    mutatePanel((panel) => {
-      const levels = padded(panel.dial_ring_levels, studioDialCount, 100);
-
-      levels[index] = level;
-      panel.dial_ring_levels = levels;
+    mutateDial(index, (dial) => {
+      dial.level = level;
     });
 
   const placeControl = (column: number, row: number, template?: ControlClipboard) => {

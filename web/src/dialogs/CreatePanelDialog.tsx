@@ -55,8 +55,7 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
       layout: layout(),
       capabilities: required(),
       controls: [],
-      dial_colors: [],
-      dial_ring_levels: [],
+      dials: [],
     });
 
     if (panel) {

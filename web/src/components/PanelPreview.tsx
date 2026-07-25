@@ -1,7 +1,7 @@
 import { TbFillClipboard as TbCopy } from "solid-icons/tb";
 import { Component, For, JSX, Show } from "solid-js";
 
-import { Control, Panel, panelDial, panelDialCount } from "../api/inventory";
+import { Control, Panel, PanelDial, panelDials } from "../api/inventory";
 import { DialIndicator } from "./DialIndicator";
 import { KeyImage } from "./KeyImage";
 
@@ -22,11 +22,14 @@ const controlAt = (panel: Panel, cell: Cell): Control | undefined =>
 // Which state a press shows is resolution, and resolution lives in the daemon; the preview passes
 // both states along with whether the key is down and lets it decide.
 
-const hasDials = (panel: Panel): boolean => panelDialCount(panel) > 0;
+const hasDials = (panel: Panel): boolean => panel.dials.length > 0;
 
-// A live level from the hardware wins over the level the panel configures.
-const dialLevel = (panel: Panel, index: number, liveLevels?: Array<number | null>): number =>
-  liveLevels?.[index] ?? panelDial(panel, index).level;
+// A live level from the hardware wins over the level the panel declares.
+const dialLevel = (dial: PanelDial, liveLevels?: Array<number | null>): number =>
+  liveLevels?.[dial.index] ?? dial.level;
+
+// Dial 0 sits to the left of the keys on the hardware, the rest to the right of them.
+const dialSide = (dial: PanelDial): "left" | "right" => (dial.index === 0 ? "left" : "right");
 
 const gridStyle = (panel: Panel): JSX.CSSProperties => ({
   "--columns": String(panel.layout.columns),
@@ -54,24 +57,18 @@ export const PanelThumbnail: Component<{
       }}
       style={gridStyle(properties.panel)}
     >
-      <Show when={hasDials(properties.panel)}>
-        <DialCell side="left">
-          <DialIndicator
-            index={0}
-            color={panelDial(properties.panel, 0).color}
-            level={dialLevel(properties.panel, 0, properties.dialLevels)}
-            isPressed={properties.pressedDials?.has(0)}
-          />
-        </DialCell>
-        <DialCell side="right">
-          <DialIndicator
-            index={1}
-            color={panelDial(properties.panel, 1).color}
-            level={dialLevel(properties.panel, 1, properties.dialLevels)}
-            isPressed={properties.pressedDials?.has(1)}
-          />
-        </DialCell>
-      </Show>
+      <For each={panelDials(properties.panel)}>
+        {dial => (
+          <DialCell side={dialSide(dial)}>
+            <DialIndicator
+              index={dial.index}
+              color={dial.color}
+              level={dialLevel(dial, properties.dialLevels)}
+              isPressed={properties.pressedDials?.has(dial.index)}
+            />
+          </DialCell>
+        )}
+      </For>
       <For each={cellsOf(properties.panel)}>
         {(cell) => {
           const isPressed = () => properties.pressedKeys?.has(cell.keyIndex) ?? false;
@@ -104,8 +101,7 @@ type PanelStageProperties = {
 };
 
 const StageDial: Component<{
-  index: number;
-  panel: Panel;
+  dial: PanelDial;
   activeIndex?: number | null;
   dialLevels?: Array<number | null>;
   isPressed?: boolean;
@@ -114,14 +110,14 @@ const StageDial: Component<{
   <button
     type="button"
     class="dial-button"
-    data-selected={properties.activeIndex === properties.index}
+    data-selected={properties.activeIndex === properties.dial.index}
     onClick={properties.onClick}
-    aria-label={`Edit dial ${properties.index + 1}`}
+    aria-label={`Edit dial ${properties.dial.index + 1}`}
   >
     <DialIndicator
-      index={properties.index}
-      color={panelDial(properties.panel, properties.index).color}
-      level={dialLevel(properties.panel, properties.index, properties.dialLevels)}
+      index={properties.dial.index}
+      color={properties.dial.color}
+      level={dialLevel(properties.dial, properties.dialLevels)}
       isPressed={properties.isPressed}
     />
   </button>
@@ -133,28 +129,19 @@ export const PanelStage: Component<PanelStageProperties> = properties => (
       classList={{ "key-grid": true, "key-grid-dials": hasDials(properties.panel) }}
       style={gridStyle(properties.panel)}
     >
-      <Show when={hasDials(properties.panel)}>
-        <DialCell side="left">
-          <StageDial
-            index={0}
-            panel={properties.panel}
-            activeIndex={properties.activeDialIndex}
-            dialLevels={properties.dialLevels}
-            isPressed={properties.pressedDials?.has(0)}
-            onClick={() => properties.onDialClick(0)}
-          />
-        </DialCell>
-        <DialCell side="right">
-          <StageDial
-            index={1}
-            panel={properties.panel}
-            activeIndex={properties.activeDialIndex}
-            dialLevels={properties.dialLevels}
-            isPressed={properties.pressedDials?.has(1)}
-            onClick={() => properties.onDialClick(1)}
-          />
-        </DialCell>
-      </Show>
+      <For each={panelDials(properties.panel)}>
+        {dial => (
+          <DialCell side={dialSide(dial)}>
+            <StageDial
+              dial={dial}
+              activeIndex={properties.activeDialIndex}
+              dialLevels={properties.dialLevels}
+              isPressed={properties.pressedDials?.has(dial.index)}
+              onClick={() => properties.onDialClick(dial.index)}
+            />
+          </DialCell>
+        )}
+      </For>
       <For each={cellsOf(properties.panel)}>
         {(cell) => {
           const control = () => controlAt(properties.panel, cell);

@@ -1,7 +1,17 @@
 import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/tb";
 import { Component, For, Match, Show, Switch } from "solid-js";
 
-import { Anchor9, capabilityLabels, Control, Panel, panelDial, RgbaColor } from "../api/inventory";
+import {
+  Anchor9,
+  capabilityLabels,
+  Control,
+  Panel,
+  panelDial,
+  PanelDial,
+  panelDials,
+  RgbaColor,
+  studioDialCount,
+} from "../api/inventory";
 import { PresetPickerDialog } from "../dialogs/PresetPickerDialog";
 import { newState, toHex } from "../utils/rendered";
 import { BindingsEditor } from "./BindingsEditor";
@@ -28,6 +38,12 @@ const toCount = (value: string): number | undefined => {
 
   return value.trim() === "" || Number.isNaN(parsed) ? undefined : parsed;
 };
+
+const newDialColor: RgbaColor = { red: 30, green: 41, blue: 59, alpha: 255 };
+
+const freeDialIndex = (panel: Panel): number | undefined =>
+  Array.from({ length: studioDialCount }, (_, index) => index)
+    .find(candidate => !panel.dials.some(dial => dial.index === candidate));
 
 const PanelSettings: Component<{ panel: Panel; onMutate: (mutate: (panel: Panel) => void) => void; }> = properties => (
   <>
@@ -62,6 +78,45 @@ const PanelSettings: Component<{ panel: Panel; onMutate: (mutate: (panel: Panel)
             )}
           </For>
         </div>
+      </fieldset>
+      <fieldset class="grid gap-1.5">
+        <legend class="field-label">Dials</legend>
+        <For each={panelDials(properties.panel)}>
+          {dial => (
+            <div class="flex items-center gap-1.5">
+              <span class="check-tile min-w-0 flex-1">
+                Dial
+                {" "}
+                {dial.index + 1}
+                <span class="mono ml-auto">{toHex(dial.color, "unset")}</span>
+              </span>
+              <button
+                type="button"
+                class="danger-button"
+                aria-label={`Remove dial ${dial.index + 1}`}
+                onClick={() =>
+                  properties.onMutate((panel) => {
+                    panel.dials = panel.dials.filter(entry => entry.index !== dial.index);
+                  })}
+              >
+                <TbTrash class="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </For>
+        <button
+          type="button"
+          class="secondary-button"
+          disabled={freeDialIndex(properties.panel) === undefined}
+          onClick={() =>
+            properties.onMutate((panel) => {
+              const index = freeDialIndex(panel);
+
+              if (index !== undefined) panel.dials.push({ index, level: 100, color: newDialColor });
+            })}
+        >
+          Add dial
+        </button>
       </fieldset>
     </div>
   </>
@@ -337,68 +392,68 @@ const ControlEditor: Component<{
 );
 
 const DialEditor: Component<{
-  panel: Panel;
-  index: number;
+  dial: PanelDial;
   onColorChange: (index: number, color: RgbaColor) => void;
   onLevelChange: (index: number, level: number) => void;
-}> = (properties) => {
-  const dial = () => panelDial(properties.panel, properties.index);
-
-  return (
-    <>
-      <div class="card-head">
-        <p class="card-title">
-          Dial
-          {" "}
-          {properties.index + 1}
-        </p>
-        <span class="chip chip-muted">{properties.index === 0 ? "left" : "right"}</span>
-      </div>
-      <div class="card-body">
-        <div class="flex items-center gap-4 bg-neutral-950 p-3">
-          <div class="w-14 shrink-0">
-            <DialIndicator index={properties.index} color={dial().color} level={dial().level} />
-          </div>
-          <p class="mono">
-            {toHex(dial().color, "unset")}
-            {" - "}
-            {dial().level}
-            % -
-            {" "}
-            {litRingSegments(dial().level)}
-            /
-            {totalRingSegments}
-            {" "}
-            segments
-          </p>
-        </div>
-        <ColorField
-          label="Colour"
-          value={dial().color}
-          fallback="#1e293b"
-          bindable={false}
-          onChange={(color) => {
-            if (typeof color !== "string") properties.onColorChange(properties.index, color);
-          }}
-        />
-        <label class="field-label">
-          Ring level -
-          {" "}
-          {dial().level}
-          %
-          <input
-            class="range-input"
-            type="range"
-            min="0"
-            max="100"
-            value={dial().level}
-            onInput={event => properties.onLevelChange(properties.index, Number(event.currentTarget.value))}
+}> = properties => (
+  <>
+    <div class="card-head">
+      <p class="card-title">
+        Dial
+        {" "}
+        {properties.dial.index + 1}
+      </p>
+      <span class="chip chip-muted">{properties.dial.index === 0 ? "left" : "right"}</span>
+    </div>
+    <div class="card-body">
+      <div class="flex items-center gap-4 bg-neutral-950 p-3">
+        <div class="w-14 shrink-0">
+          <DialIndicator
+            index={properties.dial.index}
+            color={properties.dial.color}
+            level={properties.dial.level}
           />
-        </label>
+        </div>
+        <p class="mono">
+          {toHex(properties.dial.color, "unset")}
+          {" - "}
+          {properties.dial.level}
+          % -
+          {" "}
+          {litRingSegments(properties.dial.level)}
+          /
+          {totalRingSegments}
+          {" "}
+          segments
+        </p>
       </div>
-    </>
-  );
-};
+      <ColorField
+        label="Colour"
+        value={properties.dial.color}
+        fallback="#1e293b"
+        bindable={false}
+        onChange={(color) => {
+          if (typeof color !== "string") properties.onColorChange(properties.dial.index, color);
+        }}
+      />
+      <label class="field-label">
+        Ring level -
+        {" "}
+        {properties.dial.level}
+        %
+        <input
+          class="range-input"
+          type="range"
+          min="0"
+          max="100"
+          value={properties.dial.level}
+          onInput={event =>
+            properties.onLevelChange(properties.dial.index, Number(event.currentTarget.value))}
+        />
+      </label>
+    </div>
+  </>
+);
 
 type PanelInspectorProperties = {
   panel: Panel;
@@ -413,17 +468,19 @@ type PanelInspectorProperties = {
 };
 
 export const PanelInspector: Component<PanelInspectorProperties> = (properties) => {
-  // Guard on the selection object, not the index - dial 0 is a falsy value.
-  const dialSelection = () => (properties.selection?.kind === "dial" ? properties.selection : null);
+  const selectedDial = () => {
+    const selection = properties.selection;
+
+    return selection?.kind === "dial" ? panelDial(properties.panel, selection.index) : null;
+  };
 
   return (
     <div class="card">
       <Switch fallback={<PanelSettings panel={properties.panel} onMutate={properties.onPanelMutate} />}>
-        <Match when={dialSelection()}>
-          {selection => (
+        <Match when={selectedDial()}>
+          {dial => (
             <DialEditor
-              panel={properties.panel}
-              index={selection().index}
+              dial={dial()}
               onColorChange={properties.onDialColorChange}
               onLevelChange={properties.onDialLevelChange}
             />

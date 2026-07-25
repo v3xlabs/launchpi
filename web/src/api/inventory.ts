@@ -76,14 +76,15 @@ export type Control = {
   pressed_state: RenderedState | null;
   action_bindings: ActionBinding[];
 };
+/** One rotary dial a panel declares. `level` is the percentage of the ring lit when it loads. */
+export type PanelDial = { index: number; level: number; color: RgbaColor; };
 export type Panel = {
   panel_id: string;
   name: string;
   layout: GridLayout;
   capabilities: Capabilities;
   controls: Control[];
-  dial_colors: RgbaColor[];
-  dial_ring_levels: number[];
+  dials: PanelDial[];
 };
 export type Device = {
   surface_id: string;
@@ -212,6 +213,8 @@ const isControl = (value: unknown): value is Control =>
   && isRenderedState(value.default_state)
   && (value.pressed_state === null || isRenderedState(value.pressed_state))
   && Array.isArray(value.action_bindings);
+const isPanelDial = (value: unknown): value is PanelDial =>
+  isRecord(value) && isNumber(value.index) && isNumber(value.level) && isColor(value.color);
 const isPanel = (value: unknown): value is Panel =>
   isRecord(value)
   && isString(value.panel_id)
@@ -220,10 +223,7 @@ const isPanel = (value: unknown): value is Panel =>
   && isCapabilities(value.capabilities)
   && Array.isArray(value.controls)
   && value.controls.every(isControl)
-  && (value.dial_colors === undefined
-    || (Array.isArray(value.dial_colors) && value.dial_colors.every(isColor)))
-  && (value.dial_ring_levels === undefined
-    || (Array.isArray(value.dial_ring_levels) && value.dial_ring_levels.every(isNumber)));
+  && (value.dials === undefined || (Array.isArray(value.dials) && value.dials.every(isPanelDial)));
 const isDevice = (value: unknown): value is Device =>
   isRecord(value)
   && isString(value.surface_id)
@@ -301,16 +301,14 @@ export const deviceGridLayout = (value: unknown): GridLayout | null => {
   return null;
 };
 
-// The Studio is the only surface with rotary dials, and the daemon identifies it by this geometry.
-export const studioLayout: GridLayout = { columns: 16, rows: 2 };
+// Live dial levels arrive per surface rather than per panel, so sizing those arrays still needs the
+// most dials any supported surface has - the Studio's two.
 export const studioDialCount = 2;
-export const isStudioLayout = (layout: GridLayout | null): boolean =>
-  layout !== null && layout.columns === studioLayout.columns && layout.rows === studioLayout.rows;
-export const panelDialCount = (panel: Panel): number => (isStudioLayout(panel.layout) ? studioDialCount : 0);
-export const panelDial = (panel: Panel, index: number): { color: RgbaColor | null; level: number; } => ({
-  color: panel.dial_colors[index] ?? null,
-  level: panel.dial_ring_levels[index] ?? 100,
-});
+export const panelDials = (panel: Panel): PanelDial[] =>
+  [...panel.dials].sort((first, second) => first.index - second.index);
+export const panelDialCount = (panel: Panel): number => panel.dials.length;
+export const panelDial = (panel: Panel, index: number): PanelDial | null =>
+  panel.dials.find(dial => dial.index === index) ?? null;
 
 export const layoutLabel = (layout: GridLayout | null): string =>
   (layout === null ? "Freeform" : `${layout.columns}x${layout.rows}`);
@@ -349,21 +347,16 @@ export type CreatePanelInput = {
   layout: GridLayout;
   capabilities: Capabilities;
   controls: Control[];
-  dial_colors: RgbaColor[];
-  dial_ring_levels: number[];
+  dials: PanelDial[];
 };
-export type PanelPayload = Pick<
-  Panel,
-    "name" | "layout" | "capabilities" | "controls" | "dial_colors" | "dial_ring_levels"
->;
+export type PanelPayload = Pick<Panel, "name" | "layout" | "capabilities" | "controls" | "dials">;
 
 export const panelPayload = (panel: Panel): PanelPayload => ({
   name: panel.name,
   layout: panel.layout,
   capabilities: panel.capabilities,
   controls: panel.controls,
-  dial_colors: panel.dial_colors,
-  dial_ring_levels: panel.dial_ring_levels,
+  dials: panel.dials,
 });
 
 export const fetchInventory = async (): Promise<Inventory> => {
@@ -382,11 +375,7 @@ export const fetchInventory = async (): Promise<Inventory> => {
       parent_surface_id: device.parent_surface_id ?? null,
       open_subpanels: device.open_subpanels ?? [],
     })),
-    panels: data.panels.map(panel => ({
-      ...panel,
-      dial_colors: panel.dial_colors ?? [],
-      dial_ring_levels: panel.dial_ring_levels ?? [],
-    })),
+    panels: data.panels.map(panel => ({ ...panel, dials: panel.dials ?? [] })),
     plugin_instances: data.plugin_instances ?? [],
     key_states: data.key_states ?? [],
     dial_states: data.dial_states ?? [],
