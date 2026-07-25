@@ -12,13 +12,14 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::plugins::{
     builtin::hass::{
+        actions::ENTITY_LOOKUP,
         config::{websocket_url, HassConfig},
         connection::{PendingCommand, Shared},
         protocol::ServiceCall,
     },
     instance::InstanceConfig,
     manifest::{ConfigField, PluginManifest, VariableDefinition, VariableKind},
-    plugin::{Plugin, PluginContext, PluginError, PluginFactory, Subscription},
+    plugin::{LookupOption, Plugin, PluginContext, PluginError, PluginFactory, Subscription},
 };
 
 /// How long a service call waits for its result before the key that triggered it is told the call
@@ -148,6 +149,15 @@ impl Plugin for HassPlugin {
             self.context.interpolate(template)
         })?;
         self.call(call).await
+    }
+
+    async fn lookup(&self, source: &str) -> Result<Vec<LookupOption>, PluginError> {
+        match source {
+            ENTITY_LOOKUP => Ok(self.shared.entity_options()),
+            other => Err(PluginError::Configuration(format!(
+                "unknown lookup {other}"
+            ))),
+        }
     }
 
     async fn subscribe(&self, subscriptions: &[Subscription]) -> Result<(), PluginError> {

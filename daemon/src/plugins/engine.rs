@@ -558,7 +558,6 @@ impl PluginEngine {
             .collect()
     }
 
-
     fn mark_dirty(&self, targets: Vec<RenderTarget>) {
         if targets.is_empty() {
             return;

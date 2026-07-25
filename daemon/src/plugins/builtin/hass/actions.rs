@@ -1,5 +1,8 @@
 use serde_json::{Map, Value as JsonValue};
 
+/// Names the entity picker the UI asks for; the plugin answers it from its own catalogue.
+pub const ENTITY_LOOKUP: &str = "entities";
+
 use crate::{
     panels::rendered_state::RgbaColor,
     plugins::{
@@ -31,7 +34,7 @@ pub fn definitions() -> Vec<ActionDefinition> {
                     .label("Service")
                     .placeholder("turn_on")
                     .required(),
-                ConfigField::text("entity_id")
+                ConfigField::lookup("entity_id", ENTITY_LOOKUP)
                     .label("Entity")
                     .placeholder("light.kitchen"),
                 ConfigField::text("service_data")
@@ -63,7 +66,7 @@ pub fn definitions() -> Vec<ActionDefinition> {
 }
 
 fn entity_field() -> ConfigField {
-    ConfigField::text("entity_id")
+    ConfigField::lookup("entity_id", ENTITY_LOOKUP)
         .label("Entity")
         .placeholder("light.kitchen")
         .required()

@@ -228,8 +228,12 @@ mod tests {
     fn an_unknown_or_corrupt_asset_decodes_to_nothing_rather_than_failing() {
         let (store, _guard) = store();
 
-        assert!(store.decoded(&AssetId("hash:deadbeef".to_string()), 96).is_none());
-        assert!(store.decoded(&AssetId("builtin:play".to_string()), 96).is_none());
+        assert!(store
+            .decoded(&AssetId("hash:deadbeef".to_string()), 96)
+            .is_none());
+        assert!(store
+            .decoded(&AssetId("builtin:play".to_string()), 96)
+            .is_none());
 
         let corrupt = store.insert_bytes(b"not an image").expect("stores");
         assert!(store.decoded(&corrupt, 96).is_none());
@@ -237,7 +241,9 @@ mod tests {
 
     #[test]
     fn covering_a_wide_image_crops_rather_than_letterboxes() {
-        let wide = image::load_from_memory(&png(200, 50)).expect("decodes").to_rgb8();
+        let wide = image::load_from_memory(&png(200, 50))
+            .expect("decodes")
+            .to_rgb8();
 
         let covered = cover(&wide, 96);
 
@@ -254,8 +260,14 @@ mod tests {
         cache.get(&("a".to_string(), 96));
         cache.insert(("c".to_string(), 96), image());
 
-        assert!(cache.get(&("a".to_string(), 96)).is_some(), "recently used survives");
-        assert!(cache.get(&("b".to_string(), 96)).is_none(), "oldest is evicted");
+        assert!(
+            cache.get(&("a".to_string(), 96)).is_some(),
+            "recently used survives"
+        );
+        assert!(
+            cache.get(&("b".to_string(), 96)).is_none(),
+            "oldest is evicted"
+        );
         assert!(cache.get(&("c".to_string(), 96)).is_some());
     }
 }

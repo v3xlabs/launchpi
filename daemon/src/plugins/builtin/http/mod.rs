@@ -95,7 +95,6 @@ async fn start(
     Ok(plugin)
 }
 
-
 struct HttpPlugin {
     settings: HttpConfig,
     authorization: Option<String>,
@@ -175,7 +174,6 @@ impl HttpPlugin {
         }
         request.send().await.map_err(|error| error.to_string())
     }
-
 }
 
 #[async_trait]
@@ -212,7 +210,6 @@ impl Plugin for HttpPlugin {
             status.as_u16()
         )))
     }
-
 }
 
 fn json_to_variable(value: &JsonValue) -> VariableValue {
@@ -240,7 +237,6 @@ fn optional_string(parameters: &JsonValue, key: &str) -> Option<String> {
         other => Some(other.to_string()),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -363,7 +359,6 @@ mod tests {
         );
     }
 
-
     #[tokio::test]
     async fn an_unknown_action_and_feedback_are_reported_by_name() {
         let port = serve("{}").await;
@@ -400,7 +395,6 @@ mod tests {
             Some("200".to_string())
         );
     }
-
 
     #[test]
     fn an_empty_string_parameter_reads_as_absent() {

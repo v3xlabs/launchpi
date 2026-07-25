@@ -34,8 +34,8 @@ use crate::{
         },
         plugin::{Plugin, PluginContext, PluginError, PluginFactory, Subscription},
     },
-    variables::VariableValue,
     surfaces::logs::SurfaceLogLevel,
+    variables::VariableValue,
 };
 
 /// The value name whose presence on a panel is what turns position polling on. MPRIS never signals
@@ -532,7 +532,8 @@ impl MprisPlugin {
             fetched.clone_from(&url);
         }
         if url.is_empty() {
-            self.context.set_value(ART_VALUE, VariableValue::Text(String::new()));
+            self.context
+                .set_value(ART_VALUE, VariableValue::Text(String::new()));
             return;
         }
 
@@ -561,7 +562,6 @@ impl MprisPlugin {
             }
         });
     }
-
 }
 
 /// Local players hand out `file://` URLs for cover art, which no HTTP client will fetch.
@@ -591,7 +591,6 @@ async fn load_art(context: &PluginContext, url: &str) -> Result<Vec<u8>, String>
 }
 
 impl MprisPlugin {
-
     fn warn(&self, message: String) {
         self.context.log(SurfaceLogLevel::Warning, message);
     }
@@ -721,6 +720,17 @@ fn upstream(error: impl std::fmt::Display) -> PluginError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_file_url_path_is_percent_decoded() {
+        assert_eq!(
+            percent_decoded("/home/luc/Music/My%20Album/cover.jpg"),
+            "/home/luc/Music/My Album/cover.jpg"
+        );
+        assert_eq!(percent_decoded("/plain/path.png"), "/plain/path.png");
+        // A stray percent is left alone rather than eating the next two characters.
+        assert_eq!(percent_decoded("/100%/x"), "/100%/x");
+    }
+
     use super::*;
     use crate::{
         identifiers::IntegrationId,

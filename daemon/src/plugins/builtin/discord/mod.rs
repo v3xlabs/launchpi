@@ -63,14 +63,16 @@ fn manifest() -> PluginManifest {
         actions: vec![
             ActionDefinition::new("mute_member")
                 .label("Mute member")
-                .parameters(vec![ConfigField::text("user_id")
-                    .label("User ID")
-                    .required()]),
+                .parameters(vec![
+                    ConfigField::text("user_id").label("User ID").required(),
+                    ConfigField::boolean("mute").label("Muted").required(),
+                ]),
             ActionDefinition::new("deafen_member")
                 .label("Deafen member")
-                .parameters(vec![ConfigField::text("user_id")
-                    .label("User ID")
-                    .required()]),
+                .parameters(vec![
+                    ConfigField::text("user_id").label("User ID").required(),
+                    ConfigField::boolean("deaf").label("Deafened").required(),
+                ]),
             ActionDefinition::new("disconnect_member")
                 .label("Disconnect member")
                 .parameters(vec![ConfigField::text("user_id")
@@ -161,8 +163,16 @@ impl Plugin for DiscordPlugin {
         }
         let guild_id = self.settings.guild_id.as_deref().unwrap_or_default();
         let body = match action_name {
-            "mute_member" => json!({"mute": true}),
-            "deafen_member" => json!({"deaf": true}),
+            "mute_member" => json!({
+                "mute": parameters.get("mute").and_then(JsonValue::as_bool).ok_or_else(|| {
+                    PluginError::Configuration("mute is required".to_string())
+                })?
+            }),
+            "deafen_member" => json!({
+                "deaf": parameters.get("deaf").and_then(JsonValue::as_bool).ok_or_else(|| {
+                    PluginError::Configuration("deaf is required".to_string())
+                })?
+            }),
             "disconnect_member" => json!({"channel_id": null}),
             _ => return Err(PluginError::UnknownAction(action_name.to_string())),
         };

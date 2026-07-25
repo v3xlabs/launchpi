@@ -7,7 +7,8 @@ export type ConfigFieldKind
     | { type: "number"; }
     | { type: "boolean"; }
     | { type: "secret"; }
-    | { type: "select"; options: Array<{ value: string; label: string; }>; };
+    | { type: "select"; options: Array<{ value: string; label: string; }>; }
+    | { type: "lookup"; source: string; };
 export type ConfigField = {
   key: string;
   label: string;
@@ -62,7 +63,7 @@ export type VariableEntry = {
 const isConfigFieldKind = (value: unknown): value is ConfigFieldKind =>
   isRecord(value)
   && isString(value.type)
-  && ["text", "number", "boolean", "secret", "select"].includes(value.type);
+  && ["text", "number", "boolean", "secret", "select", "lookup"].includes(value.type);
 const isConfigField = (value: unknown): value is ConfigField =>
   isRecord(value)
   && isString(value.key)
@@ -175,6 +176,27 @@ export const fetchVariables = async (integrationId: string): Promise<VariableEnt
   }
 
   return data;
+};
+
+export type LookupOption = { value: string; label: string; group: string | null; };
+
+const isLookupOption = (value: unknown): value is LookupOption =>
+  isRecord(value) && isString(value.value) && isString(value.label);
+
+/** Options for a lookup field. An instance that is down simply offers none. */
+export const fetchLookup = async (
+  integrationId: string,
+  source: string,
+): Promise<LookupOption[]> => {
+  const response = await fetch(
+    `/api/plugins/${encodeURIComponent(integrationId)}/lookup/${encodeURIComponent(source)}`,
+  );
+
+  if (!response.ok) return [];
+
+  const data: unknown = await response.json();
+
+  return Array.isArray(data) && data.every(isLookupOption) ? data : [];
 };
 
 export type UserValue = { name: string; value: unknown; description: string | null; };

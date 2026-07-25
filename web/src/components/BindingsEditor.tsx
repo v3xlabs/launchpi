@@ -118,6 +118,11 @@ const ActionRow: Component<{
               {field => (
                 <ConfigFieldInput
                   field={field}
+                  integrationId={
+                    properties.action.type === "invoke_integration"
+                      ? properties.action.integration_id
+                      : undefined
+                  }
                   value={parameterValue(properties.action, field.key)}
                   onChange={raw =>
                     editAction((action) => {

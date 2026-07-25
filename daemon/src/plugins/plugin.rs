@@ -29,7 +29,6 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait Plugin: Send + Sync {
     async fn invoke(&self, action_name: &str, parameters: &JsonValue) -> Result<(), PluginError>;
 
-
     /// The full current set of what anything on screen is watching, not a delta. Implementations
     /// replace rather than merge.
     async fn subscribe(&self, _subscriptions: &[Subscription]) -> Result<(), PluginError> {

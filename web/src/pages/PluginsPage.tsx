@@ -303,6 +303,7 @@ const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
                     {field => (
                       <ConfigFieldInput
                         field={field}
+                        integrationId={found().integration_id}
                         value={draft.values[field.key]}
                         onChange={raw => setField(field, raw)}
                       />

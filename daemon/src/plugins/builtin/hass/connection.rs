@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         RwLock,
@@ -19,7 +19,7 @@ use crate::{
             protocol::{self, ServerMessage, ServiceCall},
             values::{entity_id_of, parse_binding, value_for_field, ValueBinding},
         },
-        plugin::{PluginContext, Subscription},
+        plugin::{LookupOption, PluginContext, Subscription},
     },
     surfaces::logs::SurfaceLogLevel,
 };
@@ -32,8 +32,17 @@ const KEEPALIVE: Duration = Duration::from_secs(30);
 
 /// What the plugin and its connection share: the bindings the connection publishes into, the queue
 /// it takes commands from, and enough state for `invoke` to answer without a socket.
+#[derive(Clone, Debug)]
+pub struct CatalogueEntry {
+    pub friendly_name: Option<String>,
+    pub domain: String,
+}
+
 pub struct Shared {
     pub bindings: RwLock<Vec<ValueBinding>>,
+    /// Every entity the seed reported, so the UI can offer real names instead of asking someone to
+    /// remember `light.kitchen_ceiling_2`. Ordered, because it is read straight into a picker.
+    pub catalogue: RwLock<BTreeMap<String, CatalogueEntry>>,
     pub commands: mpsc::Sender<PendingCommand>,
     pub reseed: Notify,
     pub is_connected: AtomicBool,
@@ -43,10 +52,51 @@ impl Shared {
     pub fn new(commands: mpsc::Sender<PendingCommand>) -> Self {
         Self {
             bindings: RwLock::new(Vec::new()),
+            catalogue: RwLock::new(BTreeMap::new()),
             commands,
             reseed: Notify::new(),
             is_connected: AtomicBool::new(false),
         }
+    }
+
+    /// Remembers what an entity is called and what kind of thing it is. Every state that arrives
+    /// updates it, so the picker reflects the installation as it is now.
+    pub fn record(&self, entity_id: &str, state: &JsonValue) {
+        let friendly_name = state
+            .get("attributes")
+            .and_then(|attributes| attributes.get("friendly_name"))
+            .and_then(JsonValue::as_str)
+            .map(str::to_string);
+        let domain = entity_id
+            .split_once('.')
+            .map(|(domain, _)| domain.to_string())
+            .unwrap_or_default();
+
+        self.catalogue.write().unwrap().insert(
+            entity_id.to_string(),
+            CatalogueEntry {
+                friendly_name,
+                domain,
+            },
+        );
+    }
+
+    /// The entity list as lookup options: friendly name first because that is what a person knows,
+    /// the id alongside it because that is what the binding actually stores.
+    pub fn entity_options(&self) -> Vec<LookupOption> {
+        self.catalogue
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(entity_id, entry)| LookupOption {
+                value: entity_id.clone(),
+                label: match &entry.friendly_name {
+                    Some(name) => format!("{name} ({entity_id})"),
+                    None => entity_id.clone(),
+                },
+                group: Some(entry.domain.clone()),
+            })
+            .collect()
     }
 
     /// Replaces the watched set. Names that do not read like an entity are dropped here, so the
@@ -259,6 +309,7 @@ fn publish(context: &PluginContext, shared: &Shared, state: &JsonValue) {
     let Some(entity_id) = entity_id_of(state) else {
         return;
     };
+    shared.record(&entity_id, state);
     let bindings = shared.bindings.read().unwrap();
     for binding in bindings
         .iter()

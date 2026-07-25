@@ -116,10 +116,11 @@ async fn render_key(
     State(state): State<AppState>,
     Json(rendering): Json<KeyRendering>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let image = studio::render_key(&rendering, Some(state.assets.as_ref())).map_err(|error| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: error,
-    })?;
+    let image =
+        studio::render_key(&rendering, Some(state.assets.as_ref())).map_err(|error| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: error,
+        })?;
     Ok(([(axum::http::header::CONTENT_TYPE, "image/jpeg")], image))
 }
 

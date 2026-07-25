@@ -58,6 +58,8 @@ const CORA_WRITE: u8 = 0x00;
 const CORA_GET_REPORT: u8 = 0x02;
 const CORA_PRIMARY_INFO_MESSAGE_ID: u32 = 1;
 const CORA_CHILD_INFO_MESSAGE_ID: u32 = 4;
+/// How much of an image survives behind a label, as a percentage.
+const ART_SCRIM_NUMERATOR: u16 = 45;
 const STUDIO_KEY_IMAGE_SIZE: usize = 96;
 const IMAGE_REPORT_HEADER_SIZE: usize = 8;
 const KEY_TEXT_PADDING: f32 = 6.0;
@@ -1313,6 +1315,13 @@ fn render_key_image(
         .and_then(|asset| assets.and_then(|store| store.decoded(asset, STUDIO_KEY_IMAGE_SIZE as u32)))
     {
         pixels.copy_from_slice(art.as_raw());
+        // Album art is arbitrary, so a label over it can land on anything. Darkening the picture
+        // when there is text to read is what keeps the label legible without hiding the art.
+        if rendering.text.is_some() {
+            for channel in pixels.iter_mut() {
+                *channel = (u16::from(*channel) * ART_SCRIM_NUMERATOR / 100) as u8;
+            }
+        }
     }
     if let Some(icon) = &rendering.icon {
         draw_icon(&mut pixels, icon, foreground);

@@ -165,7 +165,6 @@ impl ActionDefinition {
     }
 }
 
-
 #[derive(Clone, Debug, Serialize)]
 pub struct VariableDefinition {
     pub name: String,
