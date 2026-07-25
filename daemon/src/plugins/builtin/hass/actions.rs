@@ -19,7 +19,9 @@ pub fn definitions() -> Vec<ActionDefinition> {
     vec![
         ActionDefinition::new(CALL_SERVICE)
             .label("Call a service")
-            .description("Calls any Home Assistant service. Every field resolves $(...) references.")
+            .description(
+                "Calls any Home Assistant service. Every field resolves $(...) references.",
+            )
             .parameters(vec![
                 ConfigField::text("domain")
                     .label("Domain")
@@ -72,7 +74,9 @@ fn brightness_field() -> ConfigField {
 }
 
 fn color_field() -> ConfigField {
-    ConfigField::text("color").label("Colour").placeholder("#e8b923")
+    ConfigField::text("color")
+        .label("Colour")
+        .placeholder("#e8b923")
 }
 
 /// Turns an invocation into the one service call it means. The convenience actions exist so a

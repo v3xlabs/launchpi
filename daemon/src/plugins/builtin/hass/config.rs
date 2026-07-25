@@ -20,9 +20,9 @@ pub fn websocket_url(url: &str) -> Result<String, String> {
         return Err("url is required".to_string());
     }
 
-    let (scheme, rest) = trimmed
-        .split_once("://")
-        .ok_or_else(|| format!("{trimmed} needs a scheme, such as http://homeassistant.local:8123"))?;
+    let (scheme, rest) = trimmed.split_once("://").ok_or_else(|| {
+        format!("{trimmed} needs a scheme, such as http://homeassistant.local:8123")
+    })?;
     let scheme = match scheme.to_ascii_lowercase().as_str() {
         "http" | "ws" => "ws",
         "https" | "wss" => "wss",

@@ -210,14 +210,16 @@ mod tests {
         tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let calls = calls.clone();
-                let is_early_close = accepted.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                    < closes_first;
+                let is_early_close =
+                    accepted.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < closes_first;
                 tokio::spawn(async move {
                     let mut socket = tokio_tungstenite::accept_async(stream)
                         .await
                         .expect("the client speaks websocket");
                     let _ = socket
-                        .send(frame(json!({ "type": "auth_required", "ha_version": "2026.7.1" })))
+                        .send(frame(
+                            json!({ "type": "auth_required", "ha_version": "2026.7.1" }),
+                        ))
                         .await;
 
                     let Some(Ok(Message::Text(payload))) = socket.next().await else {
@@ -553,7 +555,10 @@ mod tests {
         .expect("a bad token is only discovered once connected");
 
         let message = await_log(&mut started.signals, "rejected the access token", 1).await;
-        assert!(!message.contains("wrong"), "the token was logged: {message}");
+        assert!(
+            !message.contains("wrong"),
+            "the token was logged: {message}"
+        );
 
         // A token that was refused will not become valid, and Home Assistant bans a caller that
         // keeps trying, so the retry loop has to end here.

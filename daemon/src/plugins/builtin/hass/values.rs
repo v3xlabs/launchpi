@@ -49,9 +49,7 @@ pub fn value_for_field(state: &JsonValue, field: &str) -> Option<VariableValue> 
         "color" => color_of(state).map(VariableValue::Color),
         "brightness_pct" => attribute(state, "brightness")
             .and_then(JsonValue::as_f64)
-            .map(|brightness| {
-                VariableValue::Number((brightness * 100.0 / MAX_BRIGHTNESS).round())
-            }),
+            .map(|brightness| VariableValue::Number((brightness * 100.0 / MAX_BRIGHTNESS).round())),
         path => lookup(state, path).map(scalar),
     }
 }
@@ -87,7 +85,9 @@ fn color_of(state: &JsonValue) -> Option<RgbaColor> {
     }
     if let Some(color) = attribute(state, "hs_color")
         .and_then(JsonValue::as_array)
-        .and_then(|components| hue_saturation(components.first()?.as_f64()?, components.get(1)?.as_f64()?))
+        .and_then(|components| {
+            hue_saturation(components.first()?.as_f64()?, components.get(1)?.as_f64()?)
+        })
     {
         return Some(color);
     }

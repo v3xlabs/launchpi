@@ -153,7 +153,11 @@ async fn serve(
     let mut pending: HashMap<u64, oneshot::Sender<Result<JsonValue, String>>> = HashMap::new();
     let mut seeds: HashSet<u64> = HashSet::new();
 
-    send(&mut writer, protocol::subscribe_state_changed(take(&mut next_id))).await?;
+    send(
+        &mut writer,
+        protocol::subscribe_state_changed(take(&mut next_id)),
+    )
+    .await?;
     let seed = take(&mut next_id);
     seeds.insert(seed);
     send(&mut writer, protocol::get_states(seed)).await?;
@@ -256,7 +260,10 @@ fn publish(context: &PluginContext, shared: &Shared, state: &JsonValue) {
         return;
     };
     let bindings = shared.bindings.read().unwrap();
-    for binding in bindings.iter().filter(|binding| binding.entity_id == entity_id) {
+    for binding in bindings
+        .iter()
+        .filter(|binding| binding.entity_id == entity_id)
+    {
         if let Some(value) = value_for_field(state, &binding.field) {
             context.set_value(binding.name.clone(), value);
         }

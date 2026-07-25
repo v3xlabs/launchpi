@@ -6,7 +6,9 @@ use serde_json::{json, Map, Value as JsonValue};
 pub enum ServerMessage {
     AuthRequired,
     AuthOk,
-    AuthInvalid { message: String },
+    AuthInvalid {
+        message: String,
+    },
     /// The new state carried by a `state_changed` event.
     State(JsonValue),
     Result {
@@ -197,10 +199,7 @@ mod tests {
                 "data": { "entity_id": "light.kitchen", "new_state": null }
             }
         }"#;
-        assert_eq!(
-            parse_server_message(payload),
-            Ok(ServerMessage::Ignored)
-        );
+        assert_eq!(parse_server_message(payload), Ok(ServerMessage::Ignored));
     }
 
     #[test]
