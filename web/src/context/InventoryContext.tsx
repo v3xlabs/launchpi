@@ -325,6 +325,8 @@ export const InventoryProvider: ParentComponent = (properties) => {
         return;
       }
 
+      if (parsed.type === "assets_changed") return pluginStore.assetsChanged();
+
       if (parsed.type === "changed") scheduleResync();
     };
 

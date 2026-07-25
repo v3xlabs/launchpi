@@ -28,6 +28,13 @@ impl RenderLedger {
 
     /// Forgets what a surface was showing, so the next repaint is sent rather than deduplicated
     /// against a device that has since been reset.
+    /// Forgets everything. Needed when what changed is not the rendering itself but what an id
+    /// resolves to — a fetched image landing leaves the `KeyRendering` byte-identical, so without
+    /// this the repaint that would finally draw the picture is dropped as a duplicate.
+    pub fn forget_all(&self) {
+        self.last_rendered.write().unwrap().clear();
+    }
+
     pub fn forget(&self, surface_id: &str) {
         self.last_rendered
             .write()

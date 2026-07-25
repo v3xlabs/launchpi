@@ -2,6 +2,7 @@ import { Accessor, createSignal, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 
 import * as pluginApi from "../api/plugins";
+import { forgetRenderedKeys } from "../api/render";
 
 export type PluginStore = {
   plugins: Accessor<pluginApi.PluginCatalogue>;
@@ -21,6 +22,9 @@ export type PluginStore = {
   variables: Record<string, string>;
   setVariable: (integrationId: string, name: string, rendered: string) => void;
   copyToClipboard: (load: () => Promise<string>) => Promise<boolean>;
+  /** Bumped when the daemon reports a fetched image; keyed into every rendered key. */
+  assetGeneration: Accessor<number>;
+  assetsChanged: () => void;
   values: Accessor<pluginApi.ValueCatalogue>;
   refreshValues: () => Promise<void>;
   saveUserValue: (value: pluginApi.UserValue) => Promise<boolean>;
@@ -38,6 +42,7 @@ export const createPluginStore = (
   const [catalogue, setCatalogue] = createSignal<pluginApi.PluginCatalogue>(pluginApi.emptyCatalogue);
   const [values, setValues] = createSignal<pluginApi.ValueCatalogue>(pluginApi.emptyValueCatalogue);
   const [variables, setVariables] = createStore<Record<string, string>>({});
+  const [assetGeneration, setAssetGeneration] = createSignal(0);
 
   const refreshValues = async (): Promise<void> => {
     try {
@@ -93,6 +98,11 @@ export const createPluginStore = (
     variables,
     setVariable: (integrationId, name, rendered) =>
       setVariables(`${integrationId}:${name}`, rendered),
+    assetGeneration,
+    assetsChanged: () => {
+      forgetRenderedKeys();
+      setAssetGeneration(generation => generation + 1);
+    },
     values,
     refreshValues,
     saveUserValue: value =>

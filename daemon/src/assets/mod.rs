@@ -289,10 +289,16 @@ impl DecodedCache {
 mod tests {
     use super::*;
 
-    fn store() -> (AssetStore, tempdir::TempDir) {
+    fn store() -> (Arc<AssetStore>, tempdir::TempDir) {
         let directory = tempdir::TempDir::new();
-        let store = AssetStore::open(directory.path().to_path_buf()).expect("opens");
-        (store, directory)
+        let (ready, _receiver) = mpsc::channel(8);
+        let store = AssetStore::open(
+            directory.path().to_path_buf(),
+            reqwest::Client::new(),
+            ready,
+        )
+        .expect("opens");
+        (Arc::new(store), directory)
     }
 
     /// The crate has no dev-dependency on a temp-dir helper, and adding one for four tests is not
@@ -383,6 +389,48 @@ mod tests {
 
         let corrupt = store.insert_bytes(b"not an image").expect("stores");
         assert!(store.decoded(&corrupt, 96).is_none());
+    }
+
+    #[test]
+    fn a_url_is_keyed_by_the_url_so_the_same_picture_is_stored_once() {
+        let (store, _guard) = store();
+        let url = AssetId("https://example.test/cover.png".to_string());
+
+        let digest = store.digest_of(&url).expect("a url has a digest");
+        assert_eq!(store.digest_of(&url), Some(digest.clone()));
+        assert_ne!(
+            store.digest_of(&AssetId("https://example.test/other.png".to_string())),
+            Some(digest)
+        );
+    }
+
+    #[test]
+    fn only_fetchable_ids_are_gone_after() {
+        assert!(is_fetchable("https://example.test/a.png"));
+        assert!(is_fetchable("http://example.test/a.png"));
+        assert!(is_fetchable("file:///home/luc/cover.jpg"));
+        assert!(!is_fetchable("builtin:play"));
+        assert!(!is_fetchable("hash:abc123"));
+        assert!(!is_fetchable("just some text"));
+    }
+
+    #[test]
+    fn an_unfetched_url_draws_nothing_rather_than_blocking() {
+        let (store, _guard) = store();
+
+        // No runtime here, so nothing is spawned; the point is that it returns instead of waiting.
+        assert!(store
+            .decoded(&AssetId("https://example.test/cover.png".to_string()), 96)
+            .is_none());
+    }
+
+    #[test]
+    fn a_file_url_path_is_percent_decoded() {
+        assert_eq!(
+            percent_decoded("/home/luc/My%20Album/cover.jpg"),
+            "/home/luc/My Album/cover.jpg"
+        );
+        assert_eq!(percent_decoded("/plain/path.png"), "/plain/path.png");
     }
 
     #[test]

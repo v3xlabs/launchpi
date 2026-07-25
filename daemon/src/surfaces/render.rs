@@ -65,6 +65,13 @@ impl SurfaceRegistry {
         }
     }
 
+    /// Drops every key's remembered rendering, so the next repaint is actually sent. Used when an
+    /// image an id points at arrives after the key was already drawn without it: the
+    /// `KeyRendering` is byte-identical, so the repaint would otherwise be dropped as a duplicate.
+    pub fn forget_renderings(&self) {
+        self.rendered.forget_all();
+    }
+
     /// Drops a repaint that would produce the identical image.
     pub(super) fn send_rendering(&self, surface_id: &SurfaceId, rendering: KeyRendering) {
         let key_index = rendering.key_index;

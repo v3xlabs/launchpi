@@ -10,6 +10,12 @@ type KeyRendering = {
 
 const cache = new Map<string, Promise<string>>();
 
+/**
+ * A key whose image is a URL renders blank until the download lands, and this cache would
+ * otherwise hold that blank result forever. Dropping it is what lets the picture appear.
+ */
+export const forgetRenderedKeys = (): void => cache.clear();
+
 // Renders a key exactly as the daemon draws it for the device (same ab_glyph font, same raster),
 // returning an object URL for the JPEG. Cached by rendering so identical keys share one request.
 export type ResolvedState = {

@@ -775,6 +775,8 @@ async fn run_flush(engine: Arc<PluginEngine>) {
 /// resolution did not actually change, and this fires once per newly-seen URL.
 async fn watch_assets(engine: Arc<PluginEngine>, mut ready: mpsc::Receiver<()>) {
     while ready.recv().await.is_some() {
+        engine.surfaces.forget_renderings();
+        engine.surfaces.emit_event(ServerEvent::AssetsChanged);
         let targets = engine.index.read().unwrap().every_target();
         engine.mark_dirty(targets);
     }

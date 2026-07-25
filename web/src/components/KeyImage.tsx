@@ -25,7 +25,9 @@ export const KeyImage: Component<{ state: RenderedState; }> = (properties) => {
     foreground_color: resolveColor(properties.state.foreground_color),
     background_color: resolveColor(properties.state.background_color),
   });
-  const renderKey = () => JSON.stringify(resolved());
+  // Keyed on the asset generation too: a key whose image is a URL renders blank until the download
+  // lands, and the daemon bumps that generation when it does.
+  const renderKey = () => JSON.stringify([resolved(), store.assetGeneration()]);
   const [url] = createResource(renderKey, () => renderedKeyImageUrl(resolved()));
 
   return (
