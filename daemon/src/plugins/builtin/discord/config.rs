@@ -3,6 +3,8 @@ use serde::Deserialize;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiscordConfig {
+    /// Resolved separately by `InstanceConfig::required_secret`.
+    pub token: Option<toml::Value>,
     pub guild_id: Option<String>,
     pub channel_id: Option<String>,
     pub user_id: Option<String>,
@@ -54,6 +56,7 @@ mod tests {
     #[test]
     fn requires_a_fixed_channel_or_followed_user() {
         let config = DiscordConfig {
+            token: None,
             guild_id: Some("1".to_string()),
             channel_id: None,
             user_id: None,
@@ -65,6 +68,7 @@ mod tests {
     #[test]
     fn accepts_a_followed_user() {
         let config = DiscordConfig {
+            token: None,
             guild_id: Some("1".to_string()),
             channel_id: None,
             user_id: Some("2".to_string()),

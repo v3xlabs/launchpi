@@ -118,6 +118,7 @@ impl PluginEngine {
         directory: PluginDirectory,
         values_path: PathBuf,
         assets: Arc<AssetStore>,
+        assets_ready: mpsc::Receiver<()>,
         input: mpsc::Receiver<InputEvent>,
     ) -> Arc<Self> {
         let (signals, signal_receiver) = mpsc::channel(SIGNAL_QUEUE_SIZE);
@@ -144,6 +145,7 @@ impl PluginEngine {
         tokio::spawn(run_input(engine.clone(), input));
         tokio::spawn(run_flush(engine.clone()));
         tokio::spawn(watch_inventory(engine.clone()));
+        tokio::spawn(watch_assets(engine.clone(), assets_ready));
 
         engine
     }
@@ -765,6 +767,16 @@ async fn run_flush(engine: Arc<PluginEngine>) {
         engine.dirty_notify.notified().await;
         tokio::time::sleep(COALESCE_WINDOW).await;
         engine.flush_dirty();
+    }
+}
+
+/// An image that was not on disk when a key was drawn arrives later. Which key wanted it is not
+/// worth tracking: repainting everything is cheap, because the render ledger drops every key whose
+/// resolution did not actually change, and this fires once per newly-seen URL.
+async fn watch_assets(engine: Arc<PluginEngine>, mut ready: mpsc::Receiver<()>) {
+    while ready.recv().await.is_some() {
+        let targets = engine.index.read().unwrap().every_target();
+        engine.mark_dirty(targets);
     }
 }
 

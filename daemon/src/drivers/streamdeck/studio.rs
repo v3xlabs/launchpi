@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{
     collections::BTreeMap,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
@@ -182,7 +183,7 @@ impl PendingRenders {
         transport: TransportMode,
         flip_image: bool,
         reports_written: &AtomicU64,
-        assets: Option<&AssetStore>,
+        assets: Option<&Arc<AssetStore>>,
     ) -> Result<(), String> {
         for (dial_index, (color, lit_segments)) in std::mem::take(&mut self.dials) {
             if self.knob_colors.get(&dial_index) != Some(&color) {
@@ -387,7 +388,7 @@ async fn handle_connection(
                     transport,
                     rendering,
                     surface.model == "Stream Deck XL",
-                    Some(state.assets.as_ref()),
+                    Some(&state.assets),
                 )
                 .await?;
             }
@@ -493,7 +494,7 @@ async fn write_loop<W: AsyncWrite + Unpin>(
     io: &ConnectionIo<'_>,
 ) -> Result<(), String> {
     let (transport, reports_written) = (io.transport, io.reports_written);
-    let assets = Some(io.state.assets.as_ref());
+    let assets = Some(&io.state.assets);
     let flip_image = io.surface.model == "Stream Deck XL";
     let mut child_query_interval = interval(CHILD_QUERY_INTERVAL);
     child_query_interval.tick().await;
@@ -1143,7 +1144,7 @@ async fn send_key_image<W: AsyncWrite + Unpin>(
     transport: TransportMode,
     rendering: KeyRendering,
     flip_image: bool,
-    assets: Option<&AssetStore>,
+    assets: Option<&Arc<AssetStore>>,
 ) -> Result<(), String> {
     let image = render_key_image(&rendering, flip_image, assets)?;
     let chunk_size = LEGACY_RESPONSE_SIZE - IMAGE_REPORT_HEADER_SIZE;
@@ -1267,7 +1268,7 @@ async fn send_report<W: AsyncWrite + Unpin>(
     }
 }
 
-pub fn render_key(rendering: &KeyRendering, assets: Option<&AssetStore>) -> Result<Vec<u8>, String> {
+pub fn render_key(rendering: &KeyRendering, assets: Option<&Arc<AssetStore>>) -> Result<Vec<u8>, String> {
     render_key_image(rendering, false, assets)
 }
 
@@ -1296,7 +1297,7 @@ fn draw_progress(pixels: &mut [u8], progress: &Progress, color: (u8, u8, u8)) {
 fn render_key_image(
     rendering: &KeyRendering,
     flip_image: bool,
-    assets: Option<&AssetStore>,
+    assets: Option<&Arc<AssetStore>>,
 ) -> Result<Vec<u8>, String> {
     let background = rendering.background_color.as_ref().map_or((0, 0, 0), rgb);
     let foreground = rendering

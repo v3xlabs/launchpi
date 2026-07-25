@@ -117,7 +117,7 @@ async fn render_key(
     Json(rendering): Json<KeyRendering>,
 ) -> Result<impl IntoResponse, ApiError> {
     let image =
-        studio::render_key(&rendering, Some(state.assets.as_ref())).map_err(|error| ApiError {
+        studio::render_key(&rendering, Some(&state.assets)).map_err(|error| ApiError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: error,
         })?;

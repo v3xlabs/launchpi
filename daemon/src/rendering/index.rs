@@ -86,6 +86,15 @@ impl DependencyIndex {
             .unwrap_or_default()
     }
 
+    /// Every key the index knows about, for the rare case where what changed is not a value.
+    pub fn every_target(&self) -> Vec<RenderTarget> {
+        let mut targets: HashSet<RenderTarget> = HashSet::new();
+        for known in self.by_variable.values() {
+            targets.extend(known.iter().cloned());
+        }
+        targets.into_iter().collect()
+    }
+
     pub fn watched_integrations(&self) -> Vec<IntegrationId> {
         self.subscriptions.keys().cloned().collect()
     }

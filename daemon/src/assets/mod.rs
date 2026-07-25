@@ -1,16 +1,22 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
 use image::{imageops::FilterType, RgbImage};
 use sha2::{Digest, Sha256};
+use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::identifiers::AssetId;
+
+/// A URL that failed is not retried until this passes. Without it a broken link would be re-fetched
+/// on every repaint of the key showing it.
+const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(60);
 
 /// How many decoded and resized images stay in memory. Album art arrives at 640x640 and is drawn
 /// at 96x96; decoding it on every repaint would be pure waste, and a handful of tracks is all a
@@ -25,15 +31,30 @@ const DECODED_CACHE_SIZE: usize = 32;
 pub struct AssetStore {
     root: PathBuf,
     decoded: Mutex<DecodedCache>,
+    http: reqwest::Client,
+    /// URLs currently being fetched, and when each last failed. A panel repainting thirty-two keys
+    /// that all show the same avatar must produce one download, not thirty-two.
+    in_flight: Mutex<HashSet<String>>,
+    failed: Mutex<HashMap<String, Instant>>,
+    /// Poked when bytes land, so whatever is on screen can be drawn again with the picture.
+    ready: mpsc::Sender<()>,
 }
 
 impl AssetStore {
-    pub fn open(cache_directory: PathBuf) -> Result<Self> {
+    pub fn open(
+        cache_directory: PathBuf,
+        http: reqwest::Client,
+        ready: mpsc::Sender<()>,
+    ) -> Result<Self> {
         fs::create_dir_all(&cache_directory)
             .with_context(|| format!("unable to create {}", cache_directory.display()))?;
         Ok(Self {
             root: cache_directory,
             decoded: Mutex::new(DecodedCache::new(DECODED_CACHE_SIZE)),
+            http,
+            in_flight: Mutex::default(),
+            failed: Mutex::default(),
+            ready,
         })
     }
 
@@ -56,15 +77,23 @@ impl AssetStore {
     /// Decoded and resized to cover a square of `size`, centre-cropped. `None` covers every reason
     /// an image might not be drawable — unknown id, missing file, corrupt bytes — because all of
     /// them mean the same thing to the renderer: draw the key without a picture.
-    pub fn decoded(&self, asset: &AssetId, size: u32) -> Option<Arc<RgbImage>> {
-        let digest = asset.0.strip_prefix("hash:")?;
-        let key = (digest.to_string(), size);
+    pub fn decoded(self: &Arc<Self>, asset: &AssetId, size: u32) -> Option<Arc<RgbImage>> {
+        let digest = self.digest_of(asset)?;
+        let key = (digest.clone(), size);
 
         if let Some(hit) = self.decoded.lock().unwrap().get(&key) {
             return Some(hit);
         }
 
-        let bytes = fs::read(self.path_for(digest)).ok()?;
+        let bytes = match fs::read(self.path_for(&digest)) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                // Not stored yet. For a URL that means "go and get it", and the key redraws when
+                // it lands; for anything else it means there is nothing to draw.
+                self.fetch_in_background(asset);
+                return None;
+            }
+        };
         let decoded = match image::load_from_memory(&bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
@@ -77,10 +106,127 @@ impl AssetStore {
         Some(covered)
     }
 
+    /// Where an id's bytes live. A `hash:` id names its own digest; a URL is keyed by the digest of
+    /// the URL itself, so the same picture referenced twice is stored and decoded once.
+    fn digest_of(&self, asset: &AssetId) -> Option<String> {
+        if let Some(digest) = asset.0.strip_prefix("hash:") {
+            return Some(digest.to_string());
+        }
+        is_fetchable(&asset.0).then(|| format!("{:x}", Sha256::digest(asset.0.as_bytes())))
+    }
+
+    /// Downloads a URL once and stores it under the digest of the URL. Anything already in flight,
+    /// recently failed, or not a URL at all is left alone.
+    fn fetch_in_background(self: &Arc<Self>, asset: &AssetId) {
+        let url = asset.0.clone();
+        if !is_fetchable(&url) {
+            return;
+        }
+        {
+            let mut failed = self.failed.lock().unwrap();
+            if failed
+                .get(&url)
+                .is_some_and(|at| at.elapsed() < RETRY_AFTER_FAILURE)
+            {
+                return;
+            }
+            failed.remove(&url);
+        }
+        if !self.in_flight.lock().unwrap().insert(url.clone()) {
+            return;
+        }
+        // Rendering happens inside the runtime in the daemon, but not in a plain unit test.
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            self.in_flight.lock().unwrap().remove(&url);
+            return;
+        };
+
+        let store = self.clone();
+        handle.spawn(async move {
+            let outcome = store.load(&url).await;
+            store.in_flight.lock().unwrap().remove(&url);
+
+            match outcome {
+                Ok(bytes) => match store.insert_bytes_at(&url, &bytes) {
+                    Ok(()) => {
+                        let _ = store.ready.try_send(());
+                    }
+                    Err(error) => debug!(url, %error, "could not store a fetched image"),
+                },
+                Err(reason) => {
+                    debug!(url, reason, "could not fetch an image");
+                    store.failed.lock().unwrap().insert(url, Instant::now());
+                }
+            }
+        });
+    }
+
+    async fn load(&self, url: &str) -> Result<Vec<u8>, String> {
+        if let Some(path) = url.strip_prefix("file://") {
+            return tokio::fs::read(percent_decoded(path))
+                .await
+                .map_err(|error| error.to_string());
+        }
+        let response = self
+            .http
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("answered {}", response.status().as_u16()));
+        }
+        response
+            .bytes()
+            .await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|error| error.to_string())
+    }
+
+    /// Stores bytes under the digest of the URL rather than of the bytes, so the next render of
+    /// that URL finds them without another request.
+    fn insert_bytes_at(&self, url: &str, bytes: &[u8]) -> Result<()> {
+        let digest = format!("{:x}", Sha256::digest(url.as_bytes()));
+        let path = self.path_for(&digest);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let temporary = path.with_extension("part");
+        fs::write(&temporary, bytes)?;
+        fs::rename(temporary, &path)?;
+        Ok(())
+    }
+
     /// Sharded by the first byte so one directory does not accumulate every asset ever seen.
     fn path_for(&self, digest: &str) -> PathBuf {
         self.root.join(&digest[..2]).join(digest)
     }
+}
+
+/// Which ids the daemon will go and get. Anything else — a `builtin:` shape, a bare string — is
+/// something the renderer either already understands or cannot use.
+fn is_fetchable(value: &str) -> bool {
+    value.starts_with("http://") || value.starts_with("https://") || value.starts_with("file://")
+}
+
+/// `file://` URLs arrive percent-encoded, and pictures live in directories with spaces in them
+/// more often than not.
+fn percent_decoded(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' && at + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&value[at + 1..at + 3], 16) {
+                out.push(byte);
+                at += 3;
+                continue;
+            }
+        }
+        out.push(bytes[at]);
+        at += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Scales so the shorter side fills `size`, then centre-crops. Letterboxing would leave bars in

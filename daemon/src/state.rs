@@ -25,7 +25,13 @@ impl AppState {
         let surfaces = Arc::new(SurfaceRegistry::from_configuration(devices, panels));
         let config_directory = crate::config::config_directory()?;
         let directory = PluginDirectory::open(&config_directory)?;
-        let assets = Arc::new(AssetStore::open(crate::config::cache_directory()?)?);
+        // The engine repaints when bytes land, so the store needs a way to say so.
+        let (assets_ready, assets_ready_receiver) = tokio::sync::mpsc::channel(8);
+        let assets = Arc::new(AssetStore::open(
+            crate::config::cache_directory()?,
+            reqwest::Client::new(),
+            assets_ready,
+        )?);
         let assets_for_engine = assets.clone();
         let input = surfaces
             .take_input_receiver()
@@ -36,6 +42,7 @@ impl AppState {
             directory,
             config_directory.join("values.toml"),
             assets_for_engine,
+            assets_ready_receiver,
             input,
         )
         .await;
