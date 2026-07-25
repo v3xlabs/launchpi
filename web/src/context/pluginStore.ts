@@ -108,7 +108,7 @@ export const createPluginStore = (
       setVariables(`${integrationId}:${name}`, rendered),
     assetArrivals,
     assetReady: (asset) => {
-      forgetRendersUsing(asset);
+      forgetRendersUsing();
       setAssetArrivals(asset, arrivals => (arrivals ?? 0) + 1);
     },
     values,

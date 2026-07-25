@@ -15,7 +15,8 @@ use crate::{
     api::error::ApiError,
     drivers::streamdeck::studio,
     identifiers::PanelId,
-    panels::{control::Control, Panel, PanelLayout},
+    panels::{control::Control, rendered_state::RenderedState, Panel, PanelLayout},
+    rendering::context::RenderContext,
     state::AppState,
     surfaces::{
         command::KeyRendering,
@@ -112,15 +113,43 @@ async fn list_panels(State(state): State<AppState>) -> Json<Vec<Panel>> {
     Json(state.surfaces.panels())
 }
 
+#[derive(Deserialize)]
+struct RenderKeyRequest {
+    default_state: RenderedState,
+    #[serde(default)]
+    pressed_state: Option<RenderedState>,
+    #[serde(default)]
+    is_pressed: bool,
+}
+
+/// Draws a control exactly as a device would.
+///
+/// The browser sends the control's *unresolved* state, bindings intact, and the daemon resolves it
+/// here through the same code that feeds the hardware. That keeps one implementation of what a
+/// binding means, while still letting the editor preview a draft that has never been saved.
 async fn render_key(
     State(state): State<AppState>,
-    Json(rendering): Json<KeyRendering>,
+    Json(request): Json<RenderKeyRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let image =
-        studio::render_key(&rendering, Some(&state.assets)).map_err(|error| ApiError {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: error,
-        })?;
+    let variables = state.surfaces.variables();
+    let resolved = RenderContext::new(&variables).resolve_states(
+        &request.default_state,
+        request.pressed_state.as_ref(),
+        request.is_pressed,
+    );
+    let rendering = KeyRendering {
+        key_index: 0,
+        text: resolved.text,
+        icon: None,
+        image: resolved.image,
+        progress: resolved.progress,
+        foreground_color: resolved.foreground_color,
+        background_color: resolved.background_color,
+    };
+    let image = studio::render_key(&rendering, Some(&state.assets)).map_err(|error| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: error,
+    })?;
     Ok(([(axum::http::header::CONTENT_TYPE, "image/jpeg")], image))
 }
 

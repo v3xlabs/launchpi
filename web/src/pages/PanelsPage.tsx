@@ -44,8 +44,6 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   });
   const [selection, setSelection] = createSignal<PanelSelection | null>(null);
   const [pasteTarget, setPasteTarget] = createSignal<{ column: number; row: number; } | null>(null);
-  const [pendingPaste, setPendingPaste] = createSignal<{ column: number; row: number; name: string; } | null>(null);
-
   const serverPanel = createMemo(
     () => store.inventory().panels.find(panel => panel.panel_id === properties.panelId) ?? null,
   );
@@ -64,14 +62,12 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       setDraft({ panel: server ? cloneState(server) : null, dirty: false });
       setSelection(null);
       setPasteTarget(null);
-      setPendingPaste(null);
 
       return;
     }
 
     if (draft.panel === null && server) setDraft("panel", cloneState(server));
   });
-
   const selectedControlId = () => {
     const current = selection();
 
@@ -135,14 +131,11 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     };
 
     mutatePanel((entry) => {
-      entry.controls = entry.controls.filter(existing =>
-        existing.position.column !== column || existing.position.row !== row,
-      );
+      entry.controls = entry.controls.filter(existing => existing.position.column !== column || existing.position.row !== row);
       entry.controls.push(control);
     });
     setSelection({ kind: "control", controlId });
     setPasteTarget(null);
-    setPendingPaste(null);
   };
 
   const removeControl = () => {
@@ -187,20 +180,6 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
 
   const handleCellFocus = (_control: Control | undefined, column: number, row: number) => setPasteTarget({ column, row });
 
-  const requestPaste = (column: number, row: number, clip: ControlClipboard) => {
-    const existing = draft.panel?.controls.find(control =>
-      control.position.column === column && control.position.row === row,
-    );
-
-    if (existing) {
-      setPendingPaste({ column, row, name: existing.name });
-
-      return;
-    }
-
-    placeControl(column, row, clip);
-  };
-
   const savePanel = async () => {
     const panel = draft.panel;
 
@@ -221,7 +200,6 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       store.clearClipboard();
       setSelection(null);
       setPasteTarget(null);
-      setPendingPaste(null);
 
       return;
     }
@@ -254,8 +232,12 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       const cell = pasteTarget() ?? firstFreeCell();
 
       if (cell !== null && clip !== null) {
-        requestPaste(cell.column, cell.row, clip);
         event.preventDefault();
+        const existing = draft.panel?.controls.find(control => control.position.column === cell.column && control.position.row === cell.row);
+
+        if (existing && !globalThis.confirm(`Replace ${existing.name}? Its settings will be overwritten.`)) return;
+
+        placeControl(cell.column, cell.row, clip);
       }
     }
   };

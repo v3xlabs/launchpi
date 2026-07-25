@@ -1,7 +1,7 @@
 import { TbFillClipboard as TbCopy } from "solid-icons/tb";
 import { Component, For, JSX, Show } from "solid-js";
 
-import { Control, Panel, panelDial, panelDialCount, RenderedState } from "../api/inventory";
+import { Control, Panel, panelDial, panelDialCount } from "../api/inventory";
 import { DialIndicator } from "./DialIndicator";
 import { KeyImage } from "./KeyImage";
 
@@ -19,11 +19,8 @@ const controlAt = (panel: Panel, cell: Cell): Control | undefined =>
     control => control.position.column === cell.column && control.position.row === cell.row,
   );
 
-const stateOf = (control: Control | undefined, isPressed: boolean): RenderedState | undefined => {
-  if (control === undefined) return undefined;
-
-  return isPressed ? control.pressed_state ?? control.default_state : control.default_state;
-};
+// Which state a press shows is resolution, and resolution lives in the daemon; the preview passes
+// both states along with whether the key is down and lets it decide.
 
 const hasDials = (panel: Panel): boolean => panelDialCount(panel) > 0;
 
@@ -78,11 +75,13 @@ export const PanelThumbnail: Component<{
       <For each={cellsOf(properties.panel)}>
         {(cell) => {
           const isPressed = () => properties.pressedKeys?.has(cell.keyIndex) ?? false;
-          const state = () => stateOf(controlAt(properties.panel, cell), isPressed());
+          const keyed = () => controlAt(properties.panel, cell);
 
           return (
             <div classList={{ "key": true, "key-pressed": isPressed() }}>
-              <Show when={state()}>{active => <KeyImage state={active()} />}</Show>
+              <Show when={keyed()}>
+                {control => <KeyImage control={control()} isPressed={isPressed()} />}
+              </Show>
             </div>
           );
         }}
@@ -160,7 +159,6 @@ export const PanelStage: Component<PanelStageProperties> = properties => (
         {(cell) => {
           const control = () => controlAt(properties.panel, cell);
           const isPressed = () => properties.pressedKeys?.has(cell.keyIndex) ?? false;
-          const state = () => stateOf(control(), isPressed());
 
           return (
             <button
@@ -184,12 +182,12 @@ export const PanelStage: Component<PanelStageProperties> = properties => (
               }
             >
               <Show
-                when={state()}
+                when={control()}
                 fallback={properties.pasteMode
                   ? <TbCopy class="h-3 w-3" />
                   : <span class="text-xs">+</span>}
               >
-                {active => <KeyImage state={active()} />}
+                {keyed => <KeyImage control={keyed()} isPressed={isPressed()} />}
               </Show>
             </button>
           );

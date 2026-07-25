@@ -58,3 +58,22 @@ export const interpolateVariables = (
 
   return rendered + rest;
 };
+
+/**
+ * The value names a template mentions. This is the only thing the browser needs to know about
+ * bindings: enough to tell when a key must be drawn again. What they resolve to is the daemon's
+ * business, so that there is exactly one implementation of it.
+ */
+export const referencesIn = (template: string | null): string[] => {
+  if (template === null) return [];
+
+  const found: string[] = [];
+
+  interpolateVariables(template, (reference) => {
+    found.push(reference);
+
+    return undefined;
+  });
+
+  return found;
+};

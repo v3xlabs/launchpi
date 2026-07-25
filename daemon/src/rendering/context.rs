@@ -2,7 +2,7 @@ use crate::{
     identifiers::AssetId,
     panels::{
         control::Control,
-        rendered_state::{ColorBinding, Progress, RgbaColor},
+        rendered_state::{ColorBinding, Progress, RenderedState, RgbaColor},
     },
     variables::{template, VariableStore},
 };
@@ -33,13 +33,26 @@ impl<'a> RenderContext<'a> {
     /// Every field goes through the same resolution: a literal passes through, a reference is
     /// looked up. There is no overlay pass, because there are no boolean feedbacks to overlay.
     pub fn resolve(&self, control: &Control, is_pressed: bool) -> ResolvedState {
+        self.resolve_states(
+            &control.default_state,
+            control.pressed_state.as_ref(),
+            is_pressed,
+        )
+    }
+
+    /// Resolution without a `Control`, so the web can have an unsaved draft drawn by the same code
+    /// that draws the device. Sharing this is what stops the preview from drifting: there is one
+    /// implementation of what a binding means, not one per consumer.
+    pub fn resolve_states(
+        &self,
+        default_state: &RenderedState,
+        pressed_state: Option<&RenderedState>,
+        is_pressed: bool,
+    ) -> ResolvedState {
         let state = if is_pressed {
-            control
-                .pressed_state
-                .as_ref()
-                .unwrap_or(&control.default_state)
+            pressed_state.unwrap_or(default_state)
         } else {
-            &control.default_state
+            default_state
         };
 
         ResolvedState {
@@ -88,7 +101,6 @@ mod tests {
     use super::*;
     use crate::{
         identifiers::ControlId,
-        panels::rendered_state::RenderedState,
         surfaces::layout::SurfacePosition,
         variables::{VariableRef, VariableValue},
     };
