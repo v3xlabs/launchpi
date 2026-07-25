@@ -1,6 +1,16 @@
 import { Component, For, Show } from "solid-js";
 
 import { LookupOption } from "../api/plugins";
+import { parseHex } from "../utils/rendered";
+
+/** A value that reads as a colour gets shown as one; anything else is shown as text. */
+const swatch = (preview: string | null): string | null => {
+  if (preview === null) return null;
+
+  const color = parseHex(preview);
+
+  return color === null ? null : `rgb(${color.red} ${color.green} ${color.blue})`;
+};
 
 /** The dropdown shared by every field that completes against the daemon. */
 export const SuggestionList: Component<{
@@ -30,8 +40,16 @@ export const SuggestionList: Component<{
             onMouseDown={event => event.preventDefault()}
             onClick={() => properties.onChoose(option)}
           >
-            <span class="suggestion-label">{option.label}</span>
-            <span class="suggestion-value">{option.value}</span>
+            <Show when={swatch(option.preview)}>
+              {fill => <span class="suggestion-swatch" style={{ background: fill() }} />}
+            </Show>
+            <span class="min-w-0 flex-1">
+              <span class="suggestion-label block">{option.label}</span>
+              <span class="suggestion-value block">{option.value}</span>
+            </span>
+            <Show when={option.preview}>
+              {preview => <span class="suggestion-preview">{preview()}</span>}
+            </Show>
             <Show when={option.group}>
               {group => <span class="chip chip-muted shrink-0">{group()}</span>}
             </Show>

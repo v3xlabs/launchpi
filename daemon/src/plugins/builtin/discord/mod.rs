@@ -407,11 +407,7 @@ fn guild_options(state: &DiscordState, query: &str) -> Vec<LookupOption> {
             .guilds
             .iter()
             .filter(|(id, name)| matches(query, name, id))
-            .map(|(id, name)| LookupOption {
-                value: id.clone(),
-                label: name.clone(),
-                group: None,
-            })
+            .map(|(id, name)| LookupOption::new(id.clone(), name.clone()))
             .collect(),
     )
 }
@@ -423,17 +419,14 @@ fn channel_options(state: &DiscordState, query: &str) -> Vec<LookupOption> {
             .iter()
             .filter(|(_, channel)| channel.is_voice())
             .filter(|(id, channel)| matches(query, &channel.name, id))
-            .map(|(id, channel)| LookupOption {
-                value: id.clone(),
-                label: channel.name.clone(),
-                group: Some(
+            .map(|(id, channel)| {
+                LookupOption::new(id.clone(), channel.name.clone()).group(
                     if channel.kind == DiscordChannel::GUILD_STAGE {
                         "Stage"
                     } else {
                         "Voice"
-                    }
-                    .to_string(),
-                ),
+                    },
+                )
             })
             .collect(),
     )
@@ -445,11 +438,7 @@ fn member_options(state: &DiscordState, query: &str) -> Vec<LookupOption> {
             .users
             .values()
             .filter(|user| matches(query, &user.name, &user.id))
-            .map(|user| LookupOption {
-                value: user.id.clone(),
-                label: user.name.clone(),
-                group: None,
-            })
+            .map(|user| LookupOption::new(user.id.clone(), user.name.clone()))
             .collect(),
     )
 }

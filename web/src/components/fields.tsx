@@ -24,8 +24,12 @@ export const TextField: Component<{
 );
 
 /**
- * A colour is either picked or bound to a value. The link toggle is what makes
- * "make this key the colour of that light" reachable without hand-editing TOML.
+ * A colour, parametrised like every other field: one input that holds either a hex literal or a
+ * `$(instance:value)` reference, with no mode to switch between. Typing `$(` is the switch, and the
+ * swatch beside it opens the native picker.
+ *
+ * The swatch shows what the field will actually paint — for a reference that means the value's
+ * current colour, so "make this key the colour of that light" is visible rather than inferred.
  */
 export const ColorField: Component<{
   label: string;
@@ -35,39 +39,48 @@ export const ColorField: Component<{
   bindable?: boolean;
   onChange: (value: ColorBinding) => void;
 }> = (properties) => {
-  const bound = () => isReference(properties.value);
+  const store = useInventory();
+  const text = () => {
+    if (properties.value === null) return "";
+
+    return isReference(properties.value)
+      ? properties.value
+      : toHex(properties.value, properties.fallback);
+  };
+  /** What the key will actually be painted, resolved the same way the daemon resolves it. */
+  const painted = () => parseHex(interpolateVariables(text(), key => store.variables[key]));
+  const swatch = () => {
+    const color = painted();
+
+    return color === null ? properties.fallback : rgbHex(color);
+  };
+  /** A hex stays a fixed colour rather than becoming a reference that happens to parse. */
+  const commit = (next: string) => {
+    const parsed = next.includes("$(") ? null : parseHex(next);
+
+    properties.onChange(parsed ?? next);
+  };
+
+  const picker = (
+    <input
+      class="parameter-swatch"
+      type="color"
+      aria-label={`${properties.label} colour`}
+      value={swatch()}
+      data-unresolved={painted() === null}
+      onInput={event => properties.onChange(fromHex(event.currentTarget.value))}
+    />
+  );
 
   return (
     <div class="grid gap-1">
-      <div class="flex items-center justify-between gap-2">
-        <span class="field-label">{properties.label}</span>
-        <Show when={properties.bindable !== false}>
-          <button
-            type="button"
-            class="link-button"
-            title={bound() ? "Use a fixed colour" : "Bind to a value"}
-            onClick={() => properties.onChange(bound() ? fromHex(properties.fallback) : "")}
-          >
-            {bound() ? "unbind" : "bind"}
-          </button>
-        </Show>
-      </div>
-      <Show
-        when={bound()}
-        fallback={(
-          <input
-            class="color-input"
-            type="color"
-            value={toHex(properties.value, properties.fallback)}
-            onInput={event => properties.onChange(fromHex(event.currentTarget.value))}
-          />
-        )}
-      >
-        <input
-          class="field-input"
-          value={typeof properties.value === "string" ? properties.value : ""}
-          placeholder="$(hass.home:light.kitchen.color)"
-          onInput={event => properties.onChange(event.currentTarget.value)}
+      <span class="field-label">{properties.label}</span>
+      <Show when={properties.bindable !== false} fallback={picker}>
+        <ReferenceInput
+          value={text()}
+          placeholder={properties.fallback}
+          leading={picker}
+          onChange={commit}
         />
       </Show>
     </div>

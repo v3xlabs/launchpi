@@ -334,10 +334,13 @@ impl PluginEngine {
             .filter(|(reference, _)| {
                 matches(&reference.name) || matches(&reference.integration_id.0)
             })
-            .map(|(reference, value)| LookupOption {
-                value: format!("$({}:{})", reference.integration_id.0, reference.name),
-                label: format!("{} = {}", reference.name, value),
-                group: Some(reference.integration_id.0),
+            .map(|(reference, value)| {
+                LookupOption::new(
+                    format!("$({}:{})", reference.integration_id.0, reference.name),
+                    reference.name.clone(),
+                )
+                .group(reference.integration_id.0)
+                .preview(value.to_string())
             })
             .collect();
         live.sort_by(|left, right| left.value.cmp(&right.value));
@@ -359,8 +362,8 @@ impl PluginEngine {
                     .into_iter()
                     .map(|option| LookupOption {
                         value: format!("$({}:{})", integration_id.0, option.value),
-                        label: option.label,
                         group: Some(integration_id.0.clone()),
+                        ..option
                     })
                     .collect(),
             );
@@ -979,11 +982,7 @@ mod tests {
     fn options(values: &[&str]) -> Vec<LookupOption> {
         values
             .iter()
-            .map(|value| LookupOption {
-                value: (*value).to_string(),
-                label: (*value).to_string(),
-                group: None,
-            })
+            .map(|value| LookupOption::new(*value, *value))
             .collect()
     }
 

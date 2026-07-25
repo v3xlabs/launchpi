@@ -87,6 +87,31 @@ pub struct LookupOption {
     pub value: String,
     pub label: String,
     pub group: Option<String>,
+    /// What choosing this would currently resolve to. Absent where there is nothing to show yet —
+    /// a plugin can offer a value it has not published, and an empty preview is not the same as a
+    /// value that happens to be empty.
+    pub preview: Option<String>,
+}
+
+impl LookupOption {
+    pub fn new(value: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+            label: label.into(),
+            group: None,
+            preview: None,
+        }
+    }
+
+    pub fn group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
+        self
+    }
+
+    pub fn preview(mut self, preview: impl Into<String>) -> Self {
+        self.preview = Some(preview.into());
+        self
+    }
 }
 
 pub struct PluginFactory {

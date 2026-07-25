@@ -178,7 +178,13 @@ export const fetchVariables = async (integrationId: string): Promise<VariableEnt
   return data;
 };
 
-export type LookupOption = { value: string; label: string; group: string | null; };
+export type LookupOption = {
+  value: string;
+  label: string;
+  group: string | null;
+  /** What choosing this would currently resolve to, where the daemon knows. */
+  preview: string | null;
+};
 
 const isLookupOption = (value: unknown): value is LookupOption =>
   isRecord(value) && isString(value.value) && isString(value.label);

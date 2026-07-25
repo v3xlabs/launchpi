@@ -152,10 +152,9 @@ impl Shared {
     /// the id alongside it because that is what the binding actually stores.
     pub fn entity_options(&self, query: &str) -> Vec<LookupOption> {
         self.matching(query)
-            .map(|(entity_id, entry)| LookupOption {
-                value: entity_id.clone(),
-                label: entry.describe(&entity_id),
-                group: Some(entry.domain.clone()),
+            .map(|(entity_id, entry)| {
+                LookupOption::new(entity_id.clone(), entry.describe(&entity_id))
+                    .group(entry.domain.clone())
             })
             .collect()
     }
@@ -167,10 +166,12 @@ impl Shared {
             .flat_map(|(entity_id, entry)| {
                 fields_for(&entry.domain)
                     .iter()
-                    .map(|field| LookupOption {
-                        value: format!("{entity_id}.{field}"),
-                        label: format!("{} - {field}", entry.describe(&entity_id)),
-                        group: Some(entry.domain.clone()),
+                    .map(|field| {
+                        LookupOption::new(
+                            format!("{entity_id}.{field}"),
+                            format!("{} - {field}", entry.describe(&entity_id)),
+                        )
+                        .group(entry.domain.clone())
                     })
                     .collect::<Vec<_>>()
             })
