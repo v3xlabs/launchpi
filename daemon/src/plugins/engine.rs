@@ -29,6 +29,7 @@ use crate::{
         },
         manifest::PluginManifest,
         plugin::{cancellation, CancelHandle, LookupOption, Plugin, PluginContext, PluginError},
+        preset::{Preset, PresetStore},
         registry,
     },
     rendering::index::{DependencyIndex, RenderTarget},
@@ -98,6 +99,7 @@ pub enum InputEvent {
 #[derive(Clone, Debug)]
 pub enum EngineSignal {
     VariableChanged(VariableRef),
+    PresetsChanged(IntegrationId),
     InstanceLog {
         integration_id: IntegrationId,
         level: SurfaceLogLevel,
@@ -140,6 +142,7 @@ impl RunningInstance {
 pub struct PluginEngine {
     surfaces: Arc<SurfaceRegistry>,
     variables: Arc<VariableStore>,
+    presets: Arc<PresetStore>,
     directory: PluginDirectory,
     values_path: PathBuf,
     http: reqwest::Client,
@@ -166,6 +169,7 @@ impl PluginEngine {
         let engine = Arc::new(Self {
             surfaces,
             variables,
+            presets: Arc::default(),
             directory,
             values_path,
             http: reqwest::Client::new(),
@@ -292,6 +296,11 @@ impl PluginEngine {
             &instance.document,
             &manifest,
         ))
+    }
+
+    /// What every running instance currently recommends, already rewritten to name real instances.
+    pub fn presets(&self) -> Vec<(IntegrationId, Vec<Preset>)> {
+        self.presets.snapshot()
     }
 
     pub async fn lookup(
@@ -439,6 +448,7 @@ impl PluginEngine {
         let context = PluginContext::new(
             integration_id.clone(),
             self.variables.clone(),
+            self.presets.clone(),
             self.signals.clone(),
             cancel_token,
             self.http.clone(),
@@ -602,6 +612,12 @@ impl PluginEngine {
         }
         if let Some(plugin) = plugin {
             plugin.shutdown().await;
+        }
+        // A stopped instance's recommendations have to leave the picker with it.
+        if self.presets.clear_instance(integration_id) {
+            self.surfaces.emit_event(ServerEvent::PresetsChanged {
+                integration_id: integration_id.clone(),
+            });
         }
         let stale = self.variables.clear_instance(integration_id);
         let targets = {
@@ -892,6 +908,9 @@ async fn run_signals(engine: Arc<PluginEngine>, mut signals: mpsc::Receiver<Engi
                     rendered,
                 });
             }
+            EngineSignal::PresetsChanged(integration_id) => engine
+                .surfaces
+                .emit_event(ServerEvent::PresetsChanged { integration_id }),
             EngineSignal::InstanceLog {
                 integration_id,
                 level,

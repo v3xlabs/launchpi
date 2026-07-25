@@ -29,11 +29,15 @@ export type ContentLayout = { text_anchor: Anchor9; };
 export type SubpanelPlacement
   = | "top_start" | "top_center" | "top_end" | "start_center"
     | "bottom_start" | "bottom_center" | "bottom_end" | "end_center";
+export type Border = { color: ColorBinding; width: number; };
+export type OverlayImage = { image: string; anchor: Anchor9; scale_percent: number; };
 export type RenderedState = {
   text: string | null;
   image: string | null;
+  overlay_image: OverlayImage | null;
   foreground_color: ColorBinding | null;
   background_color: ColorBinding | null;
+  border: Border | null;
   progress: unknown | null;
   content_layout: ContentLayout;
   is_pressed: boolean;
@@ -184,12 +188,18 @@ const isColorBinding = (value: unknown): value is ColorBinding | null =>
   value === null || isString(value) || isColor(value);
 const isGridLayout = (value: unknown): value is GridLayout =>
   isRecord(value) && isNumber(value.columns) && isNumber(value.rows);
+const isBorder = (value: unknown): value is Border =>
+  isRecord(value) && (isString(value.color) || isColor(value.color)) && isNumber(value.width);
+const isOverlayImage = (value: unknown): value is OverlayImage =>
+  isRecord(value) && isString(value.image) && isString(value.anchor) && isNumber(value.scale_percent);
 const isRenderedState = (value: unknown): value is RenderedState =>
   isRecord(value)
   && isOptionalString(value.text)
   && isOptionalString(value.image)
+  && (value.overlay_image === undefined || value.overlay_image === null || isOverlayImage(value.overlay_image))
   && isColorBinding(value.foreground_color)
   && isColorBinding(value.background_color)
+  && (value.border === undefined || value.border === null || isBorder(value.border))
   && "progress" in value
   && typeof value.is_pressed === "boolean";
 const isControl = (value: unknown): value is Control =>

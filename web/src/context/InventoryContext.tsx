@@ -330,6 +330,8 @@ export const InventoryProvider: ParentComponent = (properties) => {
 
       if (asset !== null) return pluginStore.assetReady(asset.asset);
 
+      if (parsed.type === "presets_changed") return void pluginStore.refreshPresets();
+
       if (parsed.type === "changed") scheduleResync();
     };
 

@@ -9,7 +9,12 @@ use tracing::warn;
 use crate::{
     assets::AssetStore,
     identifiers::IntegrationId,
-    plugins::{engine::EngineSignal, instance::InstanceConfig, manifest::PluginManifest},
+    plugins::{
+        engine::EngineSignal,
+        instance::InstanceConfig,
+        manifest::PluginManifest,
+        preset::{self, Preset, PresetStore},
+    },
     surfaces::logs::SurfaceLogLevel,
     variables::{template, VariableRef, VariableStore, VariableValue},
 };
@@ -104,6 +109,7 @@ pub struct PluginContext {
     /// Absent only in tests that never publish an image; `set_image` says so rather than panicking.
     assets: Option<Arc<AssetStore>>,
     variables: Arc<VariableStore>,
+    presets: Arc<PresetStore>,
     signals: mpsc::Sender<EngineSignal>,
 }
 
@@ -111,6 +117,7 @@ impl PluginContext {
     pub fn new(
         integration_id: IntegrationId,
         variables: Arc<VariableStore>,
+        presets: Arc<PresetStore>,
         signals: mpsc::Sender<EngineSignal>,
         cancel: CancelToken,
         http: reqwest::Client,
@@ -121,6 +128,7 @@ impl PluginContext {
             http,
             assets: None,
             variables,
+            presets,
             signals,
         }
     }
@@ -157,6 +165,19 @@ impl PluginContext {
         };
         if self.variables.set(reference.clone(), value) {
             self.signal(EngineSignal::VariableChanged(reference));
+        }
+    }
+
+    /// The full set of buttons this instance recommends, not a delta.
+    ///
+    /// The store is authoritative and the signal is only a nudge, which is what makes it safe that
+    /// `signal` drops on a full queue: a lost nudge costs a delayed refresh, not a lost preset.
+    pub fn set_presets(&self, mut presets: Vec<Preset>) {
+        for entry in &mut presets {
+            preset::substitute_self(entry, &self.integration_id);
+        }
+        if self.presets.set(self.integration_id.clone(), presets) {
+            self.signal(EngineSignal::PresetsChanged(self.integration_id.clone()));
         }
     }
 

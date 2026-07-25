@@ -46,8 +46,10 @@ export const fromHex = (value: string): RgbaColor => ({
 export const newState = (isPressed: boolean): RenderedState => ({
   text: null,
   image: null,
+  overlay_image: null,
   foreground_color: { red: 255, green: 255, blue: 255, alpha: 255 },
   background_color: { red: 30, green: 41, blue: 59, alpha: 255 },
+  border: null,
   progress: null,
   content_layout: defaultContentLayout,
   is_pressed: isPressed,

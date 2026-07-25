@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     identifiers::AssetId,
-    panels::rendered_state::{ContentLayout, Progress, RgbaColor},
+    panels::rendered_state::{ContentLayout, Progress, ResolvedBorder, ResolvedOverlay, RgbaColor},
 };
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -13,9 +13,13 @@ pub struct KeyRendering {
     #[serde(default)]
     pub image: Option<AssetId>,
     #[serde(default)]
+    pub overlay_image: Option<ResolvedOverlay>,
+    #[serde(default)]
     pub progress: Option<Progress>,
     pub foreground_color: Option<RgbaColor>,
     pub background_color: Option<RgbaColor>,
+    #[serde(default)]
+    pub border: Option<ResolvedBorder>,
     #[serde(default)]
     pub content_layout: ContentLayout,
     #[serde(default)]

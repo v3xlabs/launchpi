@@ -15,6 +15,7 @@ use crate::{
         instance::PluginInstance,
         manifest::{ConfigField, PluginManifest},
         plugin::LookupOption,
+        preset::Preset,
     },
     state::AppState,
     variables::{VariableRef, VariableValue},
@@ -23,6 +24,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/plugins", get(list_plugins).post(create_instance))
+        .route("/api/presets", get(list_presets))
         .route(
             "/api/plugins/:integration_id",
             axum::routing::patch(update_instance).delete(delete_instance),
@@ -180,6 +182,38 @@ async fn list_plugins(State(state): State<AppState>) -> Json<PluginCatalogue> {
         types: state.plugins.manifests(),
         instances: state.plugins.instances(),
     })
+}
+
+/// Ready-made buttons, per running instance. Carries the display name and type alongside, because
+/// only the daemon knows them and the picker groups by them.
+#[derive(Serialize)]
+struct InstancePresets {
+    integration_id: IntegrationId,
+    display_name: String,
+    plugin_type: String,
+    presets: Vec<Preset>,
+}
+
+async fn list_presets(State(state): State<AppState>) -> Json<Vec<InstancePresets>> {
+    let instances = state.plugins.instances();
+    Json(
+        state
+            .plugins
+            .presets()
+            .into_iter()
+            .filter_map(|(integration_id, presets)| {
+                let instance = instances
+                    .iter()
+                    .find(|instance| instance.integration_id == integration_id)?;
+                Some(InstancePresets {
+                    integration_id,
+                    display_name: instance.display_name.clone(),
+                    plugin_type: instance.plugin_type.clone(),
+                    presets,
+                })
+            })
+            .collect(),
+    )
 }
 
 async fn create_instance(

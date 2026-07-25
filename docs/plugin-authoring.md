@@ -212,6 +212,45 @@ showing; `hass` will use it to watch a handful of entities rather than mirror an
 entire installation. `http` ignores it, because its work is defined by its poll
 configuration rather than by what is on screen.
 
+## Recommending buttons
+
+`PluginContext::set_presets` publishes ready-made controls that appear behind the
+inspector's **preset** button. It takes the full set every time, not a delta, so
+an instance that has lost sight of something can withdraw the button for it.
+
+```rust
+context.set_presets(vec![Preset {
+    preset_id: format!("light-{entity_id}"),
+    category: "Lights".to_string(),
+    name: friendly_name.clone(),
+    description: None,
+    control: ControlTemplate {
+        name: friendly_name,
+        default_state: RenderedState {
+            text: Some(format!("$(self:{entity_id}.state)")),
+            background_color: Some(ColorBinding::Reference(
+                format!("$(self:{entity_id}.color)"),
+            )),
+            ..RenderedState::default()
+        },
+        pressed_state: None,
+        action_bindings: vec![/* toggle this entity */],
+    },
+}]);
+```
+
+Presets are runtime data, not manifest data: what a Home Assistant installation
+should offer is its own lights, and a plugin *type* cannot know those. Publish
+them whenever the set changes; an unchanged set is dropped, so republishing on
+every poll costs nothing.
+
+A preset is authored against its own type rather than its instance, so it writes
+`$(self:...)` and `integration_id = "self"`. The daemon rewrites `self` to the
+publishing instance, which means what the API serves — and what lands in
+`panels.toml` — already names a real instance. `ControlTemplate` is a `Control`
+without `control_id` and `position`, so a served preset is exactly a
+`[[panels.controls]]` table with those two keys removed.
+
 ## Being autocompletable
 
 `lookup` is how a plugin answers "what could I bind this to". The editor calls it
@@ -407,14 +446,34 @@ enabled = true
 [config]
 token = { env = "LAUNCHPI_DISCORD_TOKEN" }
 guild_id = "123456789012345678"
-user_id = "234567890123456789" # mutually exclusive with channel_id
+user_id = "234567890123456789"
+channel_id = "345678901234567890"
 max_members = 4
 ```
 
-Use `channel_id` instead of `user_id` to follow a fixed voice channel. Values are published as
-`channel_id`, `channel_name`, `member_count`, and indexed names such as
-`channel_members_0`, `channel_members_0_id`, `channel_members_0_avatar`, and
+`guild_id`, `channel_id` and `user_id` are lookup fields: an instance that is already running offers
+its guilds, its voice and stage channels, and the members it has seen. Because a lookup is answered
+by a running instance, an instance with only a token starts and connects rather than failing, so the
+guild list has somewhere to come from — it simply publishes nothing until a channel is named. On
+first creation the fields are free text.
+
+At least one of `user_id` and `channel_id` is required for anything to be published, and both may be
+set together. The voice
+channel containing `user_id` wins whenever the bot can see that user in voice; `channel_id` is the
+fallback for when they are not. `channel_source` publishes which of the two is live, as `followed`,
+`fallback` or `none`.
+
+Values are published as `channel_id`, `channel_name`, `channel_source`, `member_count`, and indexed
+names such as `channel_members_0`, `channel_members_0_id`, `channel_members_0_avatar`, and
 `channel_members_0_image`. Indexed image values can be bound directly to a control's `image` field.
+
+Each member also publishes its voice state: `channel_members_0_muted`, `_deafened`, `_server_muted`,
+`_streaming` and `_video` as booleans, plus `_status_icon` for a control's `overlay_image` and
+`_status_color` for its `border.color`. `_status_color` is empty when there is nothing to report,
+which leaves the key unbordered.
+
+Presets are offered for each member slot — avatar, name, badge and outline already bound — plus a
+server-mute button per slot and the two channel readouts.
 
 | Actions | `mute_member`, `deafen_member`, `disconnect_member` |
 | --- | --- |

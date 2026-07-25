@@ -2,7 +2,10 @@ use crate::{
     identifiers::AssetId,
     panels::{
         control::Control,
-        rendered_state::{ColorBinding, ContentLayout, Progress, RenderedState, RgbaColor},
+        rendered_state::{
+            Border, ColorBinding, ContentLayout, OverlayImage, Progress, RenderedState,
+            ResolvedBorder, ResolvedOverlay, RgbaColor,
+        },
     },
     variables::{template, VariableStore},
 };
@@ -13,8 +16,10 @@ use crate::{
 pub struct ResolvedState {
     pub text: Option<String>,
     pub image: Option<AssetId>,
+    pub overlay_image: Option<ResolvedOverlay>,
     pub foreground_color: Option<RgbaColor>,
     pub background_color: Option<RgbaColor>,
+    pub border: Option<ResolvedBorder>,
     pub progress: Option<Progress>,
     pub content_layout: ContentLayout,
 }
@@ -66,8 +71,10 @@ impl<'a> RenderContext<'a> {
                 .image
                 .as_ref()
                 .and_then(|asset| self.resolve_asset(asset)),
+            overlay_image: self.resolve_overlay(state.overlay_image.as_ref()),
             foreground_color: self.resolve_color(state.foreground_color.as_ref()),
             background_color: self.resolve_color(state.background_color.as_ref()),
+            border: self.resolve_border(state.border.as_ref()),
             progress: state.progress.clone(),
             content_layout: state.content_layout,
         }
@@ -84,6 +91,30 @@ impl<'a> RenderContext<'a> {
             ColorBinding::Literal(color) => Some(color.clone()),
             ColorBinding::Reference(reference) => RgbaColor::from_hex(&self.interpolate(reference)),
         }
+    }
+
+    /// A border whose colour does not resolve is not drawn, for the same reason an unresolved
+    /// background leaves the key unstyled rather than black. That is how a plugin spells "nothing
+    /// to report": publish an empty colour and the outline disappears.
+    fn resolve_border(&self, border: Option<&Border>) -> Option<ResolvedBorder> {
+        let border = border?;
+        let color = self.resolve_color(Some(&border.color))?;
+
+        (border.width > 0).then_some(ResolvedBorder {
+            color,
+            width: border.width,
+        })
+    }
+
+    fn resolve_overlay(&self, overlay: Option<&OverlayImage>) -> Option<ResolvedOverlay> {
+        let overlay = overlay?;
+        let image = self.resolve_asset(&overlay.image)?;
+
+        (overlay.scale_percent > 0).then_some(ResolvedOverlay {
+            image,
+            anchor: overlay.anchor,
+            scale_percent: overlay.scale_percent,
+        })
     }
 
     /// An image slot may hold a literal asset id or a reference that yields one. A reference that
@@ -103,6 +134,7 @@ mod tests {
     use super::*;
     use crate::{
         identifiers::ControlId,
+        panels::rendered_state::Anchor9,
         surfaces::layout::SurfacePosition,
         variables::{VariableRef, VariableValue},
     };
@@ -233,6 +265,124 @@ mod tests {
             false,
         );
         assert_eq!(resolved.image, Some(AssetId("hash:abc123".to_string())));
+    }
+
+    #[test]
+    fn a_border_colour_resolves_from_what_the_plugin_published() {
+        let variables = VariableStore::default();
+        variables.set(
+            VariableRef::new("discord.home", "channel_members_0_status_color"),
+            VariableValue::Text("#ed4245".to_string()),
+        );
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(RenderedState {
+                border: Some(Border {
+                    color: ColorBinding::Reference(
+                        "$(discord.home:channel_members_0_status_color)".to_string(),
+                    ),
+                    width: 6,
+                }),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(
+            resolved.border,
+            Some(ResolvedBorder {
+                color: RgbaColor::opaque(237, 66, 69),
+                width: 6,
+            })
+        );
+    }
+
+    /// How a plugin says "nothing to report": publish an empty colour and the outline disappears.
+    #[test]
+    fn an_empty_border_colour_leaves_the_key_unbordered() {
+        let variables = VariableStore::default();
+        variables.set(
+            VariableRef::new("discord.home", "channel_members_0_status_color"),
+            VariableValue::Text(String::new()),
+        );
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(RenderedState {
+                border: Some(Border {
+                    color: ColorBinding::Reference(
+                        "$(discord.home:channel_members_0_status_color)".to_string(),
+                    ),
+                    width: 6,
+                }),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(resolved.border, None);
+    }
+
+    #[test]
+    fn a_zero_width_border_is_not_drawn() {
+        let variables = VariableStore::default();
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(RenderedState {
+                border: Some(Border {
+                    color: RgbaColor::opaque(1, 2, 3).into(),
+                    width: 0,
+                }),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(resolved.border, None);
+    }
+
+    #[test]
+    fn an_overlay_image_reference_resolves_to_the_published_asset() {
+        let variables = VariableStore::default();
+        variables.set(
+            VariableRef::new("discord.home", "channel_members_0_status_icon"),
+            VariableValue::Image(AssetId("hash:badge".to_string())),
+        );
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(RenderedState {
+                overlay_image: Some(OverlayImage {
+                    image: AssetId("$(discord.home:channel_members_0_status_icon)".to_string()),
+                    anchor: Anchor9::BottomEnd,
+                    scale_percent: 32,
+                }),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(
+            resolved.overlay_image.map(|overlay| overlay.image),
+            Some(AssetId("hash:badge".to_string()))
+        );
+    }
+
+    #[test]
+    fn an_overlay_that_resolves_to_nothing_draws_no_badge() {
+        let variables = VariableStore::default();
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(RenderedState {
+                overlay_image: Some(OverlayImage {
+                    image: AssetId("$(discord.home:missing)".to_string()),
+                    anchor: Anchor9::BottomEnd,
+                    scale_percent: 32,
+                }),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(resolved.overlay_image, None);
     }
 
     #[test]

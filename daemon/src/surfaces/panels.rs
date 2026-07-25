@@ -58,6 +58,8 @@ impl SurfaceRegistry {
                             foreground_color: Some(white().into()),
                             background_color: Some(color(30, 41, 59).into()),
                             image: None,
+                            overlay_image: None,
+                            border: None,
                             progress: None,
                             content_layout: Default::default(),
                             is_pressed: false,

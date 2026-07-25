@@ -3,6 +3,7 @@ pub mod engine;
 pub mod instance;
 pub mod manifest;
 pub mod plugin;
+pub mod preset;
 
 use crate::plugins::plugin::PluginFactory;
 

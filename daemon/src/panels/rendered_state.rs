@@ -6,12 +6,61 @@ use crate::identifiers::AssetId;
 pub struct RenderedState {
     pub text: Option<String>,
     pub image: Option<AssetId>,
+    /// A badge drawn small in a corner. Kept apart from `image` because it is never scrimmed: a
+    /// status marker that dims as soon as the key gains a label is not a status marker.
+    pub overlay_image: Option<OverlayImage>,
     pub foreground_color: Option<ColorBinding>,
     pub background_color: Option<ColorBinding>,
+    pub border: Option<Border>,
     pub progress: Option<Progress>,
     #[serde(default)]
     pub content_layout: ContentLayout,
     pub is_pressed: bool,
+}
+
+/// An inset outline. The colour binds like any other colour, so a plugin can drive it; the width
+/// does not, because nothing publishes a width.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Border {
+    pub color: ColorBinding,
+    #[serde(default = "default_border_width")]
+    pub width: u8,
+}
+
+fn default_border_width() -> u8 {
+    5
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OverlayImage {
+    pub image: AssetId,
+    #[serde(default = "default_overlay_anchor")]
+    pub anchor: Anchor9,
+    #[serde(default = "default_overlay_scale")]
+    pub scale_percent: u8,
+}
+
+fn default_overlay_anchor() -> Anchor9 {
+    Anchor9::BottomEnd
+}
+
+fn default_overlay_scale() -> u8 {
+    32
+}
+
+/// A [`Border`] and an [`OverlayImage`] with their bindings resolved, so the renderer never has to
+/// know what a binding is.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ResolvedBorder {
+    pub color: RgbaColor,
+    pub width: u8,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ResolvedOverlay {
+    pub image: AssetId,
+    pub anchor: Anchor9,
+    pub scale_percent: u8,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -135,6 +184,39 @@ mod tests {
             reference.color,
             ColorBinding::Reference("$(hass.home:light.color)".to_string())
         );
+    }
+
+    #[test]
+    fn a_border_binds_its_colour_and_defaults_its_width() {
+        #[derive(Deserialize)]
+        struct Holder {
+            border: Border,
+        }
+
+        let holder: Holder =
+            toml::from_str("border = { color = \"$(discord.home:status)\" }").expect("valid toml");
+        assert_eq!(
+            holder.border.color,
+            ColorBinding::Reference("$(discord.home:status)".to_string())
+        );
+        assert_eq!(holder.border.width, default_border_width());
+    }
+
+    /// The fields are additive, so nothing forces a `PANEL_DOCUMENT_VERSION` bump.
+    #[test]
+    fn a_control_written_before_borders_existed_still_parses() {
+        let state: RenderedState =
+            toml::from_str("text = \"Hello\"\nis_pressed = false").expect("valid toml");
+        assert_eq!(state.border, None);
+        assert_eq!(state.overlay_image, None);
+    }
+
+    #[test]
+    fn an_overlay_takes_a_corner_and_a_size_unless_told_otherwise() {
+        let overlay: OverlayImage =
+            toml::from_str("image = \"$(discord.home:badge)\"").expect("valid toml");
+        assert_eq!(overlay.anchor, default_overlay_anchor());
+        assert_eq!(overlay.scale_percent, default_overlay_scale());
     }
 
     #[test]

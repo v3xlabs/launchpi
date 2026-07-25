@@ -29,8 +29,10 @@ export const KeyImage: Component<{ control: Control; isPressed: boolean; }> = (p
     const names = [
       ...referencesIn(state.text),
       ...referencesIn(state.image),
+      ...referencesIn(state.overlay_image?.image ?? null),
       ...referencesIn(typeof state.foreground_color === "string" ? state.foreground_color : null),
       ...referencesIn(typeof state.background_color === "string" ? state.background_color : null),
+      ...referencesIn(typeof state.border?.color === "string" ? state.border.color : null),
     ];
 
     return names.map(name => [store.variables[name], store.assetArrivals[store.variables[name] ?? ""]]);

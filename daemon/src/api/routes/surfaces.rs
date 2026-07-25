@@ -146,9 +146,11 @@ async fn render_key(
         text: resolved.text,
         icon: None,
         image: resolved.image,
+        overlay_image: resolved.overlay_image,
         progress: resolved.progress,
         foreground_color: resolved.foreground_color,
         background_color: resolved.background_color,
+        border: resolved.border,
         content_layout: resolved.content_layout,
         is_dimmed: false,
     };

@@ -7,7 +7,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use image::{imageops::FilterType, RgbImage};
+use image::{
+    imageops::FilterType, DynamicImage, ImageBuffer, Pixel, Rgb, RgbImage, Rgba, RgbaImage,
+};
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tracing::debug;
@@ -30,7 +32,10 @@ const DECODED_CACHE_SIZE: usize = 32;
 /// so a key never has to repaint a second time when a download lands.
 pub struct AssetStore {
     root: PathBuf,
-    decoded: Mutex<DecodedCache>,
+    decoded: Mutex<DecodedCache<Rgb<u8>>>,
+    /// A second cache, because the overlay layer is the only thing that needs an alpha channel and
+    /// the main art path must keep handing the renderer a buffer it can `copy_from_slice`.
+    decoded_rgba: Mutex<DecodedCache<Rgba<u8>>>,
     http: reqwest::Client,
     /// URLs currently being fetched, and when each last failed. A panel repainting thirty-two keys
     /// that all show the same avatar must produce one download, not thirty-two.
@@ -51,6 +56,7 @@ impl AssetStore {
         Ok(Self {
             root: cache_directory,
             decoded: Mutex::new(DecodedCache::new(DECODED_CACHE_SIZE)),
+            decoded_rgba: Mutex::new(DecodedCache::new(DECODED_CACHE_SIZE)),
             http,
             in_flight: Mutex::default(),
             failed: Mutex::default(),
@@ -78,14 +84,33 @@ impl AssetStore {
     /// an image might not be drawable — unknown id, missing file, corrupt bytes — because all of
     /// them mean the same thing to the renderer: draw the key without a picture.
     pub fn decoded(self: &Arc<Self>, asset: &AssetId, size: u32) -> Option<Arc<RgbImage>> {
-        let digest = self.digest_of(asset)?;
-        let key = (digest.clone(), size);
-
+        let key = (self.digest_of(asset)?, size);
         if let Some(hit) = self.decoded.lock().unwrap().get(&key) {
             return Some(hit);
         }
+        let covered = Arc::new(cover(&self.decode_stored(asset, &key.0)?.to_rgb8(), size));
+        self.decoded.lock().unwrap().insert(key, covered.clone());
+        Some(covered)
+    }
 
-        let bytes = match fs::read(self.path_for(&digest)) {
+    /// The same picture with its alpha channel intact, and fitted inside the square rather than
+    /// cropped to fill it. A badge is a shape on a transparent field: cropping would clip it and
+    /// flattening would put an opaque box over whatever it is meant to annotate.
+    pub fn decoded_rgba(self: &Arc<Self>, asset: &AssetId, size: u32) -> Option<Arc<RgbaImage>> {
+        let key = (self.digest_of(asset)?, size);
+        if let Some(hit) = self.decoded_rgba.lock().unwrap().get(&key) {
+            return Some(hit);
+        }
+        let fitted = Arc::new(fit(&self.decode_stored(asset, &key.0)?.to_rgba8(), size));
+        self.decoded_rgba
+            .lock()
+            .unwrap()
+            .insert(key, fitted.clone());
+        Some(fitted)
+    }
+
+    fn decode_stored(self: &Arc<Self>, asset: &AssetId, digest: &str) -> Option<DynamicImage> {
+        let bytes = match fs::read(self.path_for(digest)) {
             Ok(bytes) => bytes,
             Err(_) => {
                 // Not stored yet. For a URL that means "go and get it", and the key redraws when
@@ -94,16 +119,13 @@ impl AssetStore {
                 return None;
             }
         };
-        let decoded = match image::load_from_memory(&bytes) {
-            Ok(decoded) => decoded,
+        match image::load_from_memory(&bytes) {
+            Ok(decoded) => Some(decoded),
             Err(error) => {
                 debug!(digest, %error, "stored asset could not be decoded");
-                return None;
+                None
             }
-        };
-        let covered = Arc::new(cover(&decoded.to_rgb8(), size));
-        self.decoded.lock().unwrap().insert(key, covered.clone());
-        Some(covered)
+        }
     }
 
     /// Where an id's bytes live. A `hash:` id names its own digest; a URL is keyed by the digest of
@@ -231,10 +253,13 @@ fn percent_decoded(value: &str) -> String {
 
 /// Scales so the shorter side fills `size`, then centre-crops. Letterboxing would leave bars in
 /// whatever the background happens to be, which looks like a bug rather than a choice.
-fn cover(source: &RgbImage, size: u32) -> RgbImage {
+fn cover<P>(source: &ImageBuffer<P, Vec<u8>>, size: u32) -> ImageBuffer<P, Vec<u8>>
+where
+    P: Pixel<Subpixel = u8> + 'static,
+{
     let (width, height) = source.dimensions();
     if width == 0 || height == 0 {
-        return RgbImage::new(size, size);
+        return ImageBuffer::new(size, size);
     }
     let scale = f64::from(size) / f64::from(width.min(height));
     let scaled_width = ((f64::from(width) * scale).round() as u32).max(size);
@@ -251,13 +276,37 @@ fn cover(source: &RgbImage, size: u32) -> RgbImage {
     .to_image()
 }
 
-struct DecodedCache {
+/// Scales so the longer side fits `size` and centres the result on a transparent square. The
+/// counterpart to [`cover`], for pictures whose shape carries the meaning.
+fn fit(source: &RgbaImage, size: u32) -> RgbaImage {
+    let (width, height) = source.dimensions();
+    if width == 0 || height == 0 {
+        return RgbaImage::new(size, size);
+    }
+    let scale = f64::from(size) / f64::from(width.max(height));
+    let scaled_width = ((f64::from(width) * scale).round() as u32).clamp(1, size);
+    let scaled_height = ((f64::from(height) * scale).round() as u32).clamp(1, size);
+    let scaled = image::imageops::resize(source, scaled_width, scaled_height, FilterType::Triangle);
+
+    let mut fitted = RgbaImage::new(size, size);
+    image::imageops::overlay(
+        &mut fitted,
+        &scaled,
+        i64::from((size - scaled_width) / 2),
+        i64::from((size - scaled_height) / 2),
+    );
+    fitted
+}
+
+type CachedImage<P> = Arc<ImageBuffer<P, Vec<<P as Pixel>::Subpixel>>>;
+
+struct DecodedCache<P: Pixel> {
     capacity: usize,
-    entries: HashMap<(String, u32), Arc<RgbImage>>,
+    entries: HashMap<(String, u32), CachedImage<P>>,
     order: VecDeque<(String, u32)>,
 }
 
-impl DecodedCache {
+impl<P: Pixel> DecodedCache<P> {
     fn new(capacity: usize) -> Self {
         Self {
             capacity,
@@ -266,14 +315,14 @@ impl DecodedCache {
         }
     }
 
-    fn get(&mut self, key: &(String, u32)) -> Option<Arc<RgbImage>> {
+    fn get(&mut self, key: &(String, u32)) -> Option<CachedImage<P>> {
         let hit = self.entries.get(key)?.clone();
         self.order.retain(|existing| existing != key);
         self.order.push_back(key.clone());
         Some(hit)
     }
 
-    fn insert(&mut self, key: (String, u32), value: Arc<RgbImage>) {
+    fn insert(&mut self, key: (String, u32), value: CachedImage<P>) {
         if self.entries.insert(key.clone(), value).is_none() {
             self.order.push_back(key);
         }

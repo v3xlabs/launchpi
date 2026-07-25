@@ -17,28 +17,28 @@ fn default_max_members() -> usize {
 }
 
 impl DiscordConfig {
+    /// Only the shape of what is set is checked. A half-configured instance still starts, because
+    /// the guild and channel pickers are answered by a *running* instance: refusing to start
+    /// without a guild would mean never being able to pick one.
     pub fn validate(&self) -> Result<(), String> {
-        let guild_id = self
-            .guild_id
-            .as_deref()
-            .ok_or_else(|| "guild_id is required".to_string())?;
-        validate_id("guild_id", guild_id)?;
-        if let Some(channel_id) = self.channel_id.as_deref() {
-            validate_id("channel_id", channel_id)?;
-        }
-        if let Some(user_id) = self.user_id.as_deref() {
-            validate_id("user_id", user_id)?;
-        }
-        if self.channel_id.is_some() && self.user_id.is_some() {
-            return Err("configure only one of channel_id or user_id".to_string());
-        }
-        if self.channel_id.is_none() && self.user_id.is_none() {
-            return Err("one of channel_id or user_id is required".to_string());
+        for (name, value) in [
+            ("guild_id", self.guild_id.as_deref()),
+            ("channel_id", self.channel_id.as_deref()),
+            ("user_id", self.user_id.as_deref()),
+        ] {
+            if let Some(value) = value {
+                validate_id(name, value)?;
+            }
         }
         if self.max_members == 0 || self.max_members > 32 {
             return Err("max_members must be between 1 and 32".to_string());
         }
         Ok(())
+    }
+
+    /// Whether there is enough here to show anything. Reported rather than rejected.
+    pub fn names_a_channel(&self) -> bool {
+        self.guild_id.is_some() && (self.channel_id.is_some() || self.user_id.is_some())
     }
 }
 
@@ -53,11 +53,26 @@ fn validate_id(name: &str, value: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// The picker behind `guild_id` is answered by a running instance, so a token-only instance has
+    /// to start for the guild list to ever appear.
     #[test]
-    fn requires_a_fixed_channel_or_followed_user() {
+    fn a_token_only_instance_starts_but_names_no_channel() {
         let config = DiscordConfig {
             token: None,
-            guild_id: Some("1".to_string()),
+            guild_id: None,
+            channel_id: None,
+            user_id: None,
+            max_members: 4,
+        };
+        assert!(config.validate().is_ok());
+        assert!(!config.names_a_channel());
+    }
+
+    #[test]
+    fn a_malformed_snowflake_is_still_rejected() {
+        let config = DiscordConfig {
+            token: None,
+            guild_id: Some("not-a-snowflake".to_string()),
             channel_id: None,
             user_id: None,
             max_members: 4,
@@ -72,6 +87,18 @@ mod tests {
             guild_id: Some("1".to_string()),
             channel_id: None,
             user_id: Some("2".to_string()),
+            max_members: 4,
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn accepts_a_followed_user_with_a_fallback_channel() {
+        let config = DiscordConfig {
+            token: None,
+            guild_id: Some("1".to_string()),
+            channel_id: Some("2".to_string()),
+            user_id: Some("3".to_string()),
             max_members: 4,
         };
         assert!(config.validate().is_ok());

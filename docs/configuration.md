@@ -148,7 +148,9 @@ The key index sent to hardware is `row * columns + column`.
 | --- | --- | --- |
 | `text` | string, optional | Interpolated: `$(instance:variable)`, with `$$` for a literal dollar. |
 | `image` | string, optional | An `AssetId`, or a `$(...)` reference that resolves to one. |
+| `overlay_image` | table, optional | A badge drawn small in a corner and never dimmed by the label scrim. `image` is an `AssetId` or a `$(...)` reference; `anchor` is one of the nine positions, default `bottom_end`; `scale_percent` is its size as a share of the key, default `32`. |
 | `foreground_color`, `background_color` | table or string, optional | A table of `red`, `green`, `blue`, `alpha` is a fixed colour. A `"$(...)"` string binds the colour to a value, so a key can take a light's real colour. |
+| `border` | table, optional | `color` takes the same forms as the colours above; `width` is the inset frame's depth in pixels, default `5`. A `color` that does not resolve draws no frame. |
 | `progress` | table, optional | `value` and `maximum_value`; drawn as a bar along the bottom edge. |
 | `is_pressed` | boolean | Present on `default_state` and `pressed_state` for symmetry; the daemon does not read it. |
 
@@ -200,8 +202,9 @@ A failing action logs and the chain continues.
 
 ### Binding a field to a value
 
-Any of `text`, `image`, `foreground_color` and `background_color` may hold a
-`$(instance:value)` reference instead of a literal. The control repaints
+Any of `text`, `image`, `overlay_image.image`, `foreground_color`,
+`background_color` and `border.color` may hold a `$(instance:value)` reference
+instead of a literal. The control repaints
 whenever the referenced value changes.
 
 ```toml

@@ -44,6 +44,11 @@ pub enum ServerEvent {
     AssetReady {
         asset: String,
     },
+    /// An instance's recommended buttons changed. Carries only which instance: a preset is a whole
+    /// control, and these churn as a plugin's view of the world moves.
+    PresetsChanged {
+        integration_id: IntegrationId,
+    },
     /// The set of things changed: something was added, removed, renamed or reassigned. Not for
     /// status, which has its own event.
     Changed,

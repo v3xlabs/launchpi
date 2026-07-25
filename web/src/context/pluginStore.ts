@@ -2,6 +2,7 @@ import { Accessor, createSignal, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 
 import * as pluginApi from "../api/plugins";
+import * as presetApi from "../api/presets";
 import { forgetRendersUsing } from "../api/render";
 
 export type PluginStore = {
@@ -27,6 +28,9 @@ export type PluginStore = {
   assetReady: (asset: string) => void;
   values: Accessor<pluginApi.ValueCatalogue>;
   refreshValues: () => Promise<void>;
+  /** Ready-made buttons each running instance recommends, refreshed from the event stream. */
+  presets: Accessor<presetApi.InstancePresets[]>;
+  refreshPresets: () => Promise<void>;
   saveUserValue: (value: pluginApi.UserValue) => Promise<boolean>;
   removeUserValue: (name: string) => Promise<boolean>;
 };
@@ -41,6 +45,7 @@ export const createPluginStore = (
 ): PluginStore => {
   const [catalogue, setCatalogue] = createSignal<pluginApi.PluginCatalogue>(pluginApi.emptyCatalogue);
   const [values, setValues] = createSignal<pluginApi.ValueCatalogue>(pluginApi.emptyValueCatalogue);
+  const [presets, setPresets] = createSignal<presetApi.InstancePresets[]>([]);
   const [variables, setVariables] = createStore<Record<string, string>>({});
   const [assetArrivals, setAssetArrivals] = createStore<Record<string, number>>({});
 
@@ -61,10 +66,20 @@ export const createPluginStore = (
     }
   };
 
+  const refreshPresets = async (): Promise<void> => {
+    try {
+      setPresets(await presetApi.fetchPresets());
+    }
+    catch (presetError) {
+      setError(presetError instanceof Error ? presetError.message : "Unable to load presets.");
+    }
+  };
+
   const refreshPlugins = async (): Promise<void> => {
     try {
       setCatalogue(await pluginApi.fetchPlugins());
       await refreshValues();
+      await refreshPresets();
     }
     catch (pluginError) {
       setError(pluginError instanceof Error ? pluginError.message : "Unable to load plugins.");
@@ -113,6 +128,8 @@ export const createPluginStore = (
     },
     values,
     refreshValues,
+    presets,
+    refreshPresets,
     saveUserValue: value =>
       runPlugin(async () => {
         await pluginApi.upsertUserValue(value);

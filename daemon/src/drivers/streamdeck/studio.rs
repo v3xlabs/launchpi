@@ -6,6 +6,7 @@ use std::{
 };
 
 use ab_glyph::{point, Font, FontRef, Glyph, PxScale, ScaleFont};
+use image::RgbaImage;
 use jpeg_encoder::{ColorType, Encoder};
 use lazy_static::lazy_static;
 use mdns_sd::{ResolvedService, ServiceDaemon, ServiceEvent};
@@ -20,7 +21,7 @@ use tracing::{debug, info, info_span, trace, warn, Instrument};
 use crate::{
     assets::AssetStore,
     identifiers::SurfaceId,
-    panels::rendered_state::{Progress, RgbaColor},
+    panels::rendered_state::{Anchor9, Progress, RgbaColor},
     state::AppState,
     surfaces::{
         command::{KeyIcon, KeyRendering, SurfaceCommand},
@@ -73,6 +74,9 @@ const DIAL_REPORT_SIZE: usize = 5 + DIAL_COUNT as usize;
 const CHILD_QUERY_INTERVAL: Duration = Duration::from_secs(5);
 /// Replies the read loop owes the device - acknowledgements and probes, never renders.
 const REPLY_QUEUE_SIZE: usize = 8;
+
+/// Keeps a badge off the bezel at every anchor.
+const OVERLAY_INSET: usize = 4;
 
 const KEY_FONT_BYTES: &[u8] = include_bytes!("../../../assets/DejaVuSans.ttf");
 
@@ -1295,6 +1299,60 @@ fn draw_progress(pixels: &mut [u8], progress: &Progress, color: (u8, u8, u8)) {
     }
 }
 
+/// Alpha-composited, not blitted: a badge is a shape on a transparent field, and pasting its
+/// bounding box would drop a black square onto whatever it annotates.
+fn draw_overlay(pixels: &mut [u8], badge: &RgbaImage, anchor: Anchor9) {
+    let size = badge.width() as usize;
+    let (left, top) = anchored_origin(size, anchor);
+    for (x, y, pixel) in badge.enumerate_pixels() {
+        blend_pixel(
+            pixels,
+            (left + x as usize) as i32,
+            (top + y as usize) as i32,
+            (pixel[0], pixel[1], pixel[2]),
+            f32::from(pixel[3]) / 255.0,
+        );
+    }
+}
+
+/// Where a square of `size` sits for each of the nine anchors, inset from the edge so a badge never
+/// touches the bezel.
+fn anchored_origin(size: usize, anchor: Anchor9) -> (usize, usize) {
+    let far = STUDIO_KEY_IMAGE_SIZE.saturating_sub(size + OVERLAY_INSET);
+    let middle = STUDIO_KEY_IMAGE_SIZE.saturating_sub(size) / 2;
+    let (horizontal, vertical) = match anchor {
+        Anchor9::TopStart => (0, 0),
+        Anchor9::TopCenter => (1, 0),
+        Anchor9::TopEnd => (2, 0),
+        Anchor9::CenterStart => (0, 1),
+        Anchor9::Center => (1, 1),
+        Anchor9::CenterEnd => (2, 1),
+        Anchor9::BottomStart => (0, 2),
+        Anchor9::BottomCenter => (1, 2),
+        Anchor9::BottomEnd => (2, 2),
+    };
+    let place = |side: u8| match side {
+        0 => OVERLAY_INSET,
+        1 => middle,
+        _ => far,
+    };
+    (place(horizontal), place(vertical))
+}
+
+/// An inset frame drawn over everything else. Inset rather than outset because the key image *is*
+/// the key: there is no margin to grow into.
+fn draw_border(pixels: &mut [u8], color: (u8, u8, u8), width: usize) {
+    let width = width.min(STUDIO_KEY_IMAGE_SIZE / 2);
+    for y in 0..STUDIO_KEY_IMAGE_SIZE {
+        let is_edge_row = y < width || y >= STUDIO_KEY_IMAGE_SIZE - width;
+        for x in 0..STUDIO_KEY_IMAGE_SIZE {
+            if is_edge_row || x < width || x >= STUDIO_KEY_IMAGE_SIZE - width {
+                set_pixel(pixels, x, y, color);
+            }
+        }
+    }
+}
+
 fn render_key_image(
     rendering: &KeyRendering,
     flip_image: bool,
@@ -1333,6 +1391,19 @@ fn render_key_image(
     }
     if let Some(progress) = &rendering.progress {
         draw_progress(&mut pixels, progress, foreground);
+    }
+    // After the label and the scrim, so a status badge is neither buried under text nor dimmed by
+    // the presence of one.
+    if let Some(overlay) = &rendering.overlay_image {
+        let size = (STUDIO_KEY_IMAGE_SIZE * usize::from(overlay.scale_percent) / 100).max(1);
+        if let Some(badge) =
+            assets.and_then(|store| store.decoded_rgba(&overlay.image, size as u32))
+        {
+            draw_overlay(&mut pixels, &badge, overlay.anchor);
+        }
+    }
+    if let Some(border) = &rendering.border {
+        draw_border(&mut pixels, rgb(&border.color), usize::from(border.width));
     }
 
     if flip_image {
@@ -1489,10 +1560,11 @@ mod tests {
     use std::sync::atomic::AtomicU64;
 
     use super::{
-        flip_pixels_180, parse_child_device_info, parse_primary_device_info, render_key_image,
-        stream_deck_layout, stream_deck_model_name, KeyIcon, KeyRendering, PendingRenders,
-        RgbaColor, SurfaceCommand, SurfaceLayout, TransportMode, DIAL_RING_COMMAND,
-        ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE, NETWORK_DOCK_PRODUCT_ID,
+        anchored_origin, draw_border, draw_overlay, flip_pixels_180, parse_child_device_info,
+        parse_primary_device_info, render_key_image, stream_deck_layout, stream_deck_model_name,
+        Anchor9, KeyIcon, KeyRendering, PendingRenders, RgbaColor, RgbaImage, SurfaceCommand,
+        SurfaceLayout, TransportMode, DIAL_RING_COMMAND, ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE,
+        NETWORK_DOCK_PRODUCT_ID, OVERLAY_INSET, STUDIO_KEY_IMAGE_SIZE,
     };
 
     fn amber() -> RgbaColor {
@@ -1659,10 +1731,63 @@ mod tests {
     }
 
     #[test]
+    fn a_border_paints_the_edge_and_leaves_the_centre_alone() {
+        let mut pixels = vec![0_u8; STUDIO_KEY_IMAGE_SIZE * STUDIO_KEY_IMAGE_SIZE * 3];
+        draw_border(&mut pixels, (10, 20, 30), 4);
+
+        let at = |x: usize, y: usize| {
+            let offset = (y * STUDIO_KEY_IMAGE_SIZE + x) * 3;
+            (pixels[offset], pixels[offset + 1], pixels[offset + 2])
+        };
+        assert_eq!(at(0, 0), (10, 20, 30));
+        assert_eq!(
+            at(STUDIO_KEY_IMAGE_SIZE - 1, STUDIO_KEY_IMAGE_SIZE - 1),
+            (10, 20, 30)
+        );
+        assert_eq!(at(3, 50), (10, 20, 30), "the frame is four pixels deep");
+        assert_eq!(at(4, 50), (0, 0, 0), "and no deeper");
+        assert_eq!(at(48, 48), (0, 0, 0));
+    }
+
+    #[test]
+    fn a_transparent_badge_pixel_leaves_what_is_underneath() {
+        let mut pixels = vec![200_u8; STUDIO_KEY_IMAGE_SIZE * STUDIO_KEY_IMAGE_SIZE * 3];
+        let mut badge = RgbaImage::new(8, 8);
+        badge.put_pixel(0, 0, image::Rgba([1, 2, 3, 255]));
+        draw_overlay(&mut pixels, &badge, Anchor9::TopStart);
+
+        let at = |x: usize, y: usize| {
+            let offset = (y * STUDIO_KEY_IMAGE_SIZE + x) * 3;
+            (pixels[offset], pixels[offset + 1], pixels[offset + 2])
+        };
+        assert_eq!(at(OVERLAY_INSET, OVERLAY_INSET), (1, 2, 3));
+        assert_eq!(
+            at(OVERLAY_INSET + 1, OVERLAY_INSET),
+            (200, 200, 200),
+            "a fully transparent badge pixel must not paint a box over the art"
+        );
+    }
+
+    #[test]
+    fn a_badge_sits_in_the_corner_its_anchor_names() {
+        assert_eq!(anchored_origin(32, Anchor9::TopStart), (OVERLAY_INSET, OVERLAY_INSET));
+        assert_eq!(
+            anchored_origin(32, Anchor9::BottomEnd),
+            (
+                STUDIO_KEY_IMAGE_SIZE - 32 - OVERLAY_INSET,
+                STUDIO_KEY_IMAGE_SIZE - 32 - OVERLAY_INSET
+            )
+        );
+        assert_eq!(anchored_origin(32, Anchor9::Center), (32, 32));
+    }
+
+    #[test]
     fn renders_a_jpeg_for_text_icon_and_color() {
         let image = render_key_image(
             &KeyRendering {
                 image: None,
+                overlay_image: None,
+                border: None,
                 progress: None,
                 key_index: 0,
                 text: Some("Hello".to_string()),

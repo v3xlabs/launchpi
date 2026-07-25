@@ -109,12 +109,19 @@ fn references_of_state(state: &RenderedState) -> Vec<VariableRef> {
         .as_deref()
         .map(template::references)
         .unwrap_or_default();
-    if let Some(image) = &state.image {
-        found.extend(template::references(&image.0));
+    for asset in [
+        state.image.as_ref(),
+        state.overlay_image.as_ref().map(|overlay| &overlay.image),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        found.extend(template::references(&asset.0));
     }
     for binding in [
         state.foreground_color.as_ref(),
         state.background_color.as_ref(),
+        state.border.as_ref().map(|border| &border.color),
     ]
     .into_iter()
     .flatten()
@@ -131,7 +138,10 @@ mod tests {
     use super::*;
     use crate::{
         identifiers::{AssetId, ControlId, PanelId},
-        panels::PanelLayout,
+        panels::{
+            rendered_state::{Anchor9, Border, OverlayImage},
+            PanelLayout,
+        },
         surfaces::layout::{SurfaceCapabilities, SurfacePosition},
     };
 
@@ -194,6 +204,44 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_border_and_an_overlay_register_targets_and_subscriptions() {
+        let mut keyed = control(0, 0, None);
+        keyed.default_state.border = Some(Border {
+            color: ColorBinding::Reference("$(discord.home:status_color)".to_string()),
+            width: 5,
+        });
+        keyed.default_state.overlay_image = Some(OverlayImage {
+            image: AssetId("$(discord.home:status_icon)".to_string()),
+            anchor: Anchor9::BottomEnd,
+            scale_percent: 32,
+        });
+        let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
+
+        assert_eq!(
+            index
+                .targets_for_variable(&VariableRef::new("discord.home", "status_color"))
+                .len(),
+            1,
+            "a border colour must mark its key dirty when the colour changes"
+        );
+        assert_eq!(
+            index
+                .targets_for_variable(&VariableRef::new("discord.home", "status_icon"))
+                .len(),
+            1,
+            "a badge must mark its key dirty when the badge changes"
+        );
+
+        let mut names: Vec<_> = index
+            .subscriptions_for(&IntegrationId("discord.home".to_string()))
+            .iter()
+            .map(|subscription| subscription.name.clone())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["status_color", "status_icon"]);
     }
 
     #[test]

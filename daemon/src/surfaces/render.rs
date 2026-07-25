@@ -148,9 +148,11 @@ fn rendering_for_control(
         text: state.text,
         icon: None,
         image: state.image,
+        overlay_image: state.overlay_image,
         progress: state.progress,
         foreground_color: state.foreground_color,
         background_color: state.background_color,
+        border: state.border,
         content_layout: state.content_layout,
         is_dimmed,
     })

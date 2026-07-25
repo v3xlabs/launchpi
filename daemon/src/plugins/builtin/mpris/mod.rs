@@ -846,6 +846,7 @@ mod tests {
         let context = PluginContext::new(
             integration_id.clone(),
             variables.clone(),
+            Arc::default(),
             signals,
             token,
             reqwest::Client::new(),

@@ -2,10 +2,11 @@ import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/t
 import { Component, For, Match, Show, Switch } from "solid-js";
 
 import { Anchor9, capabilityLabels, Control, Panel, panelDial, RgbaColor } from "../api/inventory";
+import { PresetPickerDialog } from "../dialogs/PresetPickerDialog";
 import { newState, toHex } from "../utils/rendered";
 import { BindingsEditor } from "./BindingsEditor";
 import { DialIndicator, litRingSegments, totalRingSegments } from "./DialIndicator";
-import { ColorField, SelectField, TextField } from "./fields";
+import { ColorField, NumberField, SelectField, TextField } from "./fields";
 import { ValueField } from "./ValueField";
 
 export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "dial"; index: number; };
@@ -13,6 +14,20 @@ export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "
 const textAnchors: Anchor9[] = [
   "top_start", "top_center", "top_end", "center_start", "center", "center_end", "bottom_start", "bottom_center", "bottom_end",
 ];
+
+const anchorOptions = [
+  { value: "top_start", label: "Left top" }, { value: "top_center", label: "Middle top" }, { value: "top_end", label: "Right top" },
+  { value: "center_start", label: "Left middle" }, { value: "center", label: "Middle middle" }, { value: "center_end", label: "Right middle" },
+  { value: "bottom_start", label: "Left bottom" }, { value: "bottom_center", label: "Middle bottom" }, { value: "bottom_end", label: "Right bottom" },
+];
+
+const toAnchor = (value: string): Anchor9 | undefined => textAnchors.find(anchor => anchor === value);
+
+const toCount = (value: string): number | undefined => {
+  const parsed = Number(value);
+
+  return value.trim() === "" || Number.isNaN(parsed) ? undefined : parsed;
+};
 
 const PanelSettings: Component<{ panel: Panel; onMutate: (mutate: (panel: Panel) => void) => void; }> = properties => (
   <>
@@ -68,6 +83,17 @@ const ControlEditor: Component<{
         {properties.control.position.column + 1}
       </p>
       <div class="flex gap-1.5">
+        <PresetPickerDialog
+          trigger={<button type="button" class="link-button">preset</button>}
+          onChoose={template =>
+            properties.onMutate((control) => {
+              // Everything about the button, nothing about where it sits.
+              control.name = template.name;
+              control.default_state = structuredClone(template.default_state);
+              control.pressed_state = structuredClone(template.pressed_state);
+              control.action_bindings = structuredClone(template.action_bindings);
+            })}
+        />
         <button
           type="button"
           class="icon-button"
@@ -109,13 +135,9 @@ const ControlEditor: Component<{
       <SelectField
         label="Label position"
         value={properties.control.default_state.content_layout.text_anchor}
-        options={[
-          { value: "top_start", label: "Left top" }, { value: "top_center", label: "Middle top" }, { value: "top_end", label: "Right top" },
-          { value: "center_start", label: "Left middle" }, { value: "center", label: "Middle middle" }, { value: "center_end", label: "Right middle" },
-          { value: "bottom_start", label: "Left bottom" }, { value: "bottom_center", label: "Middle bottom" }, { value: "bottom_end", label: "Right bottom" },
-        ]}
+        options={anchorOptions}
         onChange={value => properties.onMutate((control) => {
-          const anchor = textAnchors.find(option => option === value);
+          const anchor = toAnchor(value);
 
           if (anchor !== undefined) control.default_state.content_layout.text_anchor = anchor;
         })}
@@ -155,6 +177,111 @@ const ControlEditor: Component<{
             })}
         />
       </div>
+
+      <label class="check-tile">
+        <input
+          type="checkbox"
+          checked={properties.control.default_state.border !== null}
+          onInput={(event) => {
+            const { checked } = event.currentTarget;
+
+            properties.onMutate((control) => {
+              control.default_state.border = checked
+                ? { color: { red: 255, green: 255, blue: 255, alpha: 255 }, width: 5 }
+                : null;
+            });
+          }}
+        />
+        Border
+      </label>
+
+      <Show when={properties.control.default_state.border}>
+        {border => (
+          <div class="grid grid-cols-2 gap-2">
+            <ColorField
+              label="Colour"
+              value={border().color}
+              fallback="#ffffff"
+              onChange={color =>
+                properties.onMutate((control) => {
+                  if (control.default_state.border) control.default_state.border.color = color;
+                })}
+            />
+            <NumberField
+              label="Width"
+              value={border().width}
+              onChange={value =>
+                properties.onMutate((control) => {
+                  const width = toCount(value);
+
+                  if (width !== undefined && control.default_state.border) {
+                    control.default_state.border.width = width;
+                  }
+                })}
+            />
+          </div>
+        )}
+      </Show>
+
+      <label class="check-tile">
+        <input
+          type="checkbox"
+          checked={properties.control.default_state.overlay_image !== null}
+          onInput={(event) => {
+            const { checked } = event.currentTarget;
+
+            properties.onMutate((control) => {
+              control.default_state.overlay_image = checked
+                ? { image: "", anchor: "bottom_end", scale_percent: 32 }
+                : null;
+            });
+          }}
+        />
+        Badge
+      </label>
+
+      <Show when={properties.control.default_state.overlay_image}>
+        {overlay => (
+          <div class="pressed-fields">
+            <ValueField
+              label="Badge image"
+              value={overlay().image}
+              placeholder="$(discord.default:channel_members_0_status_icon)"
+              onChange={value =>
+                properties.onMutate((control) => {
+                  if (control.default_state.overlay_image) control.default_state.overlay_image.image = value;
+                })}
+            />
+            <div class="grid grid-cols-2 gap-2">
+              <SelectField
+                label="Corner"
+                value={overlay().anchor}
+                options={anchorOptions}
+                onChange={value =>
+                  properties.onMutate((control) => {
+                    const anchor = toAnchor(value);
+
+                    if (anchor !== undefined && control.default_state.overlay_image) {
+                      control.default_state.overlay_image.anchor = anchor;
+                    }
+                  })}
+              />
+              <NumberField
+                label="Size %"
+                value={overlay().scale_percent}
+                onChange={value =>
+                  properties.onMutate((control) => {
+                    const scale = toCount(value);
+
+                    if (scale !== undefined && control.default_state.overlay_image) {
+                      control.default_state.overlay_image.scale_percent = scale;
+                    }
+                  })}
+              />
+            </div>
+          </div>
+        )}
+      </Show>
 
       <label class="check-tile">
         <input
