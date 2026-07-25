@@ -76,8 +76,7 @@ impl SurfaceRegistry {
             layout: PanelLayout { columns, rows },
             capabilities: studio_capabilities(),
             controls,
-            dial_colors: Vec::new(),
-            dial_ring_levels: Vec::new(),
+            dials: Vec::new(),
         };
         self.upsert_panel(panel).ok().map(|panel| panel.panel_id)
     }
@@ -193,6 +192,12 @@ fn supports(device: &SurfaceCapabilities, panel: &SurfaceCapabilities) -> bool {
 fn validate_panel(panel: &Panel) -> Result<(), String> {
     if panel.name.trim().is_empty() || panel.layout.columns == 0 || panel.layout.rows == 0 {
         return Err("panel name and layout dimensions are required".to_string());
+    }
+    let mut dial_indices = HashMap::new();
+    for dial in &panel.dials {
+        if dial_indices.insert(dial.index, ()).is_some() {
+            return Err("panel dials cannot share an index".to_string());
+        }
     }
     let mut positions = HashMap::new();
     for control in &panel.controls {

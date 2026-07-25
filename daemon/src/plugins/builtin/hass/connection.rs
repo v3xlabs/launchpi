@@ -16,6 +16,7 @@ use tracing::debug;
 use crate::{
     plugins::{
         builtin::hass::{
+            presets,
             protocol::{self, ServerMessage, ServiceCall},
             values::{entity_id_of, parse_binding, value_for_field, ValueBinding},
         },
@@ -32,7 +33,7 @@ const KEEPALIVE: Duration = Duration::from_secs(30);
 
 /// What the plugin and its connection share: the bindings the connection publishes into, the queue
 /// it takes commands from, and enough state for `invoke` to answer without a socket.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CatalogueEntry {
     pub friendly_name: Option<String>,
     pub domain: String,
@@ -128,7 +129,10 @@ impl Shared {
 
     /// Remembers what an entity is called and what kind of thing it is. Every state that arrives
     /// updates it, so the picker reflects the installation as it is now.
-    pub fn record(&self, entity_id: &str, state: &JsonValue) {
+    ///
+    /// Answers whether that changed anything, because the presets are derived from the catalogue
+    /// and a light reporting its brightness again does not alter the button for it.
+    pub fn record(&self, entity_id: &str, state: &JsonValue) -> bool {
         let friendly_name = state
             .get("attributes")
             .and_then(|attributes| attributes.get("friendly_name"))
@@ -138,14 +142,19 @@ impl Shared {
             .split_once('.')
             .map(|(domain, _)| domain.to_string())
             .unwrap_or_default();
+        let entry = CatalogueEntry {
+            friendly_name,
+            domain,
+        };
 
-        self.catalogue.write().unwrap().insert(
-            entity_id.to_string(),
-            CatalogueEntry {
-                friendly_name,
-                domain,
-            },
-        );
+        let mut catalogue = self.catalogue.write().unwrap();
+        match catalogue.get(entity_id) {
+            Some(existing) if *existing == entry => false,
+            _ => {
+                catalogue.insert(entity_id.to_string(), entry);
+                true
+            }
+        }
     }
 
     /// The entity list as lookup options: friendly name first because that is what a person knows,
@@ -384,7 +393,11 @@ fn receive(
     seeds: &mut HashSet<u64>,
 ) {
     match protocol::parse_server_message(payload) {
-        Ok(ServerMessage::State(state)) => publish(context, shared, &state),
+        Ok(ServerMessage::State(state)) => {
+            if publish(context, shared, &state) {
+                republish_presets(context, shared);
+            }
+        }
         Ok(ServerMessage::Result { id, outcome }) => {
             if let Some(responder) = pending.remove(&id) {
                 let _ = responder.send(outcome);
@@ -392,8 +405,12 @@ fn receive(
             }
             match (seeds.remove(&id), outcome) {
                 (true, Ok(result)) => {
+                    let mut catalogue_changed = false;
                     for state in protocol::states_of(&result) {
-                        publish(context, shared, &state);
+                        catalogue_changed |= publish(context, shared, &state);
+                    }
+                    if catalogue_changed {
+                        republish_presets(context, shared);
                     }
                 }
                 (_, Err(reason)) => context.log(SurfaceLogLevel::Warning, reason),
@@ -410,11 +427,15 @@ fn receive(
 
 /// Publishes every subscribed value that reads from this entity. Nothing else in the installation
 /// is looked at, so a panel watching four lights costs four lookups per event.
-fn publish(context: &PluginContext, shared: &Shared, state: &JsonValue) {
+///
+/// Answers whether the catalogue changed, which a seed accumulates over every state it carries
+/// rather than acting on each one: an installation seeds thousands of entities at once and the
+/// preset set is built from all of them.
+fn publish(context: &PluginContext, shared: &Shared, state: &JsonValue) -> bool {
     let Some(entity_id) = entity_id_of(state) else {
-        return;
+        return false;
     };
-    shared.record(&entity_id, state);
+    let catalogue_changed = shared.record(&entity_id, state);
     let bindings = shared.bindings.read().unwrap();
     for binding in bindings
         .iter()
@@ -424,6 +445,13 @@ fn publish(context: &PluginContext, shared: &Shared, state: &JsonValue) {
             context.set_value(binding.name.clone(), value);
         }
     }
+
+    catalogue_changed
+}
+
+fn republish_presets(context: &PluginContext, shared: &Shared) {
+    let presets = presets::from_catalogue(&shared.catalogue.read().unwrap());
+    context.set_presets(presets);
 }
 
 fn take(next_id: &mut u64) -> u64 {
@@ -536,6 +564,25 @@ mod tests {
 
         assert_eq!(options.len(), 1);
         assert_eq!(options[0].value, "update.esphome_kitchen");
+    }
+
+    /// The presets are rebuilt from the whole catalogue, so a light reporting a new brightness
+    /// twice a second must not be reported as a catalogue change.
+    #[test]
+    fn only_a_new_or_renamed_entity_counts_as_a_catalogue_change() {
+        let (commands, _receiver) = mpsc::channel(1);
+        let shared = Shared::new(commands);
+        let state = |brightness: u64, name: &str| {
+            serde_json::json!({
+                "entity_id": "light.kitchen",
+                "state": "on",
+                "attributes": { "friendly_name": name, "brightness": brightness },
+            })
+        };
+
+        assert!(shared.record("light.kitchen", &state(10, "Kitchen")));
+        assert!(!shared.record("light.kitchen", &state(200, "Kitchen")));
+        assert!(shared.record("light.kitchen", &state(200, "Kitchen Ceiling")));
     }
 
     /// A light is worth binding a colour to; an automation is not.

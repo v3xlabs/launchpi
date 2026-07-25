@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 pub mod control;
+pub mod dial;
 pub mod rendered_state;
 
 use crate::{
     identifiers::PanelId,
-    panels::{control::Control, rendered_state::RgbaColor},
+    panels::{control::Control, dial::PanelDial},
     surfaces::layout::SurfaceCapabilities,
 };
 
@@ -18,9 +19,7 @@ pub struct Panel {
     pub capabilities: SurfaceCapabilities,
     pub controls: Vec<Control>,
     #[serde(default)]
-    pub dial_colors: Vec<RgbaColor>,
-    #[serde(default)]
-    pub dial_ring_levels: Vec<u8>,
+    pub dials: Vec<PanelDial>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

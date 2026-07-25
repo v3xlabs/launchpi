@@ -1,6 +1,7 @@
 mod actions;
 mod config;
 mod connection;
+mod presets;
 mod protocol;
 mod values;
 
@@ -172,11 +173,13 @@ impl Plugin for HassPlugin {
 mod tests {
     use super::*;
     use crate::{
+        bindings::action::Action,
         identifiers::IntegrationId,
         panels::rendered_state::RgbaColor,
         plugins::{
             engine::EngineSignal,
             plugin::{cancellation, CancelHandle},
+            preset::{Preset, PresetStore},
         },
         variables::{VariableRef, VariableStore, VariableValue},
     };
@@ -306,19 +309,21 @@ mod tests {
     struct Started {
         plugin: Arc<dyn Plugin>,
         variables: Arc<VariableStore>,
+        presets: Arc<PresetStore>,
         signals: mpsc::Receiver<EngineSignal>,
         _cancel: CancelHandle,
     }
 
     async fn started(config: String) -> Result<Started, PluginError> {
         let variables = Arc::new(VariableStore::default());
+        let presets = Arc::new(PresetStore::default());
         let (signals, receiver) = mpsc::channel(256);
         let (cancel, token) = cancellation();
         let integration_id = IntegrationId("hass.home".to_string());
         let context = PluginContext::new(
             integration_id.clone(),
             variables.clone(),
-            Arc::default(),
+            presets.clone(),
             signals,
             token,
             reqwest::Client::new(),
@@ -335,9 +340,21 @@ mod tests {
         Ok(Started {
             plugin,
             variables,
+            presets,
             signals: receiver,
             _cancel: cancel,
         })
+    }
+
+    /// Waits for the instance to have recommended something and answers with it.
+    async fn await_presets(presets: &PresetStore) -> Vec<Preset> {
+        for _ in 0..250 {
+            if let Some((_, offered)) = presets.snapshot().into_iter().next() {
+                return offered;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("the instance never recommended anything");
     }
 
     /// Waits for a value to settle on what is expected. A seeded state and the event that follows
@@ -500,6 +517,79 @@ mod tests {
             VariableValue::Text("on".to_string()),
         )
         .await;
+    }
+
+    /// Nothing subscribes here: what an installation recommends is what it can see, not what a
+    /// panel happens to be watching.
+    #[tokio::test]
+    async fn the_seeded_installation_recommends_a_key_for_every_entity_worth_pressing() {
+        let (calls, _received) = mpsc::unbounded_channel();
+        let port = home_assistant(calls).await;
+        let started = started(format!(
+            "url = \"http://127.0.0.1:{port}\"\ntoken = \"{TOKEN}\"\n"
+        ))
+        .await
+        .expect("the instance starts");
+
+        let offered = await_presets(&started.presets).await;
+        let ids: Vec<_> = offered
+            .iter()
+            .map(|preset| preset.preset_id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            ["light.kitchen"],
+            "the seed also carried a sensor, which has nothing to press"
+        );
+
+        let kitchen = &offered[0];
+        assert_eq!(kitchen.name, "Kitchen");
+        assert_eq!(
+            kitchen.control.default_state.text.as_deref(),
+            Some("Kitchen\n$(hass.home:light.kitchen.state)"),
+            "the self sigil is rewritten to the publishing instance on the way in"
+        );
+
+        let Action::InvokeIntegration { integration_id, .. } =
+            &kitchen.control.action_bindings[0].actions[0]
+        else {
+            panic!("a recommended key presses its own instance");
+        };
+        assert_eq!(integration_id.0, "hass.home");
+    }
+
+    /// A reconnect reseeds every entity again, and a browser told the recommendations changed
+    /// refetches all of them.
+    #[tokio::test]
+    async fn a_reseed_of_an_unchanged_installation_does_not_announce_again() {
+        let (calls, _received) = mpsc::unbounded_channel();
+        let port = home_assistant(calls).await;
+        let mut started = started(format!(
+            "url = \"http://127.0.0.1:{port}\"\ntoken = \"{TOKEN}\"\n"
+        ))
+        .await
+        .expect("the instance starts");
+
+        await_presets(&started.presets).await;
+        started
+            .plugin
+            .subscribe(&subscriptions(&["light.kitchen.state"]))
+            .await
+            .expect("subscriptions are accepted");
+        await_value(
+            &started.variables,
+            "light.kitchen.state",
+            VariableValue::Text("on".to_string()),
+        )
+        .await;
+
+        let mut announcements = 0;
+        while let Ok(signal) = started.signals.try_recv() {
+            if matches!(signal, EngineSignal::PresetsChanged(_)) {
+                announcements += 1;
+            }
+        }
+        assert_eq!(announcements, 1, "the subscription forced a second seed");
     }
 
     #[tokio::test]

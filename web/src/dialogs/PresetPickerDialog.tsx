@@ -1,6 +1,6 @@
 import * as Dialog from "@kobalte/core/dialog";
 import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
+import { Component, createMemo, createSignal, For, JSX, onCleanup, onMount, Show } from "solid-js";
 
 import { Control } from "../api/inventory";
 import { ControlTemplate, Preset } from "../api/presets";
@@ -8,14 +8,44 @@ import { TextField } from "../components/fields";
 import { KeyImage } from "../components/KeyImage";
 import { useInventory } from "../context/InventoryContext";
 
-type Row = { key: string; instance: string; category: string; preset: Preset; };
+type Section = { integrationId: string; title: string; presets: Preset[]; };
 
 /** `KeyImage` reads only the two states, so a preset can be previewed without being placed. */
-const asControl = (row: Row): Control => ({
-  control_id: row.key,
+const asControl = (integrationId: string, preset: Preset): Control => ({
+  control_id: `${integrationId}:${preset.preset_id}`,
   position: { column: 0, row: 0 },
-  ...row.preset.control,
+  ...preset.control,
 });
+
+/**
+ * Only draws while on screen. Every preview costs the daemon a render, and an installation with
+ * hundreds of entities would otherwise ask for all of them at once and evict its own blob URLs out
+ * from under the tiles still showing them.
+ */
+const PresetKey: Component<{ control: Control; }> = (properties) => {
+  const [isVisible, setIsVisible] = createSignal(false);
+  let host: HTMLSpanElement | undefined;
+  const holdHost = (element: HTMLSpanElement) => (host = element);
+
+  onMount(() => {
+    const observer = new IntersectionObserver(
+      entries => setIsVisible(entries.some(entry => entry.isIntersecting)),
+      { rootMargin: "200px" },
+    );
+
+    if (host !== undefined) observer.observe(host);
+
+    onCleanup(() => observer.disconnect());
+  });
+
+  return (
+    <span class="preset-key" ref={holdHost}>
+      <Show when={isVisible()}>
+        <KeyImage control={properties.control} isPressed={false} />
+      </Show>
+    </span>
+  );
+};
 
 export const PresetPickerDialog: Component<{
   trigger: JSX.Element;
@@ -25,30 +55,26 @@ export const PresetPickerDialog: Component<{
   const [isOpen, setIsOpen] = createSignal(false);
   const [search, setSearch] = createSignal("");
 
-  const matches = createMemo<Row[]>(() => {
+  const sections = createMemo<Section[]>(() => {
     const needle = search().trim()
       .toLowerCase();
-    const matching = (row: Row) =>
+    const matching = (preset: Preset) =>
       needle === ""
-      || row.preset.name.toLowerCase().includes(needle)
-      || row.category.toLowerCase().includes(needle)
-      || row.instance.toLowerCase().includes(needle);
+      || preset.name.toLowerCase().includes(needle)
+      || preset.category.toLowerCase().includes(needle);
 
     return store
       .presets()
-      .flatMap(instance =>
-        instance.presets.map(preset => ({
-          key: `${instance.integration_id}:${preset.preset_id}`,
-          instance: instance.display_name,
-          category: preset.category,
-          preset,
-        })),
-      )
-      .filter(matching);
+      .map(instance => ({
+        integrationId: instance.integration_id,
+        title: instance.display_name,
+        presets: instance.presets.filter(matching),
+      }))
+      .filter(section => section.presets.length > 0);
   });
 
-  const choose = (row: Row) => {
-    properties.onChoose(row.preset.control);
+  const choose = (preset: Preset) => {
+    properties.onChoose(preset.control);
     setIsOpen(false);
     setSearch("");
   };
@@ -83,28 +109,31 @@ export const PresetPickerDialog: Component<{
                 placeholder="member, lights, channel..."
                 onChange={setSearch}
               />
-              <div class="rows max-h-72 overflow-y-auto">
+              <div class="max-h-96 overflow-y-auto overflow-x-hidden">
                 <Show
-                  when={matches().length > 0}
+                  when={sections().length > 0}
                   fallback={<p class="empty">No plugin is offering a preset.</p>}
                 >
-                  <For each={matches()}>
-                    {row => (
-                      <button type="button" class="row w-full text-left" onClick={() => choose(row)}>
-                        <span class="row-main">
-                          <span class="relative h-9 w-9 shrink-0 overflow-hidden rounded bg-slate-800">
-                            <KeyImage control={asControl(row)} isPressed={false} />
-                          </span>
-                          <span class="min-w-0 flex-1">
-                            <span class="row-title block">{row.preset.name}</span>
-                            <span class="row-meta block">
-                              {row.instance}
-                              {" - "}
-                              {row.category}
-                            </span>
-                          </span>
-                        </span>
-                      </button>
+                  <For each={sections()}>
+                    {section => (
+                      <section class="preset-section">
+                        <p class="preset-heading">{section.title}</p>
+                        <div class="preset-grid">
+                          <For each={section.presets}>
+                            {preset => (
+                              <button
+                                type="button"
+                                class="preset-tile"
+                                title={preset.description ?? preset.category}
+                                onClick={() => choose(preset)}
+                              >
+                                <PresetKey control={asControl(section.integrationId, preset)} />
+                                <span class="preset-name">{preset.name}</span>
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </section>
                     )}
                   </For>
                 </Show>

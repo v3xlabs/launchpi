@@ -1,12 +1,12 @@
 import { Component, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 
 import { ColorBinding } from "../api/inventory";
-import { ConfigField, fetchLookup, LookupOption } from "../api/plugins";
+import { ConfigField, fetchLookup } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
 import { fromHex, isReference, parseHex, rgbHex, toHex } from "../utils/rendered";
 import { interpolateVariables } from "../utils/variables";
 import { ReferenceInput } from "./ReferenceInput";
-import { suggestionKeyDown, SuggestionList } from "./SuggestionList";
+import { optionRows, suggestionKeyDown, SuggestionList, SuggestionRow } from "./SuggestionList";
 import { ValueField } from "./ValueField";
 
 export const TextField: Component<{
@@ -163,8 +163,10 @@ export const LookupField: Component<{
     setActiveIndex(-1);
   };
 
-  const choose = (option: LookupOption) => {
-    properties.onChange(option.value);
+  const choose = (row: SuggestionRow) => {
+    if (row.kind !== "option") return;
+
+    properties.onChange(row.option.value);
     close();
   };
 
@@ -175,7 +177,7 @@ export const LookupField: Component<{
     accept: () => {
       const option = available()[activeIndex()];
 
-      if (option !== undefined) choose(option);
+      if (option !== undefined) choose({ kind: "option", option });
     },
     close,
   });
@@ -201,7 +203,7 @@ export const LookupField: Component<{
       </label>
       <Show when={query() !== null}>
         <SuggestionList
-          options={available()}
+          rows={optionRows(available())}
           isLoading={options.loading}
           activeIndex={activeIndex()}
           onChoose={choose}

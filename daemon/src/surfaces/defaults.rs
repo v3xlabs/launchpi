@@ -2,6 +2,7 @@ use crate::{
     identifiers::{ControlId, PanelId, SurfaceId},
     panels::{
         control::Control,
+        dial::PanelDial,
         rendered_state::{RenderedState, RgbaColor},
         {Panel, PanelLayout},
     },
@@ -84,8 +85,18 @@ pub(crate) fn default_panel() -> Panel {
             }),
             action_bindings: Vec::new(),
         }],
-        dial_colors: vec![color(35, 88, 165), color(35, 88, 165)],
-        dial_ring_levels: vec![100, 100],
+        dials: vec![
+            PanelDial {
+                index: 0,
+                level: 100,
+                color: color(35, 88, 165),
+            },
+            PanelDial {
+                index: 1,
+                level: 100,
+                color: color(35, 88, 165),
+            },
+        ],
     }
 }
 

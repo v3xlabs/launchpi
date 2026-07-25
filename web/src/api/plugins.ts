@@ -216,8 +216,14 @@ export const fetchLookup = async (
  * running plugins say they *could* publish are merged by the daemon, so a light that has never been
  * read is still offered.
  */
-export const fetchSuggestions = async (query: string): Promise<LookupOption[]> =>
-  readOptions(await fetch(`/api/values/suggest?q=${encodeURIComponent(query)}`));
+export const fetchSuggestions = async (
+  query: string,
+  instance: string | null,
+): Promise<LookupOption[]> => {
+  const scope = instance === null ? "" : `&instance=${encodeURIComponent(instance)}`;
+
+  return readOptions(await fetch(`/api/values/suggest?q=${encodeURIComponent(query)}${scope}`));
+};
 
 export type UserValue = { name: string; value: unknown; description: string | null; };
 export type AvailableAction = {

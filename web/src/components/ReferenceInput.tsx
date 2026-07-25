@@ -1,7 +1,8 @@
-import { Component, createResource, createSignal, JSX, Show } from "solid-js";
+import { Component, createMemo, createResource, createSignal, JSX, Show } from "solid-js";
 
 import { fetchSuggestions, LookupOption } from "../api/plugins";
-import { suggestionKeyDown, SuggestionList } from "./SuggestionList";
+import { useInventory } from "../context/InventoryContext";
+import { optionRows, suggestionKeyDown, SuggestionList, SuggestionRow } from "./SuggestionList";
 
 /**
  * The caret sits inside an unclosed `$(`: what has been typed of the reference so far.
@@ -42,23 +43,71 @@ export const ReferenceInput: Component<{
   leading?: JSX.Element;
   onChange: (value: string) => void;
 }> = (properties) => {
+  const store = useInventory();
   const [query, setQuery] = createSignal<string | null>(null);
+  /** Which plugin has been drilled into, or null at the top level. */
+  const [scope, setScope] = createSignal<string | null>(null);
   const [caret, setCaret] = createSignal(0);
   const [activeIndex, setActiveIndex] = createSignal(-1);
   let input: HTMLInputElement | undefined;
   const holdInput = (element: HTMLInputElement) => (input = element);
 
-  const [suggestions] = createResource(query, term => fetchSuggestions(term));
+  /** Browsing at the top level needs no request: the plugin list is already in the store. */
+  const isBrowsing = () => scope() === null && query() === "";
 
-  const options = () => suggestions.latest ?? [];
+  const [suggestions] = createResource(
+    () => {
+      const term = query();
+
+      return term === null || isBrowsing() ? null : ([term, scope()] as const);
+    },
+    ([term, instance]) => fetchSuggestions(term, instance),
+  );
+
+  const instances = createMemo<SuggestionRow[]>(() => {
+    const rows: SuggestionRow[] = store
+      .plugins()
+      .instances.map(instance => ({
+        kind: "group",
+        integrationId: instance.integration_id,
+        label: instance.display_name,
+        detail: instance.integration_id,
+      }));
+
+    return store.values().user_values.length > 0
+      ? [...rows, { kind: "group", integrationId: "user", label: "User values", detail: "user" }]
+      : rows;
+  });
+
+  const rows = (): SuggestionRow[] =>
+    (isBrowsing() ? instances() : optionRows(suggestions.latest ?? []));
+
+  const scopeLabel = () => {
+    const only = scope();
+
+    if (only === null) return undefined;
+
+    const named = instances().find(row => row.kind === "group" && row.integrationId === only);
+
+    return { label: named?.kind === "group" ? named.label : only, onBack: leaveScope };
+  };
 
   const close = () => {
     setQuery(null);
+    setScope(null);
     setActiveIndex(-1);
+  };
+
+  const leaveScope = () => {
+    setScope(null);
+    setQuery("");
+    setActiveIndex(-1);
+    input?.focus();
   };
 
   const openPicker = () => {
     setCaret(input?.selectionStart ?? properties.value.length);
+    setScope(null);
     setQuery(openReference(properties.value, input?.selectionStart ?? 0)?.typed ?? "");
     setActiveIndex(-1);
     input?.focus();
@@ -76,7 +125,7 @@ export const ReferenceInput: Component<{
   };
 
   /** Completes the reference being typed, or inserts a whole one at the caret. */
-  const choose = (option: LookupOption) => {
+  const insert = (option: LookupOption) => {
     const position = caret();
     const open = openReference(properties.value, position);
     const head = properties.value.slice(0, open === null ? position : open.start);
@@ -87,16 +136,30 @@ export const ReferenceInput: Component<{
     input?.focus();
   };
 
+  const choose = (row: SuggestionRow) => {
+    if (row.kind === "option") {
+      insert(row.option);
+
+      return;
+    }
+
+    setScope(row.integrationId);
+    setQuery("");
+    setActiveIndex(-1);
+    input?.focus();
+  };
+
   const onKeyDown = suggestionKeyDown({
-    count: () => (query() === null ? 0 : options().length),
+    count: () => (query() === null ? 0 : rows().length),
     activeIndex,
     setActiveIndex,
     accept: () => {
-      const option = options()[activeIndex()];
+      const row = rows()[activeIndex()];
 
-      if (option !== undefined) choose(option);
+      if (row !== undefined) choose(row);
     },
-    close,
+    // Escape steps back out of a plugin before it gives up on the field entirely.
+    close: () => (scope() === null ? close() : leaveScope()),
   });
 
   return (
@@ -128,9 +191,11 @@ export const ReferenceInput: Component<{
 
       <Show when={query() !== null}>
         <SuggestionList
-          options={options()}
+          rows={rows()}
           isLoading={suggestions.loading}
           activeIndex={activeIndex()}
+          showGroup={scope() === null}
+          scope={scopeLabel()}
           onChoose={choose}
         />
       </Show>

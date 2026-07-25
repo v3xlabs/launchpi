@@ -58,6 +58,8 @@ pub fn router() -> Router<AppState> {
 struct SearchQuery {
     #[serde(default)]
     q: String,
+    /// Narrows to one instance, for the picker's second level.
+    instance: Option<String>,
 }
 
 /// Everything a `$(...)` could name, for the editor's autocomplete.
@@ -65,7 +67,13 @@ async fn suggest_references(
     State(state): State<AppState>,
     Query(search): Query<SearchQuery>,
 ) -> Json<Vec<LookupOption>> {
-    Json(state.plugins.suggest_references(&search.q).await)
+    let instance = search.instance.map(IntegrationId);
+    Json(
+        state
+            .plugins
+            .suggest_references(&search.q, instance.as_ref())
+            .await,
+    )
 }
 
 #[derive(Serialize)]

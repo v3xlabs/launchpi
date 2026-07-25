@@ -1,10 +1,21 @@
 import * as Dialog from "@kobalte/core/dialog";
 import { useNavigate } from "@tanstack/solid-router";
 import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createSignal, For, JSX } from "solid-js";
+import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
 
-import { Capabilities, capabilityLabels, emptyCapabilities } from "../api/inventory";
+import {
+  Capabilities,
+  capabilityLabels,
+  Device,
+  deviceGridLayout,
+  displayName,
+  emptyCapabilities,
+  GridLayout,
+  layoutLabel,
+} from "../api/inventory";
 import { useInventory } from "../context/InventoryContext";
+
+type DeviceLayout = { device: Device; layout: GridLayout; };
 
 export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properties) => {
   const store = useInventory();
@@ -14,20 +25,35 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
   const [columns, setColumns] = createSignal("4");
   const [rows, setRows] = createSignal("3");
   const [capabilities, setCapabilities] = createSignal<Capabilities>(emptyCapabilities);
+  const [sourceSurfaceId, setSourceSurfaceId] = createSignal("");
+
+  const deviceLayouts = createMemo<DeviceLayout[]>(() =>
+    store.inventory().devices.flatMap((device) => {
+      const layout = deviceGridLayout(device.layout);
+
+      return layout === null ? [] : [{ device, layout }];
+    }));
+  const source = createMemo<DeviceLayout | null>(
+    () => deviceLayouts().find(entry => entry.device.surface_id === sourceSurfaceId()) ?? null,
+  );
+  const layout = (): GridLayout =>
+    source()?.layout ?? { columns: Number(columns()), rows: Number(rows()) };
+  const required = (): Capabilities => source()?.device.capabilities ?? capabilities();
 
   const reset = () => {
     setName("");
     setColumns("4");
     setRows("3");
     setCapabilities(emptyCapabilities);
+    setSourceSurfaceId("");
   };
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
     const panel = await store.createPanel({
       name: name().trim(),
-      layout: { columns: Number(columns()), rows: Number(rows()) },
-      capabilities: capabilities(),
+      layout: layout(),
+      capabilities: required(),
       controls: [],
       dial_colors: [],
       dial_ring_levels: [],
@@ -73,6 +99,27 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                     required
                   />
                 </label>
+                <Show when={deviceLayouts().length > 0}>
+                  <label class="field-label">
+                    Layout
+                    <select
+                      class="field-input"
+                      value={sourceSurfaceId()}
+                      onChange={event => setSourceSurfaceId(event.currentTarget.value)}
+                    >
+                      <option value="">Custom</option>
+                      <For each={deviceLayouts()}>
+                        {entry => (
+                          <option value={entry.device.surface_id}>
+                            {displayName(entry.device.name)}
+                            {" - "}
+                            {layoutLabel(entry.layout)}
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                  </label>
+                </Show>
                 <div class="grid grid-cols-2 gap-3">
                   <label class="field-label">
                     Columns
@@ -80,8 +127,9 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                       class="field-input"
                       type="number"
                       min="1"
-                      value={columns()}
+                      value={layout().columns}
                       onInput={event => setColumns(event.currentTarget.value)}
+                      disabled={source() !== null}
                       required
                     />
                   </label>
@@ -91,8 +139,9 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                       class="field-input"
                       type="number"
                       min="1"
-                      value={rows()}
+                      value={layout().rows}
                       onInput={event => setRows(event.currentTarget.value)}
+                      disabled={source() !== null}
                       required
                     />
                   </label>
@@ -105,12 +154,13 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                         <label class="check-tile">
                           <input
                             type="checkbox"
-                            checked={capabilities()[key]}
-                            onInput={event =>
-                              setCapabilities(current => ({
-                                ...current,
-                                [key]: event.currentTarget.checked,
-                              }))}
+                            checked={required()[key]}
+                            disabled={source() !== null}
+                            onInput={(event) => {
+                              const { checked } = event.currentTarget;
+
+                              setCapabilities(current => ({ ...current, [key]: checked }));
+                            }}
                           />
                           {label}
                         </label>

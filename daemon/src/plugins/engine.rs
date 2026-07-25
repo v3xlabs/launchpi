@@ -46,6 +46,9 @@ pub const INPUT_QUEUE_SIZE: usize = 256;
 pub const SUGGESTION_SOURCE: &str = "values";
 /// Enough to scroll, few enough to render. Anything longer is a sign the query needs narrowing.
 const SUGGESTION_LIMIT: usize = 50;
+/// The ceiling once a single instance has been picked, where the list is a catalogue to browse
+/// rather than a ranked page.
+const SCOPED_SUGGESTION_LIMIT: usize = 1000;
 
 /// Takes from each source in turn until the page is full, so no one instance can crowd out the
 /// others.
@@ -321,16 +324,24 @@ impl PluginEngine {
     /// would otherwise suggest nothing at all.
     ///
     /// Only the first page is returned, so which suggestions survive is the whole feature: see
-    /// [`interleave`].
-    pub async fn suggest_references(&self, query: &str) -> Vec<LookupOption> {
+    /// [`interleave`]. Narrowing to one instance lifts that ceiling, because there is nothing left
+    /// to crowd out and browsing one installation's entities is the point of asking.
+    pub async fn suggest_references(
+        &self,
+        query: &str,
+        instance: Option<&IntegrationId>,
+    ) -> Vec<LookupOption> {
         let needle = query.trim().to_lowercase();
         let matches =
             |haystack: &str| needle.is_empty() || haystack.to_lowercase().contains(&needle);
+        let wanted =
+            |integration_id: &IntegrationId| instance.is_none_or(|only| only == integration_id);
 
         let mut live: Vec<LookupOption> = self
             .variables
             .snapshot()
             .into_iter()
+            .filter(|(reference, _)| wanted(&reference.integration_id))
             .filter(|(reference, _)| {
                 matches(&reference.name) || matches(&reference.integration_id.0)
             })
@@ -346,8 +357,14 @@ impl PluginEngine {
         live.sort_by(|left, right| left.value.cmp(&right.value));
 
         let mut sources = vec![live];
-        let instances: Vec<IntegrationId> =
-            self.instances.read().unwrap().keys().cloned().collect();
+        let instances: Vec<IntegrationId> = self
+            .instances
+            .read()
+            .unwrap()
+            .keys()
+            .filter(|integration_id| wanted(integration_id))
+            .cloned()
+            .collect();
         for integration_id in instances {
             let Some(plugin) = self.plugin(&integration_id) else {
                 continue;
@@ -369,7 +386,14 @@ impl PluginEngine {
             );
         }
 
-        interleave(sources, SUGGESTION_LIMIT)
+        interleave(
+            sources,
+            if instance.is_none() {
+                SUGGESTION_LIMIT
+            } else {
+                SCOPED_SUGGESTION_LIMIT
+            },
+        )
     }
 
     pub async fn invoke(

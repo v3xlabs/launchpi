@@ -15,7 +15,9 @@ use crate::{
     api::error::ApiError,
     drivers::streamdeck::studio,
     identifiers::{PanelId, SurfaceId},
-    panels::{control::Control, rendered_state::RenderedState, Panel, PanelLayout},
+    panels::{
+        control::Control, dial::PanelDial, rendered_state::RenderedState, Panel, PanelLayout,
+    },
     rendering::context::RenderContext,
     state::AppState,
     surfaces::{
@@ -37,9 +39,7 @@ struct PanelRequest {
     capabilities: SurfaceCapabilities,
     controls: Vec<Control>,
     #[serde(default)]
-    dial_colors: Vec<crate::panels::rendered_state::RgbaColor>,
-    #[serde(default)]
-    dial_ring_levels: Vec<u8>,
+    dials: Vec<PanelDial>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -325,8 +325,7 @@ async fn create_panel(
         layout: request.layout,
         capabilities: request.capabilities,
         controls: request.controls,
-        dial_colors: request.dial_colors,
-        dial_ring_levels: request.dial_ring_levels,
+        dials: request.dials,
     };
     let panel = state
         .surfaces
@@ -349,8 +348,7 @@ async fn update_panel(
         layout: request.layout,
         capabilities: request.capabilities,
         controls: request.controls,
-        dial_colors: request.dial_colors,
-        dial_ring_levels: request.dial_ring_levels,
+        dials: request.dials,
     };
     let panel = state
         .surfaces

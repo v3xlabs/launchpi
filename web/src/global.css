@@ -82,6 +82,8 @@ button, input, select, textarea { font: inherit; }
 .suggestion-preview { @apply max-w-[8rem] shrink-0 truncate font-mono text-[0.7rem] text-neutral-300; }
 .suggestion-swatch { @apply h-5 w-5 shrink-0 border border-black/40; }
 .suggestion-empty { @apply px-2 py-2 text-xs normal-case tracking-normal text-neutral-500; }
+.suggestion-scope { @apply sticky top-0 z-10 flex w-full items-center gap-2 border-b border-neutral-800 bg-neutral-900 px-2 py-1.5 text-left text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400 transition hover:text-neutral-100; }
+.suggestion-back { @apply font-mono text-neutral-500; }
 
 /* One parametrised control: a literal and a reference are the same field, not two modes. */
 .parameter-input { @apply flex h-8 min-w-0 items-stretch border border-neutral-700 bg-neutral-950 transition focus-within:border-blue-500; }
@@ -92,6 +94,14 @@ button, input, select, textarea { font: inherit; }
 .parameter-swatch { @apply h-full w-8 shrink-0 cursor-pointer border-0 border-r border-neutral-700 bg-neutral-950 p-0.5; }
 .parameter-swatch[data-unresolved="true"] { @apply opacity-30; }
 .range-input { @apply h-8 w-full cursor-pointer bg-transparent accent-blue-500; }
+
+/* Presets: one grid per plugin, so a button is recognised by its picture rather than its name. */
+.preset-section { @apply grid gap-1.5 border-t border-neutral-800 py-2 first:border-t-0 first:pt-0; }
+.preset-heading { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }
+.preset-grid { @apply grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-1.5; }
+.preset-tile { @apply grid justify-items-center gap-1 border border-transparent p-1 transition hover:border-neutral-700 hover:bg-neutral-800/60; }
+.preset-key { @apply relative block h-14 w-14 overflow-hidden rounded bg-neutral-950; }
+.preset-name { @apply line-clamp-2 text-center text-[0.68rem] leading-tight text-neutral-300; }
 
 /* Navigation */
 .nav { @apply flex flex-col gap-3 py-2; }

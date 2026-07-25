@@ -169,8 +169,7 @@ mod tests {
             },
             capabilities: SurfaceCapabilities::default(),
             controls,
-            dial_colors: Vec::new(),
-            dial_ring_levels: Vec::new(),
+            dials: Vec::new(),
         }
     }
 

@@ -4,8 +4,8 @@ use tracing::debug;
 use crate::{
     events::ServerEvent,
     identifiers::SurfaceId,
-    panels::{rendered_state::RgbaColor, Panel},
-    surfaces::{defaults::white, logs::SurfaceLogLevel, registry::SurfaceRegistry},
+    panels::{dial::PanelDial, rendered_state::RgbaColor},
+    surfaces::{logs::SurfaceLogLevel, registry::SurfaceRegistry},
 };
 
 /// Rotary dials on a Stream Deck Studio, and the LED segments making up one dial ring.
@@ -30,7 +30,7 @@ pub struct SurfaceDialPress {
 }
 
 impl SurfaceRegistry {
-    /// Every dial the active panel configures, as (index, colour, lit segments).
+    /// Every dial the active panel declares, as (index, colour, lit segments).
     pub fn active_dial_rings(&self, surface_id: &SurfaceId) -> Vec<(u8, RgbaColor, u8)> {
         let Some(device) = self.managed(surface_id) else {
             return Vec::new();
@@ -42,17 +42,15 @@ impl SurfaceRegistry {
             return Vec::new();
         };
         panel
-            .dial_colors
+            .dials
             .iter()
-            .take(usize::from(DIAL_COUNT))
-            .enumerate()
-            .filter_map(|(index, color)| {
-                let dial_index = u8::try_from(index).ok()?;
-                Some((
-                    dial_index,
-                    color.clone(),
-                    self.lit_segments(surface_id, dial_index, &panel, index),
-                ))
+            .filter(|dial| dial.index < DIAL_COUNT)
+            .map(|dial| {
+                (
+                    dial.index,
+                    dial.color.clone(),
+                    self.lit_segments(surface_id, dial),
+                )
             })
             .collect()
     }
@@ -66,7 +64,7 @@ impl SurfaceRegistry {
         let Some((color, current)) = self.dial_ring(surface_id, dial_index) else {
             debug!(
                 surface_id = surface_id.0,
-                dial_index, detents, "ignored a dial turn: the surface has no active panel"
+                dial_index, detents, "ignored a dial turn: no active panel declares this dial"
             );
             return;
         };
@@ -145,34 +143,22 @@ impl SurfaceRegistry {
         true
     }
 
-    /// Colour and current segment count for one dial. Dials the panel leaves unconfigured still
-    /// respond to a turn, lit white, so the knob is never dead.
+    /// Colour and current segment count for one dial, or nothing when the active panel does not
+    /// declare it - an undeclared knob stays dark and does not respond.
     fn dial_ring(&self, surface_id: &SurfaceId, dial_index: u8) -> Option<(RgbaColor, u8)> {
         let device = self.managed(surface_id)?;
         let panel = self.panel(&device.active_panel_id?.0)?;
-        let index = usize::from(dial_index);
-        let color = panel.dial_colors.get(index).cloned().unwrap_or_else(white);
-        Some((
-            color,
-            self.lit_segments(surface_id, dial_index, &panel, index),
-        ))
+        let dial = panel.dials.iter().find(|dial| dial.index == dial_index)?;
+        Some((dial.color.clone(), self.lit_segments(surface_id, dial)))
     }
 
-    fn lit_segments(
-        &self,
-        surface_id: &SurfaceId,
-        dial_index: u8,
-        panel: &Panel,
-        index: usize,
-    ) -> u8 {
+    fn lit_segments(&self, surface_id: &SurfaceId, dial: &PanelDial) -> u8 {
         self.dial_positions
             .read()
             .unwrap()
-            .get(&(surface_id.0.clone(), dial_index))
+            .get(&(surface_id.0.clone(), dial.index))
             .copied()
-            .unwrap_or_else(|| {
-                segments_from_percent(panel.dial_ring_levels.get(index).copied().unwrap_or(100))
-            })
+            .unwrap_or_else(|| segments_from_percent(dial.level))
     }
 
     /// Drops runtime dial state so the dials fall back to the panel's configured levels.
@@ -226,6 +212,19 @@ mod tests {
         registry.record_dial_turn(&surface_id, 0, 99);
         assert_eq!(dial_level(&registry, &surface_id, 0), Some(100));
         // The other dial keeps the panel's configured level.
+        assert_eq!(dial_level(&registry, &surface_id, 1), None);
+    }
+
+    #[test]
+    fn a_dial_the_panel_does_not_declare_stays_dark_and_does_not_turn() {
+        let mut panel = default_panel();
+        panel.dials.retain(|dial| dial.index == 0);
+        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
+        let surface_id = SurfaceId("stream-deck-studio-1".to_string());
+
+        registry.record_dial_turn(&surface_id, 1, -4);
+
+        assert_eq!(registry.active_dial_rings(&surface_id).len(), 1);
         assert_eq!(dial_level(&registry, &surface_id, 1), None);
     }
 
