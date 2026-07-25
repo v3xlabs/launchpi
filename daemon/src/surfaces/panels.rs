@@ -55,15 +55,14 @@ impl SurfaceRegistry {
                         position: SurfacePosition { column, row },
                         default_state: RenderedState {
                             text: Some(format!("{index}")),
-                            foreground_color: Some(white()),
-                            background_color: Some(color(30, 41, 59)),
+                            foreground_color: Some(white().into()),
+                            background_color: Some(color(30, 41, 59).into()),
                             image: None,
                             progress: None,
                             is_pressed: false,
                         },
                         pressed_state: None,
                         action_bindings: Vec::new(),
-                        feedback_bindings: Vec::new(),
                     }
                 })
             })

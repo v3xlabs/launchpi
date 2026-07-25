@@ -1,8 +1,8 @@
 import { Component, For, Match, Show, Switch } from "solid-js";
 
-import { RgbaColor } from "../api/inventory";
+import { ColorBinding } from "../api/inventory";
 import { ConfigField } from "../api/plugins";
-import { fromHex, toHex } from "../utils/rendered";
+import { fromHex, isReference, toHex } from "../utils/rendered";
 
 export const TextField: Component<{
   label: string;
@@ -21,22 +21,56 @@ export const TextField: Component<{
   </label>
 );
 
+/**
+ * A colour is either picked or bound to a value. The link toggle is what makes
+ * "make this key the colour of that light" reachable without hand-editing TOML.
+ */
 export const ColorField: Component<{
   label: string;
-  value: RgbaColor | null;
+  value: ColorBinding | null;
   fallback: string;
-  onChange: (color: RgbaColor) => void;
-}> = properties => (
-  <label class="field-label">
-    {properties.label}
-    <input
-      class="color-input"
-      type="color"
-      value={toHex(properties.value, properties.fallback)}
-      onInput={event => properties.onChange(fromHex(event.currentTarget.value))}
-    />
-  </label>
-);
+  /** Dials take a fixed colour only; binding them is a later phase. */
+  bindable?: boolean;
+  onChange: (value: ColorBinding) => void;
+}> = (properties) => {
+  const bound = () => isReference(properties.value);
+
+  return (
+    <div class="grid gap-1">
+      <div class="flex items-center justify-between gap-2">
+        <span class="field-label">{properties.label}</span>
+        <Show when={properties.bindable !== false}>
+          <button
+            type="button"
+            class="link-button"
+            title={bound() ? "Use a fixed colour" : "Bind to a value"}
+            onClick={() => properties.onChange(bound() ? fromHex(properties.fallback) : "")}
+          >
+            {bound() ? "unbind" : "bind"}
+          </button>
+        </Show>
+      </div>
+      <Show
+        when={bound()}
+        fallback={(
+          <input
+            class="color-input"
+            type="color"
+            value={toHex(properties.value, properties.fallback)}
+            onInput={event => properties.onChange(fromHex(event.currentTarget.value))}
+          />
+        )}
+      >
+        <input
+          class="field-input"
+          value={typeof properties.value === "string" ? properties.value : ""}
+          placeholder="$(hass.home:light.kitchen.color)"
+          onInput={event => properties.onChange(event.currentTarget.value)}
+        />
+      </Show>
+    </div>
+  );
+};
 
 export const NumberField: Component<{
   label: string;

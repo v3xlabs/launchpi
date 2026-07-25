@@ -30,10 +30,7 @@ use crate::{
         plugin::{cancellation, CancelHandle, Plugin, PluginContext, PluginError},
         registry,
     },
-    rendering::{
-        feedback::FeedbackCache,
-        index::{DependencyIndex, RenderTarget},
-    },
+    rendering::index::{DependencyIndex, RenderTarget},
     surfaces::{logs::SurfaceLogLevel, registry::SurfaceRegistry},
     variables::{VariableRef, VariableStore, VariableValue},
 };
@@ -59,7 +56,6 @@ pub enum InputEvent {
 #[derive(Clone, Debug)]
 pub enum EngineSignal {
     VariableChanged(VariableRef),
-    FeedbacksInvalidated(IntegrationId),
     InstanceLog {
         integration_id: IntegrationId,
         level: SurfaceLogLevel,
@@ -102,7 +98,6 @@ impl RunningInstance {
 pub struct PluginEngine {
     surfaces: Arc<SurfaceRegistry>,
     variables: Arc<VariableStore>,
-    feedbacks: Arc<FeedbackCache>,
     directory: PluginDirectory,
     values_path: PathBuf,
     http: reqwest::Client,
@@ -118,7 +113,6 @@ impl PluginEngine {
     pub async fn start(
         surfaces: Arc<SurfaceRegistry>,
         variables: Arc<VariableStore>,
-        feedbacks: Arc<FeedbackCache>,
         directory: PluginDirectory,
         values_path: PathBuf,
         input: mpsc::Receiver<InputEvent>,
@@ -127,7 +121,6 @@ impl PluginEngine {
         let engine = Arc::new(Self {
             surfaces,
             variables,
-            feedbacks,
             directory,
             values_path,
             http: reqwest::Client::new(),
@@ -492,18 +485,11 @@ impl PluginEngine {
             plugin.shutdown().await;
         }
         let stale = self.variables.clear_instance(integration_id);
-        self.feedbacks.clear_instance(integration_id);
         let targets = {
             let index = self.index.read().unwrap();
             stale
                 .iter()
                 .flat_map(|reference| index.targets_for_variable(reference))
-                .chain(
-                    index
-                        .feedback_keys_for(integration_id)
-                        .iter()
-                        .flat_map(|key| index.targets_for_feedback(key)),
-                )
                 .collect()
         };
         self.mark_dirty(targets);
@@ -541,9 +527,6 @@ impl PluginEngine {
                 );
             }
         }
-        for integration_id in watched {
-            self.reevaluate_feedbacks(&integration_id).await;
-        }
     }
 
     fn active_panels(&self) -> Vec<(SurfaceId, Panel)> {
@@ -559,29 +542,6 @@ impl PluginEngine {
             .collect()
     }
 
-    async fn reevaluate_feedbacks(&self, integration_id: &IntegrationId) {
-        let Some(plugin) = self.plugin(integration_id) else {
-            return;
-        };
-        let keys = self.index.read().unwrap().feedback_keys_for(integration_id);
-        let mut dirty = Vec::new();
-        for key in keys {
-            match plugin.evaluate(&key.feedback_name, &key.parameters()).await {
-                Ok(result) => {
-                    if self.feedbacks.set(key.clone(), result) {
-                        dirty.extend(self.index.read().unwrap().targets_for_feedback(&key));
-                    }
-                }
-                Err(error) => debug!(
-                    integration_id = integration_id.0,
-                    feedback = key.feedback_name,
-                    %error,
-                    "feedback could not be evaluated"
-                ),
-            }
-        }
-        self.mark_dirty(dirty);
-    }
 
     fn mark_dirty(&self, targets: Vec<RenderTarget>) {
         if targets.is_empty() {
@@ -763,9 +723,6 @@ async fn run_signals(engine: Arc<PluginEngine>, mut signals: mpsc::Receiver<Engi
                     name: reference.name,
                     rendered,
                 });
-            }
-            EngineSignal::FeedbacksInvalidated(integration_id) => {
-                engine.reevaluate_feedbacks(&integration_id).await
             }
             EngineSignal::InstanceLog {
                 integration_id,

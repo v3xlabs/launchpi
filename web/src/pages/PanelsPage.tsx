@@ -128,7 +128,6 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       default_state: cloneState(template?.default_state ?? newState(false)),
       pressed_state: template?.pressed_state ? cloneState(template.pressed_state) : null,
       action_bindings: cloneState(template?.action_bindings ?? []),
-      feedback_bindings: cloneState(template?.feedback_bindings ?? []),
     };
 
     mutatePanel(entry => entry.controls.push(control));

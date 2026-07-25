@@ -4,11 +4,10 @@ use crate::{
     identifiers::{IntegrationId, SurfaceId},
     panels::{
         control::Control,
-        rendered_state::{RenderedState, RenderedStateOverride},
+        rendered_state::RenderedState,
         Panel,
     },
     plugins::plugin::Subscription,
-    rendering::feedback::FeedbackKey,
     surfaces::keys::key_index_for,
     variables::{template, VariableRef},
 };
@@ -24,7 +23,6 @@ pub struct RenderTarget {
 #[derive(Default)]
 pub struct DependencyIndex {
     by_variable: HashMap<VariableRef, HashSet<RenderTarget>>,
-    by_feedback: HashMap<FeedbackKey, HashSet<RenderTarget>>,
     subscriptions: HashMap<IntegrationId, Vec<Subscription>>,
 }
 
@@ -61,18 +59,6 @@ impl DependencyIndex {
                     .insert(target.clone());
             }
         }
-        for binding in &control.feedback_bindings {
-            self.by_feedback
-                .entry(FeedbackKey::new(&binding.feedback))
-                .or_default()
-                .insert(target.clone());
-            for reference in references_of_override(&binding.state) {
-                self.by_variable
-                    .entry(reference)
-                    .or_default()
-                    .insert(target.clone());
-            }
-        }
     }
 
     fn build_subscriptions(&mut self) {
@@ -80,17 +66,8 @@ impl DependencyIndex {
             self.subscriptions
                 .entry(reference.integration_id.clone())
                 .or_default()
-                .push(Subscription::Variable {
+                .push(Subscription {
                     name: reference.name.clone(),
-                });
-        }
-        for key in self.by_feedback.keys() {
-            self.subscriptions
-                .entry(key.integration_id.clone())
-                .or_default()
-                .push(Subscription::Feedback {
-                    feedback_name: key.feedback_name.clone(),
-                    parameters: key.parameters(),
                 });
         }
     }
@@ -102,21 +79,7 @@ impl DependencyIndex {
             .unwrap_or_default()
     }
 
-    pub fn targets_for_feedback(&self, key: &FeedbackKey) -> Vec<RenderTarget> {
-        self.by_feedback
-            .get(key)
-            .map(|targets| targets.iter().cloned().collect())
-            .unwrap_or_default()
-    }
 
-    /// The feedbacks belonging to one instance that something on screen is actually watching.
-    pub fn feedback_keys_for(&self, integration_id: &IntegrationId) -> Vec<FeedbackKey> {
-        self.by_feedback
-            .keys()
-            .filter(|key| key.integration_id == *integration_id)
-            .cloned()
-            .collect()
-    }
 
     pub fn subscriptions_for(&self, integration_id: &IntegrationId) -> &[Subscription] {
         self.subscriptions
@@ -142,23 +105,11 @@ fn references_of_state(state: &RenderedState) -> Vec<VariableRef> {
     found
 }
 
-fn references_of_override(state: &RenderedStateOverride) -> Vec<VariableRef> {
-    let mut found = state
-        .text
-        .as_deref()
-        .map(template::references)
-        .unwrap_or_default();
-    if let Some(image) = &state.image {
-        found.extend(template::references(&image.0));
-    }
-    found
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        bindings::feedback::{Feedback, FeedbackBinding},
         identifiers::{AssetId, ControlId, PanelId},
         panels::PanelLayout,
         surfaces::layout::{SurfaceCapabilities, SurfacePosition},
@@ -175,7 +126,6 @@ mod tests {
             },
             pressed_state: None,
             action_bindings: Vec::new(),
-            feedback_bindings: Vec::new(),
         }
     }
 
@@ -248,67 +198,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_feedback_binding_registers_its_key_and_a_subscription() {
-        let mut keyed = control(0, 0, None);
-        let feedback = Feedback {
-            integration_id: IntegrationId("hass.home".to_string()),
-            feedback_name: "state_is".to_string(),
-            parameters: serde_json::json!({ "entity_id": "light.kitchen" }),
-        };
-        keyed.feedback_bindings.push(FeedbackBinding {
-            feedback: feedback.clone(),
-            state: RenderedStateOverride::default(),
-        });
-        let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
 
-        assert_eq!(
-            index
-                .targets_for_feedback(&FeedbackKey::new(&feedback))
-                .len(),
-            1
-        );
-        let integration_id = IntegrationId("hass.home".to_string());
-        assert_eq!(index.feedback_keys_for(&integration_id).len(), 1);
-        assert_eq!(
-            index.subscriptions_for(&integration_id),
-            &[Subscription::Feedback {
-                feedback_name: "state_is".to_string(),
-                parameters: serde_json::json!({ "entity_id": "light.kitchen" }),
-            }]
-        );
-    }
-
-    #[test]
-    fn two_keys_watching_the_same_feedback_share_one_key() {
-        let feedback = Feedback {
-            integration_id: IntegrationId("hass.home".to_string()),
-            feedback_name: "state_is".to_string(),
-            parameters: serde_json::json!({ "entity_id": "light.kitchen" }),
-        };
-        let binding = FeedbackBinding {
-            feedback: feedback.clone(),
-            state: RenderedStateOverride::default(),
-        };
-        let mut first = control(0, 0, None);
-        first.feedback_bindings.push(binding.clone());
-        let mut second = control(1, 0, None);
-        second.feedback_bindings.push(binding);
-
-        let index = DependencyIndex::build(&[(surface(), panel(vec![first, second]))]);
-        assert_eq!(
-            index
-                .targets_for_feedback(&FeedbackKey::new(&feedback))
-                .len(),
-            2
-        );
-        assert_eq!(
-            index
-                .feedback_keys_for(&IntegrationId("hass.home".to_string()))
-                .len(),
-            1
-        );
-    }
 
     #[test]
     fn an_empty_workspace_watches_nothing() {

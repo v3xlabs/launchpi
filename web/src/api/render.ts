@@ -1,4 +1,4 @@
-import { RenderedState, RgbaColor } from "./inventory";
+import { RgbaColor } from "./inventory";
 
 type KeyRendering = {
   key_index: number;
@@ -12,7 +12,13 @@ const cache = new Map<string, Promise<string>>();
 
 // Renders a key exactly as the daemon draws it for the device (same ab_glyph font, same raster),
 // returning an object URL for the JPEG. Cached by rendering so identical keys share one request.
-export const renderedKeyImageUrl = (state: RenderedState): Promise<string> => {
+export type ResolvedState = {
+  text: string | null;
+  foreground_color: RgbaColor | null;
+  background_color: RgbaColor | null;
+};
+
+export const renderedKeyImageUrl = (state: ResolvedState): Promise<string> => {
   const rendering: KeyRendering = {
     key_index: 0,
     text: state.text,

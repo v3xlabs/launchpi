@@ -16,22 +16,17 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// What a plugin instance can be asked to do.
 ///
-/// The boundary is message-shaped on purpose: an action is a name and some JSON, a feedback is a
-/// name and some JSON answered with a bool, and everything a plugin publishes leaves through
-/// [`PluginContext`] rather than through shared state. Nothing here assumes the implementation is
-/// in-process.
+/// A plugin is push-only for values: when its view of the world moves it calls `set_value`, and
+/// the engine works out what that repaints. It is never asked to compute anything during a render,
+/// which is what keeps the render path free of I/O.
+///
+/// The boundary is message-shaped on purpose: an action is a name and some JSON, a value is a name
+/// and a scalar, and everything a plugin publishes leaves through [`PluginContext`] rather than
+/// through shared state. Nothing here assumes the implementation is in-process.
 #[async_trait]
 pub trait Plugin: Send + Sync {
     async fn invoke(&self, action_name: &str, parameters: &JsonValue) -> Result<(), PluginError>;
 
-    /// Called from the render path, so it must be cheap and must not perform I/O. Answer from the
-    /// plugin's own view of the world and call [`PluginContext::invalidate_feedbacks`] when that
-    /// view changes.
-    async fn evaluate(
-        &self,
-        feedback_name: &str,
-        parameters: &JsonValue,
-    ) -> Result<bool, PluginError>;
 
     /// The full current set of what anything on screen is watching, not a delta. Implementations
     /// replace rather than merge.
@@ -46,7 +41,6 @@ pub trait Plugin: Send + Sync {
 pub enum PluginError {
     Configuration(String),
     UnknownAction(String),
-    UnknownFeedback(String),
     Upstream(String),
     NotImplemented,
 }
@@ -56,22 +50,18 @@ impl fmt::Display for PluginError {
         match self {
             Self::Configuration(reason) => write!(formatter, "configuration is invalid: {reason}"),
             Self::UnknownAction(name) => write!(formatter, "unknown action {name}"),
-            Self::UnknownFeedback(name) => write!(formatter, "unknown feedback {name}"),
             Self::Upstream(reason) => write!(formatter, "{reason}"),
             Self::NotImplemented => formatter.write_str("not implemented yet"),
         }
     }
 }
 
+/// A value name something on screen is watching. Free-form, so `hass` receives
+/// `light.kitchen.color` and knows exactly which entity and attribute that means; nothing in the
+/// daemon parses these.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Subscription {
-    Variable {
-        name: String,
-    },
-    Feedback {
-        feedback_name: String,
-        parameters: JsonValue,
-    },
+pub struct Subscription {
+    pub name: String,
 }
 
 pub struct PluginFactory {
@@ -118,7 +108,7 @@ impl PluginContext {
         template::interpolate(template, |reference| self.variables.text(reference))
     }
 
-    pub fn set_variable(&self, name: impl Into<String>, value: VariableValue) {
+    pub fn set_value(&self, name: impl Into<String>, value: VariableValue) {
         let reference = VariableRef {
             integration_id: self.integration_id.clone(),
             name: name.into(),
@@ -126,14 +116,6 @@ impl PluginContext {
         if self.variables.set(reference.clone(), value) {
             self.signal(EngineSignal::VariableChanged(reference));
         }
-    }
-
-    /// Tells the engine this instance's view of the world moved, so every feedback anything is
-    /// watching should be asked again.
-    pub fn invalidate_feedbacks(&self) {
-        self.signal(EngineSignal::FeedbacksInvalidated(
-            self.integration_id.clone(),
-        ));
     }
 
     pub fn log(&self, level: SurfaceLogLevel, message: impl Into<String>) {

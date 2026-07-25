@@ -42,12 +42,31 @@ const ActionRow: Component<{ action: AvailableAction; }> = (properties) => {
             </p>
           </div>
         </div>
-        <button type="button" class="secondary-button" onClick={() => setIsOpen(!isOpen())}>
-          {isOpen() ? "Close" : "Run"}
-        </button>
+        <Show
+          when={properties.action.parameters.length > 0}
+          fallback={(
+            <button
+              type="button"
+              class="secondary-button"
+              disabled={store.isSaving()}
+              onClick={() =>
+                void store.runPluginAction(
+                  properties.action.integration_id,
+                  properties.action.name,
+                  {},
+                )}
+            >
+              Run
+            </button>
+          )}
+        >
+          <button type="button" class="secondary-button" onClick={() => setIsOpen(!isOpen())}>
+            {isOpen() ? "Close" : "Run..."}
+          </button>
+        </Show>
       </div>
 
-      <Show when={isOpen()}>
+      <Show when={isOpen() && properties.action.parameters.length > 0}>
         <div class="pressed-fields">
           <For each={properties.action.parameters}>
             {field => (

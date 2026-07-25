@@ -10,7 +10,7 @@ use crate::{
     events::ServerEvent,
     panels::Panel,
     plugins::engine::{InputEvent, INPUT_QUEUE_SIZE},
-    rendering::{feedback::FeedbackCache, ledger::RenderLedger},
+    rendering::ledger::RenderLedger,
     surfaces::{
         connection::ActiveConnection,
         defaults::{default_device, repair_panel_assignments},
@@ -38,7 +38,6 @@ pub struct SurfaceRegistry {
     pub(super) rendered: RenderLedger,
     /// Live plugin state the render path resolves against.
     pub(super) variables: Arc<VariableStore>,
-    pub(super) feedbacks: Arc<FeedbackCache>,
     /// Gestures on their way to the action engine. Separate from `events` because that broadcast
     /// drops on lag, and a dropped action is not the same kind of loss as a dropped repaint.
     input: mpsc::Sender<InputEvent>,
@@ -102,7 +101,6 @@ impl SurfaceRegistry {
             logs: RwLock::default(),
             rendered: RenderLedger::default(),
             variables: Arc::default(),
-            feedbacks: Arc::default(),
             input,
             input_receiver: Mutex::new(Some(input_receiver)),
             events: broadcast::channel(256).0,
@@ -120,9 +118,6 @@ impl SurfaceRegistry {
         self.variables.clone()
     }
 
-    pub fn feedbacks(&self) -> Arc<FeedbackCache> {
-        self.feedbacks.clone()
-    }
 
     /// Handed to the action engine at startup. Until something takes it the receiver stays here,
     /// so input queues rather than failing to send.

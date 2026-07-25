@@ -84,7 +84,7 @@ const groupDialLevels = (dialStates: DialState[]): DialLevels => {
 
 export type ControlClipboard = Pick<
   Control,
-    "name" | "default_state" | "pressed_state" | "action_bindings" | "feedback_bindings"
+    "name" | "default_state" | "pressed_state" | "action_bindings"
 >;
 
 export type InventoryStore = {
@@ -126,7 +126,6 @@ const toClipboard = (control: Control): ControlClipboard => ({
   default_state: control.default_state,
   pressed_state: control.pressed_state,
   action_bindings: control.action_bindings,
-  feedback_bindings: control.feedback_bindings,
 });
 
 export const InventoryProvider: ParentComponent = (properties) => {

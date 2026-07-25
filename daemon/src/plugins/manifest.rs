@@ -10,7 +10,6 @@ pub struct PluginManifest {
     pub description: &'static str,
     pub config_schema: Vec<ConfigField>,
     pub actions: Vec<ActionDefinition>,
-    pub feedbacks: Vec<FeedbackDefinition>,
     pub variables: Vec<VariableDefinition>,
 }
 
@@ -151,40 +150,6 @@ impl ActionDefinition {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct FeedbackDefinition {
-    pub name: String,
-    pub label: String,
-    pub description: Option<String>,
-    pub parameters: Vec<ConfigField>,
-}
-
-impl FeedbackDefinition {
-    pub fn new(name: impl Into<String>) -> Self {
-        let name = name.into();
-        Self {
-            label: name.clone(),
-            name,
-            description: None,
-            parameters: Vec::new(),
-        }
-    }
-
-    pub fn label(mut self, label: impl Into<String>) -> Self {
-        self.label = label.into();
-        self
-    }
-
-    pub fn description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub fn parameters(mut self, parameters: Vec<ConfigField>) -> Self {
-        self.parameters = parameters;
-        self
-    }
-}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct VariableDefinition {

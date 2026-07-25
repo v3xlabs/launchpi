@@ -22,7 +22,6 @@ export type ActionDefinition = {
   description: string | null;
   parameters: ConfigField[];
 };
-export type FeedbackDefinition = ActionDefinition;
 export type VariableDefinition = {
   name: string;
   label: string;
@@ -35,7 +34,6 @@ export type PluginManifest = {
   description: string;
   config_schema: ConfigField[];
   actions: ActionDefinition[];
-  feedbacks: FeedbackDefinition[];
   variables: VariableDefinition[];
 };
 export type PluginInstanceStatus
@@ -87,8 +85,6 @@ const isManifest = (value: unknown): value is PluginManifest =>
   && value.config_schema.every(isConfigField)
   && Array.isArray(value.actions)
   && value.actions.every(isDefinition)
-  && Array.isArray(value.feedbacks)
-  && value.feedbacks.every(isDefinition)
   && Array.isArray(value.variables)
   && value.variables.every(isVariableDefinition);
 

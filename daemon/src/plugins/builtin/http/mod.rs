@@ -1,9 +1,6 @@
 mod config;
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
@@ -14,8 +11,7 @@ use crate::{
         builtin::http::config::{extract_value, HttpConfig, PollConfig, MAX_BODY_VARIABLE_LENGTH},
         instance::InstanceConfig,
         manifest::{
-            ActionDefinition, ConfigField, FeedbackDefinition, PluginManifest, VariableDefinition,
-            VariableKind,
+            ActionDefinition, ConfigField, PluginManifest, VariableDefinition, VariableKind,
         },
         plugin::{Plugin, PluginContext, PluginError, PluginFactory},
     },
@@ -57,32 +53,6 @@ fn manifest() -> PluginManifest {
                     .label("Content type")
                     .placeholder("application/json"),
             ])],
-        feedbacks: vec![
-            FeedbackDefinition::new("value_equals")
-                .label("Value equals")
-                .parameters(vec![
-                    ConfigField::text("poll").label("Poll").required(),
-                    ConfigField::text("value").label("Value").required(),
-                ]),
-            FeedbackDefinition::new("value_above")
-                .label("Value above")
-                .parameters(vec![
-                    ConfigField::text("poll").label("Poll").required(),
-                    ConfigField::number("value").label("Value").required(),
-                ]),
-            FeedbackDefinition::new("value_below")
-                .label("Value below")
-                .parameters(vec![
-                    ConfigField::text("poll").label("Poll").required(),
-                    ConfigField::number("value").label("Value").required(),
-                ]),
-            FeedbackDefinition::new("status_matches")
-                .label("Status matches")
-                .parameters(vec![
-                    ConfigField::text("poll").label("Poll").required(),
-                    ConfigField::number("status").label("Status").required(),
-                ]),
-        ],
         variables: vec![VariableDefinition::new("<poll name>", VariableKind::Text)
             .description("One variable per [[config.poll]] entry, named by its name field.")],
     }
@@ -106,7 +76,6 @@ async fn start(
         settings: settings.clone(),
         authorization,
         context: context.clone(),
-        results: RwLock::default(),
     });
 
     for poll in settings.poll {
@@ -126,16 +95,11 @@ async fn start(
     Ok(plugin)
 }
 
-struct PollResult {
-    status: u16,
-    value: JsonValue,
-}
 
 struct HttpPlugin {
     settings: HttpConfig,
     authorization: Option<String>,
     context: PluginContext,
-    results: RwLock<HashMap<String, PollResult>>,
 }
 
 impl HttpPlugin {
@@ -186,15 +150,7 @@ impl HttpPlugin {
             }
         };
 
-        self.results.write().unwrap().insert(
-            poll.name.clone(),
-            PollResult {
-                status,
-                value: value.clone(),
-            },
-        );
-        self.context.set_variable(poll.name.clone(), variable);
-        self.context.invalidate_feedbacks();
+        self.context.set_value(poll.name.clone(), variable);
     }
 
     async fn send(
@@ -224,14 +180,6 @@ impl HttpPlugin {
         request.send().await.map_err(|error| error.to_string())
     }
 
-    fn poll_result<T>(
-        &self,
-        parameters: &JsonValue,
-        read: impl Fn(&PollResult) -> T,
-    ) -> Result<Option<T>, PluginError> {
-        let name = string_parameter(parameters, "poll")?;
-        Ok(self.results.read().unwrap().get(&name).map(read))
-    }
 }
 
 #[async_trait]
@@ -269,44 +217,6 @@ impl Plugin for HttpPlugin {
         )))
     }
 
-    async fn evaluate(
-        &self,
-        feedback_name: &str,
-        parameters: &JsonValue,
-    ) -> Result<bool, PluginError> {
-        match feedback_name {
-            "value_equals" => {
-                let expected = string_parameter(parameters, "value")?;
-                Ok(self
-                    .poll_result(parameters, |result| {
-                        json_to_variable(&result.value).to_string() == expected
-                    })?
-                    .unwrap_or(false))
-            }
-            "value_above" | "value_below" => {
-                let threshold = number_parameter(parameters, "value")?;
-                let above = feedback_name == "value_above";
-                Ok(self
-                    .poll_result(parameters, |result| {
-                        result.value.as_f64().is_some_and(|value| {
-                            if above {
-                                value > threshold
-                            } else {
-                                value < threshold
-                            }
-                        })
-                    })?
-                    .unwrap_or(false))
-            }
-            "status_matches" => {
-                let expected = number_parameter(parameters, "status")? as u16;
-                Ok(self
-                    .poll_result(parameters, |result| result.status == expected)?
-                    .unwrap_or(false))
-            }
-            other => Err(PluginError::UnknownFeedback(other.to_string())),
-        }
-    }
 }
 
 fn json_to_variable(value: &JsonValue) -> VariableValue {
@@ -335,14 +245,6 @@ fn optional_string(parameters: &JsonValue, key: &str) -> Option<String> {
     }
 }
 
-fn number_parameter(parameters: &JsonValue, key: &str) -> Result<f64, PluginError> {
-    let missing = || PluginError::Configuration(format!("{key} must be a number"));
-    match parameters.get(key).ok_or_else(missing)? {
-        JsonValue::Number(value) => value.as_f64().ok_or_else(missing),
-        JsonValue::String(value) => value.trim().parse().map_err(|_| missing()),
-        _ => Err(missing()),
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -429,7 +331,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_poll_publishes_the_extracted_value_and_answers_feedbacks() {
+    async fn a_poll_publishes_the_extracted_value() {
         let port = serve(r#"{"current":{"temperature_2m":21.4},"state":"on"}"#).await;
         let started = started(format!(
             "base_url = \"http://127.0.0.1:{port}\"\n\
@@ -445,41 +347,6 @@ mod tests {
             await_variable(&started.variables, "temperature").await,
             VariableValue::Number(21.4)
         );
-
-        let poll = serde_json::json!({ "poll": "temperature" });
-        assert!(started
-            .plugin
-            .evaluate(
-                "value_above",
-                &serde_json::json!({ "poll": "temperature", "value": 20 })
-            )
-            .await
-            .expect("evaluates"));
-        assert!(!started
-            .plugin
-            .evaluate(
-                "value_below",
-                &serde_json::json!({ "poll": "temperature", "value": 20 })
-            )
-            .await
-            .expect("evaluates"));
-        assert!(started
-            .plugin
-            .evaluate(
-                "status_matches",
-                &serde_json::json!({ "poll": "temperature", "status": 200 })
-            )
-            .await
-            .expect("evaluates"));
-        assert!(!started
-            .plugin
-            .evaluate("value_equals", &{
-                let mut with_value = poll.clone();
-                with_value["value"] = serde_json::json!("nope");
-                with_value
-            })
-            .await
-            .expect("evaluates"));
     }
 
     #[tokio::test]
@@ -500,22 +367,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn a_feedback_about_an_unpolled_name_is_inactive_rather_than_an_error() {
-        let port = serve("{}").await;
-        let started = started(format!("base_url = \"http://127.0.0.1:{port}\"\n")).await;
-
-        assert_eq!(
-            started
-                .plugin
-                .evaluate(
-                    "status_matches",
-                    &serde_json::json!({ "poll": "absent", "status": 200 })
-                )
-                .await,
-            Ok(false)
-        );
-    }
 
     #[tokio::test]
     async fn an_unknown_action_and_feedback_are_reported_by_name() {
@@ -525,13 +376,6 @@ mod tests {
         assert_eq!(
             started.plugin.invoke("nope", &serde_json::json!({})).await,
             Err(PluginError::UnknownAction("nope".to_string()))
-        );
-        assert_eq!(
-            started
-                .plugin
-                .evaluate("nope", &serde_json::json!({}))
-                .await,
-            Err(PluginError::UnknownFeedback("nope".to_string()))
         );
     }
 
@@ -559,14 +403,8 @@ mod tests {
             optional_string(&parameters, "status"),
             Some("200".to_string())
         );
-        assert_eq!(number_parameter(&parameters, "status"), Ok(200.0));
     }
 
-    #[test]
-    fn a_string_parameter_is_accepted_where_a_number_is_expected() {
-        let parameters = serde_json::json!({ "status": "404" });
-        assert_eq!(number_parameter(&parameters, "status"), Ok(404.0));
-    }
 
     #[test]
     fn an_empty_string_parameter_reads_as_absent() {

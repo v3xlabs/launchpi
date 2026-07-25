@@ -19,21 +19,15 @@ export type Capabilities = {
   supports_haptics: boolean;
 };
 export type GridLayout = { columns: number; rows: number; };
+/** A colour is either written out (a table) or read from a value (a `$(...)` string). */
+export type ColorBinding = RgbaColor | string;
 export type RenderedState = {
   text: string | null;
   image: string | null;
-  foreground_color: RgbaColor | null;
-  background_color: RgbaColor | null;
+  foreground_color: ColorBinding | null;
+  background_color: ColorBinding | null;
   progress: unknown | null;
   is_pressed: boolean;
-};
-/** Mirrors `RenderedState` minus `is_pressed`; every absent field leaves the state untouched. */
-export type RenderedStateOverride = {
-  text: string | null;
-  image: string | null;
-  foreground_color: RgbaColor | null;
-  background_color: RgbaColor | null;
-  progress: unknown | null;
 };
 export type ActionTrigger
   = | "press"
@@ -53,12 +47,6 @@ export type Action
   | { type: "change_panel"; panel_id: string; }
   | { type: "wait"; duration_ms: number; };
 export type ActionBinding = { gesture: ActionTrigger; actions: Action[]; };
-export type Feedback = {
-  integration_id: string;
-  feedback_name: string;
-  parameters: Record<string, unknown>;
-};
-export type FeedbackBinding = { feedback: Feedback; state: RenderedStateOverride; };
 export type Control = {
   control_id: string;
   name: string;
@@ -66,7 +54,6 @@ export type Control = {
   default_state: RenderedState;
   pressed_state: RenderedState | null;
   action_bindings: ActionBinding[];
-  feedback_bindings: FeedbackBinding[];
 };
 export type Panel = {
   panel_id: string;
@@ -169,14 +156,16 @@ const isColor = (value: unknown): value is RgbaColor =>
   && isNumber(value.green)
   && isNumber(value.blue)
   && isNumber(value.alpha);
+const isColorBinding = (value: unknown): value is ColorBinding | null =>
+  value === null || isString(value) || isColor(value);
 const isGridLayout = (value: unknown): value is GridLayout =>
   isRecord(value) && isNumber(value.columns) && isNumber(value.rows);
 const isRenderedState = (value: unknown): value is RenderedState =>
   isRecord(value)
   && isOptionalString(value.text)
   && isOptionalString(value.image)
-  && (value.foreground_color === null || isColor(value.foreground_color))
-  && (value.background_color === null || isColor(value.background_color))
+  && isColorBinding(value.foreground_color)
+  && isColorBinding(value.background_color)
   && "progress" in value
   && typeof value.is_pressed === "boolean";
 const isControl = (value: unknown): value is Control =>
@@ -188,8 +177,7 @@ const isControl = (value: unknown): value is Control =>
   && isNumber(value.position.row)
   && isRenderedState(value.default_state)
   && (value.pressed_state === null || isRenderedState(value.pressed_state))
-  && Array.isArray(value.action_bindings)
-  && Array.isArray(value.feedback_bindings);
+  && Array.isArray(value.action_bindings);
 const isPanel = (value: unknown): value is Panel =>
   isRecord(value)
   && isString(value.panel_id)

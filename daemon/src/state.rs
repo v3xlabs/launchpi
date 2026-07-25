@@ -29,7 +29,6 @@ impl AppState {
         let plugins = PluginEngine::start(
             surfaces.clone(),
             surfaces.variables(),
-            surfaces.feedbacks(),
             directory,
             config_directory.join("values.toml"),
             input,

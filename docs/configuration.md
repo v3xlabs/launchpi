@@ -22,6 +22,7 @@ Nix generator would produce are the same documents.
 ~/.config/launchpi/
   devices.toml
   panels.toml
+  values.toml
   plugins/
     http.weather.toml
     mpris.default.toml
@@ -138,7 +139,6 @@ always writes `2`.
 | `default_state` | table | See below. |
 | `pressed_state` | table, optional | Falls back to `default_state` when absent. |
 | `action_bindings` | array | What the control does. |
-| `feedback_bindings` | array | What changes how it looks. |
 
 The key index sent to hardware is `row * columns + column`.
 
@@ -148,7 +148,7 @@ The key index sent to hardware is `row * columns + column`.
 | --- | --- | --- |
 | `text` | string, optional | Interpolated: `$(instance:variable)`, with `$$` for a literal dollar. |
 | `image` | string, optional | An `AssetId`, or a `$(...)` reference that resolves to one. |
-| `foreground_color`, `background_color` | table, optional | `red`, `green`, `blue`, `alpha`, each 0 to 255. |
+| `foreground_color`, `background_color` | table or string, optional | A table of `red`, `green`, `blue`, `alpha` is a fixed colour. A `"$(...)"` string binds the colour to a value, so a key can take a light's real colour. |
 | `progress` | table, optional | `value` and `maximum_value`; drawn as a bar along the bottom edge. |
 | `is_pressed` | boolean | Present on `default_state` and `pressed_state` for symmetry; the daemon does not read it. |
 
@@ -198,26 +198,54 @@ A failing action logs and the chain continues.
 | `change_panel` | `panel_id` |
 | `wait` | `duration_ms` |
 
-### Feedback bindings
+### Binding a field to a value
 
-A feedback is a boolean query. When it is true its `state` is overlaid on the
-control, field by field. Bindings apply in order, so a later one wins on the
-fields it sets.
+Any of `text`, `image`, `foreground_color` and `background_color` may hold a
+`$(instance:value)` reference instead of a literal. The control repaints
+whenever the referenced value changes.
 
 ```toml
-[[panels.controls.feedback_bindings]]
+[panels.controls.default_state]
+text             = "$(mpris.default:title)"
+background_color = "$(hass.home:light.kitchen.color)"
 
-[panels.controls.feedback_bindings.feedback]
-integration_id = "hass.home"
-feedback_name = "state_is"
-parameters = { entity_id = "light.kitchen", state = "on" }
-
-[panels.controls.feedback_bindings.state.background_color]
-red = 232
-green = 185
-blue = 35
+[panels.controls.default_state.foreground_color]
+red = 255
+green = 255
+blue = 255
 alpha = 255
 ```
+
+A colour reference resolves through the value's rendered text, so a plugin may
+publish either a structured colour or a `#rrggbb` string. `#rgb` and `#rrggbbaa`
+are accepted too. A reference that resolves to something unparseable leaves the
+colour unset rather than painting the key black, so a plugin that has not
+answered yet looks unstyled rather than broken.
+
+There is no separate feedback concept. An earlier draft had plugins declare
+boolean queries that overlaid a style; binding the field directly does the same
+job and can also carry a colour, which a boolean never could.
+
+## values.toml
+
+Values you define yourself, as opposed to ones a plugin publishes. They live in
+the `user` namespace, are seeded at boot, and are what `Action::SetVariable`
+writes to.
+
+```toml
+version = 1
+
+[[values]]
+name = "scene"
+value = "evening"
+description = "Which lighting scene the panels assume"
+```
+
+`value` may be a string, a number or a boolean; its TOML type decides the value
+kind. Read it back as `$(user:scene)`.
+
+These are the only values worth persisting — everything else is re-derived from
+its source when an instance starts.
 
 ## plugins/
 

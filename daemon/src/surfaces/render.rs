@@ -11,7 +11,7 @@ use crate::{
 
 impl SurfaceRegistry {
     pub(super) fn render_context(&self) -> RenderContext<'_> {
-        RenderContext::new(&self.variables, &self.feedbacks)
+        RenderContext::new(&self.variables)
     }
 
     pub fn active_key_renderings(&self, surface_id: &SurfaceId) -> Vec<KeyRendering> {
@@ -117,10 +117,7 @@ fn rendering_for_control(
 mod tests {
     use super::*;
     use crate::{
-        bindings::feedback::{Feedback, FeedbackBinding},
-        identifiers::IntegrationId,
-        panels::rendered_state::RenderedStateOverride,
-        rendering::feedback::FeedbackKey,
+        panels::rendered_state::ColorBinding,
         surfaces::defaults::default_panel,
         variables::{VariableRef, VariableValue},
     };
@@ -194,33 +191,30 @@ mod tests {
     }
 
     #[test]
-    fn an_active_feedback_restyles_a_key_without_a_panel_save() {
-        let feedback = Feedback {
-            integration_id: IntegrationId("http.local".to_string()),
-            feedback_name: "value_equals".to_string(),
-            parameters: serde_json::json!({ "poll": "value", "value": "on" }),
-        };
+    fn a_colour_bound_to_a_value_repaints_when_that_value_changes() {
         let mut panel = default_panel();
         panel.controls[0].pressed_state = None;
-        panel.controls[0].feedback_bindings.push(FeedbackBinding {
-            feedback: feedback.clone(),
-            state: RenderedStateOverride {
-                background_color: Some(amber()),
-                ..RenderedStateOverride::default()
-            },
-        });
+        panel.controls[0].default_state.background_color = Some(ColorBinding::Reference(
+            "$(hass.home:light.kitchen.color)".to_string(),
+        ));
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
         let surface_id = SurfaceId("stream-deck-studio-1".to_string());
         let (_is_active, mut commands) = registry.activate(&surface_id);
+        let reference = VariableRef::new("hass.home", "light.kitchen.color");
 
         registry.refresh_key(&surface_id, 0);
         let before = next_rendering(&mut commands).expect("a baseline repaint");
-        assert_ne!(before.background_color, Some(amber()));
+        assert_eq!(
+            before.background_color, None,
+            "an unresolved colour should leave the key unstyled, not black"
+        );
 
-        registry.feedbacks().set(FeedbackKey::new(&feedback), true);
+        registry
+            .variables()
+            .set(reference, VariableValue::Color(amber()));
         registry.refresh_key(&surface_id, 0);
 
-        let after = next_rendering(&mut commands).expect("the feedback should repaint the key");
+        let after = next_rendering(&mut commands).expect("the new colour should repaint the key");
         assert_eq!(after.background_color, Some(amber()));
     }
 }

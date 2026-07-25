@@ -130,10 +130,6 @@ const PluginsOverview: Component = () => {
                           {manifest.actions.length}
                           {" actions"}
                         </span>
-                        <span class="chip chip-muted">
-                          {manifest.feedbacks.length}
-                          {" feedbacks"}
-                        </span>
                       </p>
                     </div>
                   </div>
@@ -376,26 +372,6 @@ const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
                       </For>
                     </div>
                   </Show>
-                </div>
-              </div>
-
-              <div class="card">
-                <div class="card-head">
-                  <p class="card-title">Feedbacks</p>
-                </div>
-                <div class="card-body">
-                  <div class="rows">
-                    <For each={manifest()?.feedbacks ?? []}>
-                      {feedback => (
-                        <div class="row">
-                          <div class="row-main">
-                            <p class="row-title">{feedback.label}</p>
-                            <p class="row-meta mono">{feedback.name}</p>
-                          </div>
-                        </div>
-                      )}
-                    </For>
-                  </div>
                 </div>
               </div>
             </div>

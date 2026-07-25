@@ -215,7 +215,10 @@ const DialEditor: Component<{
           label="Colour"
           value={dial().color}
           fallback="#1e293b"
-          onChange={color => properties.onColorChange(properties.index, color)}
+          bindable={false}
+          onChange={(color) => {
+            if (typeof color !== "string") properties.onColorChange(properties.index, color);
+          }}
         />
         <label class="field-label">
           Ring level -

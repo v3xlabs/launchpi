@@ -1,56 +1,74 @@
 use crate::{
     identifiers::AssetId,
-    panels::{control::Control, rendered_state::RenderedState},
-    rendering::feedback::{FeedbackCache, FeedbackKey},
+    panels::{
+        control::Control,
+        rendered_state::{ColorBinding, Progress, RgbaColor},
+    },
     variables::{template, VariableStore},
 };
 
-/// The live state a control resolves against. Cheap to build: it borrows the two stores and takes
-/// a read lock per lookup, so a full panel repaint costs one uncontended lock per key.
+/// What a control resolved to: every binding replaced by the value it names. This is what the
+/// renderer draws, and what the de-duplication ledger hashes.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct ResolvedState {
+    pub text: Option<String>,
+    pub image: Option<AssetId>,
+    pub foreground_color: Option<RgbaColor>,
+    pub background_color: Option<RgbaColor>,
+    pub progress: Option<Progress>,
+}
+
+/// The live state a control resolves against. Cheap to build: it borrows the store and takes a
+/// read lock per lookup, so a full panel repaint costs one uncontended lock per key.
 #[derive(Clone, Copy)]
 pub struct RenderContext<'a> {
     variables: &'a VariableStore,
-    feedbacks: &'a FeedbackCache,
 }
 
 impl<'a> RenderContext<'a> {
-    pub fn new(variables: &'a VariableStore, feedbacks: &'a FeedbackCache) -> Self {
-        Self {
-            variables,
-            feedbacks,
-        }
+    pub fn new(variables: &'a VariableStore) -> Self {
+        Self { variables }
     }
 
-    /// Applies every active feedback in order, then interpolates what is left.
-    pub fn resolve(&self, control: &Control, is_pressed: bool) -> RenderedState {
-        let mut state = if is_pressed {
+    /// Every field goes through the same resolution: a literal passes through, a reference is
+    /// looked up. There is no overlay pass, because there are no boolean feedbacks to overlay.
+    pub fn resolve(&self, control: &Control, is_pressed: bool) -> ResolvedState {
+        let state = if is_pressed {
             control
                 .pressed_state
-                .clone()
-                .unwrap_or_else(|| control.default_state.clone())
+                .as_ref()
+                .unwrap_or(&control.default_state)
         } else {
-            control.default_state.clone()
+            &control.default_state
         };
 
-        for binding in &control.feedback_bindings {
-            if self
-                .feedbacks
-                .is_active(&FeedbackKey::new(&binding.feedback))
-            {
-                state.overlay(&binding.state);
-            }
+        ResolvedState {
+            text: state
+                .text
+                .as_deref()
+                .map(|text| self.interpolate(text))
+                .filter(|text| !text.is_empty()),
+            image: state
+                .image
+                .as_ref()
+                .and_then(|asset| self.resolve_asset(asset)),
+            foreground_color: self.resolve_color(state.foreground_color.as_ref()),
+            background_color: self.resolve_color(state.background_color.as_ref()),
+            progress: state.progress.clone(),
         }
-
-        state.text = state
-            .text
-            .map(|text| self.interpolate(&text))
-            .filter(|text| !text.is_empty());
-        state.image = state.image.and_then(|asset| self.resolve_asset(&asset));
-        state
     }
 
     pub fn interpolate(&self, template: &str) -> String {
         template::interpolate(template, |reference| self.variables.text(reference))
+    }
+
+    /// A reference that resolves to something unparseable leaves the colour unset rather than
+    /// painting it black, so a plugin that has not answered yet looks like an unstyled key.
+    pub fn resolve_color(&self, binding: Option<&ColorBinding>) -> Option<RgbaColor> {
+        match binding? {
+            ColorBinding::Literal(color) => Some(color.clone()),
+            ColorBinding::Reference(reference) => RgbaColor::from_hex(&self.interpolate(reference)),
+        }
     }
 
     /// An image slot may hold a literal asset id or a reference that yields one. A reference that
@@ -60,6 +78,7 @@ impl<'a> RenderContext<'a> {
             return Some(asset.clone());
         }
         let resolved = self.interpolate(&asset.0);
+
         (!resolved.is_empty()).then_some(AssetId(resolved))
     }
 }
@@ -68,21 +87,11 @@ impl<'a> RenderContext<'a> {
 mod tests {
     use super::*;
     use crate::{
-        bindings::feedback::{Feedback, FeedbackBinding},
-        identifiers::{ControlId, IntegrationId},
-        panels::rendered_state::{RenderedStateOverride, RgbaColor},
+        identifiers::ControlId,
+        panels::rendered_state::RenderedState,
         surfaces::layout::SurfacePosition,
         variables::{VariableRef, VariableValue},
     };
-
-    fn color(red: u8, green: u8, blue: u8) -> RgbaColor {
-        RgbaColor {
-            red,
-            green,
-            blue,
-            alpha: 255,
-        }
-    }
 
     fn control(default_state: RenderedState) -> Control {
         Control {
@@ -92,30 +101,17 @@ mod tests {
             default_state,
             pressed_state: None,
             action_bindings: Vec::new(),
-            feedback_bindings: Vec::new(),
-        }
-    }
-
-    fn feedback_binding(name: &str, state: RenderedStateOverride) -> FeedbackBinding {
-        FeedbackBinding {
-            feedback: Feedback {
-                integration_id: IntegrationId("hass.home".to_string()),
-                feedback_name: name.to_string(),
-                parameters: serde_json::json!({}),
-            },
-            state,
         }
     }
 
     #[test]
-    fn text_is_interpolated_from_the_variable_store() {
+    fn text_is_interpolated_from_the_value_store() {
         let variables = VariableStore::default();
         variables.set(
             VariableRef::new("mpris.default", "title"),
             VariableValue::Text("Blue Monday".to_string()),
         );
-        let feedbacks = FeedbackCache::default();
-        let context = RenderContext::new(&variables, &feedbacks);
+        let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
             &control(RenderedState {
@@ -128,99 +124,82 @@ mod tests {
     }
 
     #[test]
-    fn text_that_resolves_to_nothing_leaves_the_key_blank() {
+    fn a_literal_colour_passes_through() {
         let variables = VariableStore::default();
-        let feedbacks = FeedbackCache::default();
-        let context = RenderContext::new(&variables, &feedbacks);
+        let context = RenderContext::new(&variables);
+        let color = RgbaColor::opaque(10, 20, 30);
 
         let resolved = context.resolve(
             &control(RenderedState {
-                text: Some("$(mpris.default:title)".to_string()),
+                background_color: Some(color.clone().into()),
                 ..RenderedState::default()
             }),
             false,
         );
-        assert_eq!(resolved.text, None);
+        assert_eq!(resolved.background_color, Some(color));
     }
 
     #[test]
-    fn an_inactive_feedback_contributes_nothing() {
+    fn a_colour_reference_resolves_to_what_the_plugin_published() {
         let variables = VariableStore::default();
-        let feedbacks = FeedbackCache::default();
-        let context = RenderContext::new(&variables, &feedbacks);
+        variables.set(
+            VariableRef::new("hass.home", "light.kitchen.color"),
+            VariableValue::Color(RgbaColor::opaque(232, 185, 35)),
+        );
+        let context = RenderContext::new(&variables);
 
-        let mut subject = control(RenderedState {
-            background_color: Some(color(10, 10, 10)),
-            ..RenderedState::default()
-        });
-        subject.feedback_bindings.push(feedback_binding(
-            "is_on",
-            RenderedStateOverride {
-                background_color: Some(color(232, 185, 35)),
-                ..RenderedStateOverride::default()
-            },
-        ));
-
-        let resolved = context.resolve(&subject, false);
-        assert_eq!(resolved.background_color, Some(color(10, 10, 10)));
+        let resolved = context.resolve(
+            &control(RenderedState {
+                background_color: Some(ColorBinding::Reference(
+                    "$(hass.home:light.kitchen.color)".to_string(),
+                )),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(
+            resolved.background_color,
+            Some(RgbaColor::opaque(232, 185, 35))
+        );
     }
 
     #[test]
-    fn an_active_feedback_overlays_only_the_fields_it_sets() {
+    fn a_plugin_publishing_a_hex_string_works_just_as_well() {
         let variables = VariableStore::default();
-        let feedbacks = FeedbackCache::default();
-        let binding = feedback_binding(
-            "is_on",
-            RenderedStateOverride {
-                background_color: Some(color(232, 185, 35)),
-                ..RenderedStateOverride::default()
-            },
+        variables.set(
+            VariableRef::new("hass.home", "light.kitchen.color"),
+            VariableValue::Text("#00ff7f".to_string()),
         );
-        feedbacks.set(FeedbackKey::new(&binding.feedback), true);
-        let context = RenderContext::new(&variables, &feedbacks);
+        let context = RenderContext::new(&variables);
 
-        let mut subject = control(RenderedState {
-            text: Some("Kitchen".to_string()),
-            background_color: Some(color(10, 10, 10)),
-            ..RenderedState::default()
-        });
-        subject.feedback_bindings.push(binding);
-
-        let resolved = context.resolve(&subject, false);
-        assert_eq!(resolved.background_color, Some(color(232, 185, 35)));
-        assert_eq!(resolved.text, Some("Kitchen".to_string()));
+        let resolved = context.resolve(
+            &control(RenderedState {
+                background_color: Some(ColorBinding::Reference(
+                    "$(hass.home:light.kitchen.color)".to_string(),
+                )),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(
+            resolved.background_color,
+            Some(RgbaColor::opaque(0, 255, 127))
+        );
     }
 
     #[test]
-    fn a_later_feedback_wins_the_fields_it_sets() {
+    fn an_unresolved_colour_reference_leaves_the_key_unstyled() {
         let variables = VariableStore::default();
-        let feedbacks = FeedbackCache::default();
-        let first = feedback_binding(
-            "is_on",
-            RenderedStateOverride {
-                background_color: Some(color(1, 1, 1)),
-                text: Some("first".to_string()),
-                ..RenderedStateOverride::default()
-            },
-        );
-        let second = feedback_binding(
-            "is_bright",
-            RenderedStateOverride {
-                background_color: Some(color(2, 2, 2)),
-                ..RenderedStateOverride::default()
-            },
-        );
-        feedbacks.set(FeedbackKey::new(&first.feedback), true);
-        feedbacks.set(FeedbackKey::new(&second.feedback), true);
-        let context = RenderContext::new(&variables, &feedbacks);
+        let context = RenderContext::new(&variables);
 
-        let mut subject = control(RenderedState::default());
-        subject.feedback_bindings.push(first);
-        subject.feedback_bindings.push(second);
-
-        let resolved = context.resolve(&subject, false);
-        assert_eq!(resolved.background_color, Some(color(2, 2, 2)));
-        assert_eq!(resolved.text, Some("first".to_string()));
+        let resolved = context.resolve(
+            &control(RenderedState {
+                background_color: Some(ColorBinding::Reference("$(hass.home:missing)".to_string())),
+                ..RenderedState::default()
+            }),
+            false,
+        );
+        assert_eq!(resolved.background_color, None);
     }
 
     #[test]
@@ -230,8 +209,7 @@ mod tests {
             VariableRef::new("mpris.default", "art"),
             VariableValue::Image(AssetId("hash:abc123".to_string())),
         );
-        let feedbacks = FeedbackCache::default();
-        let context = RenderContext::new(&variables, &feedbacks);
+        let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
             &control(RenderedState {
@@ -244,31 +222,14 @@ mod tests {
     }
 
     #[test]
-    fn a_literal_asset_id_passes_through_untouched() {
-        let variables = VariableStore::default();
-        let feedbacks = FeedbackCache::default();
-        let context = RenderContext::new(&variables, &feedbacks);
-
-        let resolved = context.resolve(
-            &control(RenderedState {
-                image: Some(AssetId("builtin:play".to_string())),
-                ..RenderedState::default()
-            }),
-            false,
-        );
-        assert_eq!(resolved.image, Some(AssetId("builtin:play".to_string())));
-    }
-
-    #[test]
     fn the_pressed_state_falls_back_to_the_default_state() {
         let variables = VariableStore::default();
-        let feedbacks = FeedbackCache::default();
-        let context = RenderContext::new(&variables, &feedbacks);
-
+        let context = RenderContext::new(&variables);
         let subject = control(RenderedState {
             text: Some("Play".to_string()),
             ..RenderedState::default()
         });
+
         assert_eq!(
             context.resolve(&subject, true).text,
             Some("Play".to_string())

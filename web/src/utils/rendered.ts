@@ -1,11 +1,40 @@
-import { RenderedState, RgbaColor } from "../api/inventory";
+import { ColorBinding, RenderedState, RgbaColor } from "../api/inventory";
 
-export const toHex = (color: RgbaColor | null, fallback: string): string =>
-  (color === null
-    ? fallback
-    : `#${[color.red, color.green, color.blue]
-      .map(channel => channel.toString(16).padStart(2, "0"))
-      .join("")}`);
+export const isReference = (color: ColorBinding | null): color is string => typeof color === "string";
+
+export const toHex = (color: ColorBinding | null, fallback: string): string => {
+  if (color === null || isReference(color)) return fallback;
+
+  return `#${[color.red, color.green, color.blue]
+    .map(channel => channel.toString(16).padStart(2, "0"))
+    .join("")}`;
+};
+
+/** Mirrors the daemon: `#rgb`, `#rrggbb` and `#rrggbbaa`, hash optional. */
+export const parseHex = (value: string): RgbaColor | null => {
+  const digits = value.trim().replace(/^#/, "");
+
+  if (digits.length === 3) {
+    const nibble = (at: number) => Number.parseInt(digits.slice(at, at + 1), 16) * 17;
+
+    if ([0, 1, 2].some(at => Number.isNaN(nibble(at)))) return null;
+
+    return { red: nibble(0), green: nibble(1), blue: nibble(2), alpha: 255 };
+  }
+
+  if (digits.length !== 6 && digits.length !== 8) return null;
+
+  const byte = (at: number) => Number.parseInt(digits.slice(at, at + 2), 16);
+
+  if ([0, 2, 4].some(at => Number.isNaN(byte(at)))) return null;
+
+  return {
+    red: byte(0),
+    green: byte(2),
+    blue: byte(4),
+    alpha: digits.length === 8 ? byte(6) : 255,
+  };
+};
 
 export const fromHex = (value: string): RgbaColor => ({
   red: Number.parseInt(value.slice(1, 3), 16),

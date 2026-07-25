@@ -161,7 +161,6 @@ mod tests {
             description: "",
             config_schema: vec![ConfigField::text("url"), ConfigField::secret("token")],
             actions: Vec::new(),
-            feedbacks: Vec::new(),
             variables: Vec::new(),
         }
     }

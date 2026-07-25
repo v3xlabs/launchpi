@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bindings::{action::ActionBinding, feedback::FeedbackBinding},
+    bindings::action::ActionBinding,
     identifiers::ControlId,
     panels::rendered_state::RenderedState,
     surfaces::layout::SurfacePosition,
@@ -15,5 +15,4 @@ pub struct Control {
     pub default_state: RenderedState,
     pub pressed_state: Option<RenderedState>,
     pub action_bindings: Vec<ActionBinding>,
-    pub feedback_bindings: Vec<FeedbackBinding>,
 }

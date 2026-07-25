@@ -4,7 +4,10 @@ use std::{collections::HashMap, fmt, sync::RwLock};
 
 use serde::Serialize;
 
-use crate::identifiers::{AssetId, IntegrationId};
+use crate::{
+    identifiers::{AssetId, IntegrationId},
+    panels::rendered_state::RgbaColor,
+};
 
 /// The namespace `Action::SetVariable` writes into, so a button can hold state without a plugin.
 pub const USER_NAMESPACE: &str = "user";
@@ -41,6 +44,7 @@ pub enum VariableValue {
     Number(f64),
     Boolean(bool),
     Image(AssetId),
+    Color(RgbaColor),
 }
 
 impl fmt::Display for VariableValue {
@@ -53,6 +57,7 @@ impl fmt::Display for VariableValue {
             Self::Number(value) => write!(formatter, "{value}"),
             Self::Boolean(value) => write!(formatter, "{value}"),
             Self::Image(asset) => formatter.write_str(&asset.0),
+            Self::Color(color) => formatter.write_str(&color.to_hex()),
         }
     }
 }
