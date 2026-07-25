@@ -8,12 +8,14 @@ import {
   deviceGridLayout,
   DiscoveredDevice,
   displayName,
+  fetchDeviceConfig,
   isPanelCompatible,
   layoutLabel,
   Panel,
 } from "../api/inventory";
+import { CopyTomlButton } from "../components/CopyTomlButton";
 import { DeviceImage } from "../components/DeviceImage";
-import { PanelThumbnail } from "../components/PanelPreview";
+import { DevicePresentation } from "../components/DevicePresentation";
 import { StatusDot, StatusLabel } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
 import { AddDeviceDialog } from "../dialogs/AddDeviceDialog";
@@ -54,8 +56,6 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
   const activePanel = (): Panel | null =>
     store.inventory().panels.find(panel => panel.panel_id === properties.device.active_panel_id) ?? null;
   const pressedKeys = () => new Set(store.pressedKeysFor(properties.device.surface_id));
-  const dialLevels = () => store.dialLevelsFor(properties.device.surface_id);
-  const pressedDials = () => store.pressedDialsFor(properties.device.surface_id);
 
   const remove = async () => {
     await store.removeDevice(properties.device.surface_id);
@@ -101,6 +101,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
           </div>
         </div>
         <div class="flex gap-2">
+          <CopyTomlButton load={() => fetchDeviceConfig(properties.device.surface_id)} />
           <button
             type="button"
             class="secondary-button"
@@ -202,14 +203,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
                     </p>
                   )}
                 >
-                  {panel => (
-                    <PanelThumbnail
-                      panel={panel()}
-                      pressedKeys={pressedKeys()}
-                      dialLevels={dialLevels()}
-                      pressedDials={pressedDials()}
-                    />
-                  )}
+                  <DevicePresentation device={properties.device} pressedKeys={pressedKeys()} />
                 </Show>
               </div>
             </div>

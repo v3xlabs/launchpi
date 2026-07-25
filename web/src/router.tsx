@@ -2,8 +2,10 @@ import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/
 
 import { DevicesPage } from "./pages/DevicesPage";
 import { PanelsPage } from "./pages/PanelsPage";
+import { PluginsPage } from "./pages/PluginsPage";
 import { RootLayout } from "./pages/RootLayout";
 import { SupportedDevicesPage } from "./pages/SupportedDevicesPage";
+import { ValuesPage } from "./pages/ValuesPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -53,6 +55,28 @@ const panelRoute = createRoute({
   },
 });
 
+const pluginsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "plugins",
+  component: () => <PluginsPage />,
+});
+
+const pluginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "plugins/$integrationId",
+  component: () => {
+    const parameters = pluginRoute.useParams();
+
+    return <PluginsPage integrationId={parameters().integrationId} />;
+  },
+});
+
+const valuesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "values",
+  component: () => <ValuesPage />,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   devicesRoute,
@@ -60,6 +84,9 @@ const routeTree = rootRoute.addChildren([
   deviceRoute,
   panelsRoute,
   panelRoute,
+  pluginsRoute,
+  pluginRoute,
+  valuesRoute,
 ]);
 
 export const router = createRouter({ routeTree });

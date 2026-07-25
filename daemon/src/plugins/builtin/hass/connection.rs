@@ -1,0 +1,617 @@
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        RwLock,
+    },
+    time::Duration,
+};
+
+use futures::{Sink, SinkExt, Stream, StreamExt};
+use serde_json::Value as JsonValue;
+use tokio::sync::{mpsc, oneshot, Notify};
+use tokio_tungstenite::tungstenite::Message;
+use tracing::debug;
+
+use crate::{
+    plugins::{
+        builtin::hass::{
+            presets,
+            protocol::{self, ServerMessage, ServiceCall},
+            values::{entity_id_of, parse_binding, value_for_field, ValueBinding},
+        },
+        plugin::{LookupOption, PluginContext, Subscription},
+    },
+    surfaces::logs::SurfaceLogLevel,
+};
+
+const FIRST_RETRY: Duration = Duration::from_secs(1);
+const LONGEST_RETRY: Duration = Duration::from_secs(60);
+/// Home Assistant closes an idle socket, and a socket the network dropped only reveals itself on a
+/// write, so something has to be written even when nothing is happening.
+const KEEPALIVE: Duration = Duration::from_secs(30);
+
+/// What the plugin and its connection share: the bindings the connection publishes into, the queue
+/// it takes commands from, and enough state for `invoke` to answer without a socket.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogueEntry {
+    pub friendly_name: Option<String>,
+    pub domain: String,
+    /// What Home Assistant draws for this entity, where someone has said. Home Assistant names
+    /// icons from the same Material Design set, so its answer is usable as written.
+    pub icon: Option<String>,
+}
+
+impl CatalogueEntry {
+    fn describe(&self, entity_id: &str) -> String {
+        match &self.friendly_name {
+            Some(name) => format!("{name} ({entity_id})"),
+            None => entity_id.to_string(),
+        }
+    }
+}
+
+/// What is worth suggesting per domain. `state` is universal; the rest only exist where Home
+/// Assistant actually reports them, and offering a colour for a doorbell helps nobody.
+fn fields_for(domain: &str) -> &'static [&'static str] {
+    match domain {
+        "light" => &["state", "on", "color", "brightness_pct", "icon"],
+        "switch" | "input_boolean" | "fan" | "automation" | "script" => &["state", "on", "icon"],
+        "binary_sensor" => &["state", "on", "icon"],
+        // `entity_picture` is album art, a camera still or a person's photograph: a URL the asset
+        // store fetches, and the only field here that is a picture rather than a reading.
+        "media_player" | "person" | "camera" => &["state", "icon", "entity_picture"],
+        "cover" | "lock" | "climate" => &["state", "icon"],
+        _ => &["state", "icon"],
+    }
+}
+
+/// Domains in the order someone is likely to want them on a key. Anything unlisted sorts after,
+/// which keeps the hundreds of `update.*` and `button.*` entities an installation accumulates from
+/// crowding out the lights.
+const DOMAIN_ORDER: &[&str] = &[
+    "light",
+    "switch",
+    "input_boolean",
+    "media_player",
+    "climate",
+    "cover",
+    "lock",
+    "fan",
+    "binary_sensor",
+    "sensor",
+    "scene",
+    "script",
+];
+
+/// How well an entity answers the query; lower is better, `None` means it does not match.
+///
+/// A match at the start of the friendly name or the id beats one buried in the middle, so typing
+/// "light" offers `light.kitchen` before the automation called "Auto Shower Lights".
+fn score(needle: &str, entity_id: &str, entry: &CatalogueEntry) -> Option<(usize, usize)> {
+    let domain_rank = DOMAIN_ORDER
+        .iter()
+        .position(|domain| *domain == entry.domain)
+        .unwrap_or(DOMAIN_ORDER.len());
+
+    if needle.is_empty() {
+        return Some((0, domain_rank));
+    }
+
+    let name = entry
+        .friendly_name
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    let id = entity_id.to_lowercase();
+    let best = [name.find(needle), id.find(needle)]
+        .into_iter()
+        .flatten()
+        .min()?;
+
+    Some((best, domain_rank))
+}
+
+pub struct Shared {
+    pub bindings: RwLock<Vec<ValueBinding>>,
+    /// Every entity the seed reported, so the UI can offer real names instead of asking someone to
+    /// remember `light.kitchen_ceiling_2`. Ordered, because it is read straight into a picker.
+    pub catalogue: RwLock<BTreeMap<String, CatalogueEntry>>,
+    pub commands: mpsc::Sender<PendingCommand>,
+    pub reseed: Notify,
+    pub is_connected: AtomicBool,
+}
+
+impl Shared {
+    pub fn new(commands: mpsc::Sender<PendingCommand>) -> Self {
+        Self {
+            bindings: RwLock::new(Vec::new()),
+            catalogue: RwLock::new(BTreeMap::new()),
+            commands,
+            reseed: Notify::new(),
+            is_connected: AtomicBool::new(false),
+        }
+    }
+
+    /// Remembers what an entity is called and what kind of thing it is. Every state that arrives
+    /// updates it, so the picker reflects the installation as it is now.
+    ///
+    /// Answers whether that changed anything, because the presets are derived from the catalogue
+    /// and a light reporting its brightness again does not alter the button for it.
+    pub fn record(&self, entity_id: &str, state: &JsonValue) -> bool {
+        let attribute = |name: &str| {
+            state
+                .get("attributes")
+                .and_then(|attributes| attributes.get(name))
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+        };
+        let friendly_name = attribute("friendly_name");
+        let icon = attribute("icon");
+        let domain = entity_id
+            .split_once('.')
+            .map(|(domain, _)| domain.to_string())
+            .unwrap_or_default();
+        let entry = CatalogueEntry {
+            friendly_name,
+            domain,
+            icon,
+        };
+
+        let mut catalogue = self.catalogue.write().unwrap();
+        match catalogue.get(entity_id) {
+            Some(existing) if *existing == entry => false,
+            _ => {
+                catalogue.insert(entity_id.to_string(), entry);
+                true
+            }
+        }
+    }
+
+    /// The entity list as lookup options: friendly name first because that is what a person knows,
+    /// the id alongside it because that is what the binding actually stores.
+    pub fn entity_options(&self, query: &str) -> Vec<LookupOption> {
+        self.matching(query)
+            .map(|(entity_id, entry)| {
+                LookupOption::new(entity_id.clone(), entry.describe(&entity_id))
+                    .group(entry.domain.clone())
+            })
+            .collect()
+    }
+
+    /// The value names something could bind to: every matching entity crossed with the fields that
+    /// make sense for its domain. A light offers a colour and a brightness; a sensor does not.
+    pub fn value_options(&self, query: &str) -> Vec<LookupOption> {
+        self.matching(query)
+            .flat_map(|(entity_id, entry)| {
+                fields_for(&entry.domain)
+                    .iter()
+                    .map(|field| {
+                        LookupOption::new(
+                            format!("{entity_id}.{field}"),
+                            format!("{} - {field}", entry.describe(&entity_id)),
+                        )
+                        .group(entry.domain.clone())
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// Matched on the id and the friendly name together, because people search for "kitchen"
+    /// whichever of the two they happen to remember, and ordered by how well each matched.
+    ///
+    /// Ordering is not a nicety here: an installation has hundreds of entities and the caller keeps
+    /// only the first page, so anything ranked badly is not merely further down, it is gone.
+    fn matching(&self, query: &str) -> std::vec::IntoIter<(String, CatalogueEntry)> {
+        let needle = query.trim().to_lowercase();
+        let catalogue = self.catalogue.read().unwrap();
+        let mut matched: Vec<_> = catalogue
+            .iter()
+            .filter_map(|(entity_id, entry)| {
+                score(&needle, entity_id, entry)
+                    .map(|score| (score, entity_id.clone(), entry.clone()))
+            })
+            .collect();
+
+        // Stable, so entities that score alike stay in the catalogue's alphabetical order.
+        matched.sort_by_key(|(score, _, _)| *score);
+
+        matched
+            .into_iter()
+            .map(|(_, entity_id, entry)| (entity_id, entry))
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    /// Replaces the watched set. Names that do not read like an entity are dropped here, so the
+    /// connection never carries a binding it cannot answer.
+    pub fn watch(&self, subscriptions: &[Subscription]) {
+        let bindings = subscriptions
+            .iter()
+            .filter_map(|subscription| parse_binding(&subscription.name))
+            .collect();
+        *self.bindings.write().unwrap() = bindings;
+        self.reseed.notify_one();
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.is_connected.load(Ordering::Relaxed)
+    }
+}
+
+/// A command waiting for its `result` frame. The id is assigned by the connection because Home
+/// Assistant requires ids to increase within one socket, and a reconnect starts them again.
+pub struct PendingCommand {
+    pub call: ServiceCall,
+    pub respond: oneshot::Sender<Result<JsonValue, String>>,
+}
+
+enum Closed {
+    Cancelled,
+    Dropped,
+}
+
+enum Failure {
+    /// The installation is not reachable right now. Worth retrying.
+    Unreachable(String),
+    /// The token will not become valid by trying again.
+    Rejected(String),
+}
+
+pub async fn run(
+    context: PluginContext,
+    url: String,
+    token: String,
+    shared: std::sync::Arc<Shared>,
+    mut commands: mpsc::Receiver<PendingCommand>,
+) {
+    let mut retry_in = FIRST_RETRY;
+    loop {
+        let outcome = serve(&context, &url, &token, &shared, &mut commands).await;
+        shared.is_connected.store(false, Ordering::Relaxed);
+
+        match outcome {
+            Ok(Closed::Cancelled) => return,
+            Ok(Closed::Dropped) => {
+                retry_in = FIRST_RETRY;
+                context.log(
+                    SurfaceLogLevel::Warning,
+                    format!("{url} closed the connection, reconnecting"),
+                );
+            }
+            Err(Failure::Rejected(reason)) => {
+                context.log(
+                    SurfaceLogLevel::Warning,
+                    format!("{url} rejected the access token: {reason}"),
+                );
+                return;
+            }
+            Err(Failure::Unreachable(reason)) => context.log(
+                SurfaceLogLevel::Warning,
+                format!(
+                    "{url} is not answering ({reason}), retrying in {}s",
+                    retry_in.as_secs()
+                ),
+            ),
+        }
+
+        tokio::select! {
+            _ = context.cancel.cancelled() => return,
+            _ = tokio::time::sleep(retry_in) => {}
+        }
+        retry_in = (retry_in * 2).min(LONGEST_RETRY);
+    }
+}
+
+async fn serve(
+    context: &PluginContext,
+    url: &str,
+    token: &str,
+    shared: &Shared,
+    commands: &mut mpsc::Receiver<PendingCommand>,
+) -> Result<Closed, Failure> {
+    let (socket, _) = tokio::select! {
+        _ = context.cancel.cancelled() => return Ok(Closed::Cancelled),
+        connected = tokio_tungstenite::connect_async(url) => {
+            connected.map_err(|error| Failure::Unreachable(error.to_string()))?
+        }
+    };
+    let (mut writer, mut reader) = socket.split();
+
+    tokio::select! {
+        _ = context.cancel.cancelled() => return Ok(Closed::Cancelled),
+        authenticated = authenticate(&mut reader, &mut writer, token) => authenticated?,
+    }
+
+    let mut next_id = 1_u64;
+    let mut pending: HashMap<u64, oneshot::Sender<Result<JsonValue, String>>> = HashMap::new();
+    let mut seeds: HashSet<u64> = HashSet::new();
+
+    send(
+        &mut writer,
+        protocol::subscribe_state_changed(take(&mut next_id)),
+    )
+    .await?;
+    let seed = take(&mut next_id);
+    seeds.insert(seed);
+    send(&mut writer, protocol::get_states(seed)).await?;
+
+    shared.is_connected.store(true, Ordering::Relaxed);
+    context.log(SurfaceLogLevel::Info, format!("connected to {url}"));
+
+    let mut keepalive = tokio::time::interval(KEEPALIVE);
+    keepalive.tick().await;
+
+    loop {
+        tokio::select! {
+            _ = context.cancel.cancelled() => {
+                let _ = writer.close().await;
+                return Ok(Closed::Cancelled);
+            }
+            _ = shared.reseed.notified() => {
+                let seed = take(&mut next_id);
+                seeds.insert(seed);
+                send(&mut writer, protocol::get_states(seed)).await?;
+            }
+            command = commands.recv() => {
+                let Some(command) = command else { return Ok(Closed::Cancelled) };
+                let id = take(&mut next_id);
+                pending.insert(id, command.respond);
+                send(&mut writer, command.call.message(id)).await?;
+            }
+            _ = keepalive.tick() => {
+                writer
+                    .send(Message::Ping(Vec::new()))
+                    .await
+                    .map_err(|error| Failure::Unreachable(error.to_string()))?;
+            }
+            frame = reader.next() => {
+                let Some(frame) = frame else { return Ok(Closed::Dropped) };
+                match frame.map_err(|error| Failure::Unreachable(error.to_string()))? {
+                    Message::Text(payload) => {
+                        receive(context, shared, &payload, &mut pending, &mut seeds);
+                    }
+                    Message::Close(_) => return Ok(Closed::Dropped),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+async fn authenticate<R, W>(reader: &mut R, writer: &mut W, token: &str) -> Result<(), Failure>
+where
+    R: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+    W: Sink<Message> + Unpin,
+    W::Error: std::fmt::Display,
+{
+    loop {
+        match read(reader).await? {
+            ServerMessage::AuthRequired => send(writer, protocol::auth(token)).await?,
+            ServerMessage::AuthOk => return Ok(()),
+            ServerMessage::AuthInvalid { message } => return Err(Failure::Rejected(message)),
+            _ => {}
+        }
+    }
+}
+
+fn receive(
+    context: &PluginContext,
+    shared: &Shared,
+    payload: &str,
+    pending: &mut HashMap<u64, oneshot::Sender<Result<JsonValue, String>>>,
+    seeds: &mut HashSet<u64>,
+) {
+    match protocol::parse_server_message(payload) {
+        Ok(ServerMessage::State(state)) => {
+            if publish(context, shared, &state) {
+                republish_presets(context, shared);
+            }
+        }
+        Ok(ServerMessage::Result { id, outcome }) => {
+            if let Some(responder) = pending.remove(&id) {
+                let _ = responder.send(outcome);
+                return;
+            }
+            match (seeds.remove(&id), outcome) {
+                (true, Ok(result)) => {
+                    let mut catalogue_changed = false;
+                    for state in protocol::states_of(&result) {
+                        catalogue_changed |= publish(context, shared, &state);
+                    }
+                    if catalogue_changed {
+                        republish_presets(context, shared);
+                    }
+                }
+                (_, Err(reason)) => context.log(SurfaceLogLevel::Warning, reason),
+                (false, Ok(_)) => {}
+            }
+        }
+        Ok(_) => {}
+        Err(reason) => debug!(
+            integration_id = context.integration_id.0,
+            reason, "dropped an unreadable frame"
+        ),
+    }
+}
+
+/// Publishes every subscribed value that reads from this entity. Nothing else in the installation
+/// is looked at, so a panel watching four lights costs four lookups per event.
+///
+/// Answers whether the catalogue changed, which a seed accumulates over every state it carries
+/// rather than acting on each one: an installation seeds thousands of entities at once and the
+/// preset set is built from all of them.
+fn publish(context: &PluginContext, shared: &Shared, state: &JsonValue) -> bool {
+    let Some(entity_id) = entity_id_of(state) else {
+        return false;
+    };
+    let catalogue_changed = shared.record(&entity_id, state);
+    let bindings = shared.bindings.read().unwrap();
+    for binding in bindings
+        .iter()
+        .filter(|binding| binding.entity_id == entity_id)
+    {
+        if let Some(value) = value_for_field(state, &binding.field) {
+            context.set_value(binding.name.clone(), value);
+        }
+    }
+
+    catalogue_changed
+}
+
+fn republish_presets(context: &PluginContext, shared: &Shared) {
+    let presets = presets::from_catalogue(&shared.catalogue.read().unwrap());
+    context.set_presets(presets);
+}
+
+fn take(next_id: &mut u64) -> u64 {
+    let id = *next_id;
+    *next_id += 1;
+    id
+}
+
+async fn send<W>(writer: &mut W, message: JsonValue) -> Result<(), Failure>
+where
+    W: Sink<Message> + Unpin,
+    W::Error: std::fmt::Display,
+{
+    writer
+        .send(Message::Text(message.to_string()))
+        .await
+        .map_err(|error| Failure::Unreachable(error.to_string()))
+}
+
+async fn read<R>(reader: &mut R) -> Result<ServerMessage, Failure>
+where
+    R: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
+    loop {
+        let Some(frame) = reader.next().await else {
+            return Err(Failure::Unreachable(
+                "the connection closed during the handshake".to_string(),
+            ));
+        };
+        match frame.map_err(|error| Failure::Unreachable(error.to_string()))? {
+            Message::Text(payload) => {
+                return protocol::parse_server_message(&payload).map_err(Failure::Unreachable)
+            }
+            Message::Close(_) => {
+                return Err(Failure::Unreachable(
+                    "the connection closed during the handshake".to_string(),
+                ))
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn catalogued(entries: &[(&str, &str)]) -> Shared {
+        let (commands, _receiver) = mpsc::channel(1);
+        let shared = Shared::new(commands);
+        let mut catalogue = shared.catalogue.write().unwrap();
+
+        for (entity_id, friendly_name) in entries {
+            catalogue.insert(
+                (*entity_id).to_string(),
+                CatalogueEntry {
+                    friendly_name: Some((*friendly_name).to_string()),
+                    domain: entity_id.split('.').next().unwrap_or_default().to_string(),
+                    icon: None,
+                },
+            );
+        }
+        drop(catalogue);
+
+        shared
+    }
+
+    fn fixture() -> Shared {
+        catalogued(&[
+            ("automation.auto_shower_lights", "Auto Shower Lights"),
+            ("automation.kitchen_off", "Kitchen Elongated Off"),
+            ("light.kitchen_ceiling", "Kitchen Ceiling"),
+            ("update.esphome_kitchen", "Kitchen ESPHome Update"),
+        ])
+    }
+
+    /// The caller keeps only the first page, so an entity ranked badly is not lower down, it is
+    /// absent. Typing the domain has to offer the domain.
+    #[test]
+    fn ranks_a_light_above_an_automation_merely_named_lights() {
+        let options = fixture().entity_options("light");
+
+        assert_eq!(
+            options.first().map(|option| option.value.as_str()),
+            Some("light.kitchen_ceiling")
+        );
+    }
+
+    /// Every one of these matches its friendly name at position zero, so the domain decides.
+    #[test]
+    fn ranks_equally_good_matches_by_domain() {
+        let ordered: Vec<_> = fixture()
+            .entity_options("kitchen")
+            .into_iter()
+            .map(|option| option.value)
+            .collect();
+
+        assert_eq!(
+            ordered,
+            [
+                "light.kitchen_ceiling",
+                "automation.kitchen_off",
+                "update.esphome_kitchen",
+            ]
+        );
+    }
+
+    #[test]
+    fn matches_an_id_that_the_friendly_name_does_not_mention() {
+        let options = fixture().entity_options("esphome");
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].value, "update.esphome_kitchen");
+    }
+
+    /// The presets are rebuilt from the whole catalogue, so a light reporting a new brightness
+    /// twice a second must not be reported as a catalogue change.
+    #[test]
+    fn only_a_new_or_renamed_entity_counts_as_a_catalogue_change() {
+        let (commands, _receiver) = mpsc::channel(1);
+        let shared = Shared::new(commands);
+        let state = |brightness: u64, name: &str| {
+            serde_json::json!({
+                "entity_id": "light.kitchen",
+                "state": "on",
+                "attributes": { "friendly_name": name, "brightness": brightness },
+            })
+        };
+
+        assert!(shared.record("light.kitchen", &state(10, "Kitchen")));
+        assert!(!shared.record("light.kitchen", &state(200, "Kitchen")));
+        assert!(shared.record("light.kitchen", &state(200, "Kitchen Ceiling")));
+    }
+
+    /// A light is worth binding a colour to; an automation is not.
+    #[test]
+    fn offers_only_the_fields_a_domain_reports() {
+        let options = fixture().value_options("kitchen_ceiling");
+        let values: Vec<_> = options.iter().map(|option| option.value.as_str()).collect();
+
+        assert_eq!(
+            values,
+            [
+                "light.kitchen_ceiling.state",
+                "light.kitchen_ceiling.on",
+                "light.kitchen_ceiling.color",
+                "light.kitchen_ceiling.brightness_pct",
+                "light.kitchen_ceiling.icon",
+            ]
+        );
+    }
+}

@@ -9,13 +9,19 @@ body { @apply bg-neutral-950 text-sm text-neutral-200 antialiased; }
 button, input, select, textarea { font: inherit; }
 
 /* Shell */
-.app-shell { @apply grid min-h-screen grid-rows-[2.75rem_minmax(0,1fr)]; }
-.topbar { @apply flex h-11 items-center gap-3 border-b border-neutral-800 bg-neutral-900 px-3; }
-.brand { @apply flex items-center gap-2 text-[0.78rem] font-bold uppercase tracking-[0.22em] text-neutral-100 no-underline; }
-.brand-mark { @apply grid h-6 w-6 place-items-center bg-neutral-100 text-neutral-950; }
-.workspace { @apply grid min-h-0 md:grid-cols-[15rem_minmax(0,1fr)]; }
-.workspace-nav { @apply overflow-x-hidden border-b border-neutral-800 bg-neutral-900 md:sticky md:top-11 md:h-[calc(100vh-2.75rem)] md:overflow-y-auto md:border-b-0 md:border-r; }
-.connection { @apply flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-neutral-500; }
+.app-shell { @apply grid min-h-screen grid-cols-[2.75rem_minmax(0,1fr)] md:grid-cols-[2.75rem_15rem_minmax(0,1fr)]; }
+.brand { @apply min-w-0 flex-1 truncate text-[0.78rem] font-bold uppercase tracking-[0.22em] text-neutral-100 no-underline; }
+
+/* Icon rail */
+.rail { @apply sticky top-0 flex h-screen flex-col items-center gap-0.5 border-r border-neutral-800 bg-neutral-950 py-1.5; }
+.rail-item { @apply grid h-9 w-9 place-items-center text-neutral-500 no-underline transition hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400; }
+.rail-item[data-status="active"] { @apply bg-neutral-800 text-neutral-50; box-shadow: inset 0.125rem 0 0 theme(colors.blue.500); }
+.rail-status { @apply mt-auto grid h-9 w-9 place-items-center; }
+
+/* Contextual sidebar */
+.sidebar { @apply sticky top-0 hidden h-screen min-h-0 flex-col border-r border-neutral-800 bg-neutral-900 md:flex; }
+.sidebar-head { @apply flex h-11 shrink-0 items-center gap-2 border-b border-neutral-800 px-3; }
+.sidebar-body { @apply min-h-0 flex-1 overflow-y-auto overflow-x-hidden; }
 
 /* Page scaffolding */
 .page { @apply mx-auto grid w-full max-w-[92rem] gap-4 px-4 py-5 sm:px-6; }
@@ -61,10 +67,63 @@ button, input, select, textarea { font: inherit; }
 .check-tile { @apply flex h-8 items-center gap-2 border border-neutral-800 bg-neutral-950 px-2 text-xs font-medium normal-case tracking-normal text-neutral-300 transition hover:border-neutral-700; }
 .check-tile input { @apply h-3.5 w-3.5 accent-blue-500; }
 .color-input { @apply h-8 w-full cursor-pointer border border-neutral-700 bg-neutral-950 p-0.5; }
+
+/* Completion. The list is absolute so opening it does not push the rest of the form down. */
+/* An explicit track, not `auto`: an auto track floors at the input's content width and spills out
+   of the column the field sits in. */
+.completing-field { @apply relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1; }
+/* Anchored right and grown leftwards: a colour field is half a column wide, and a list confined to
+   that is unreadable. */
+.suggestions { @apply absolute right-0 top-full z-30 mt-1 max-h-64 w-max min-w-full max-w-[24rem] overflow-y-auto overflow-x-hidden border border-neutral-700 bg-neutral-900 shadow-lg shadow-black/40; }
+.suggestion { @apply flex w-full items-center gap-2 px-2 py-1.5 text-left transition hover:bg-neutral-800; }
+.suggestion[data-active="true"] { @apply bg-neutral-800; }
+.suggestion-label { @apply min-w-0 flex-1 truncate text-xs font-medium normal-case tracking-normal text-neutral-200; }
+.suggestion-value { @apply truncate font-mono text-[0.7rem] text-neutral-500; }
+.suggestion-preview { @apply max-w-[8rem] shrink-0 truncate font-mono text-[0.7rem] text-neutral-300; }
+.suggestion-swatch { @apply h-5 w-5 shrink-0 border border-black/40; }
+.suggestion-empty { @apply px-2 py-2 text-xs normal-case tracking-normal text-neutral-500; }
+.suggestion-scope { @apply sticky top-0 z-10 flex w-full items-center gap-2 border-b border-neutral-800 bg-neutral-900 px-2 py-1.5 text-left text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400 transition hover:text-neutral-100; }
+.suggestion-back { @apply font-mono text-neutral-500; }
+
+/* One parametrised control: a literal and a reference are the same field, not two modes. */
+.parameter-input { @apply flex h-8 min-w-0 items-stretch border border-neutral-700 bg-neutral-950 transition focus-within:border-blue-500; }
+.parameter-input[data-bound="true"] { @apply border-blue-900; }
+.parameter-text { @apply min-w-0 flex-1 bg-transparent px-2 text-sm font-normal normal-case tracking-normal text-neutral-100 outline-none placeholder:text-neutral-600; }
+.parameter-input[data-bound="true"] .parameter-text { @apply font-mono text-[0.78rem] text-blue-200; }
+.parameter-pick { @apply shrink-0 px-1.5 font-mono text-[0.7rem] text-neutral-500 transition hover:bg-neutral-800 hover:text-neutral-200; }
+.parameter-swatch { @apply h-full w-8 shrink-0 cursor-pointer border-0 border-r border-neutral-700 bg-neutral-950 p-0.5; }
+.parameter-swatch[data-unresolved="true"] { @apply opacity-30; }
 .range-input { @apply h-8 w-full cursor-pointer bg-transparent accent-blue-500; }
+
+/* A key's face as an ordered stack, listed the way it is drawn. */
+.layer-card { @apply border border-neutral-800 bg-neutral-950; }
+.layer-head { @apply flex items-center justify-between gap-2 border-b border-neutral-800 px-2 py-1.5; }
+.layer-kind { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }
+.layer-head .icon-button, .layer-head .danger-button { @apply h-6 w-6; }
+.layer-body { @apply grid gap-2 p-2; }
+.layer-add { @apply flex flex-wrap gap-1.5; }
+.layer-add .secondary-button { @apply h-7 px-2 text-[0.7rem]; }
+.icon-picker { @apply grid gap-2 border border-neutral-800 bg-neutral-900 p-2; }
+.icon-grid { @apply grid max-h-48 grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-1 overflow-y-auto overflow-x-hidden; }
+.icon-tile { @apply grid h-8 place-items-center border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100; }
+.icon-tile img { @apply h-5 w-5; }
+
+/* The nine anchors drawn where they mean, rather than listed by name. */
+.anchor-grid { @apply grid w-max grid-cols-3 gap-0.5 border border-neutral-700 bg-neutral-950 p-0.5; }
+.anchor-cell { @apply h-5 w-6 border border-transparent bg-neutral-800 transition hover:bg-neutral-700; }
+.anchor-cell[data-selected="true"] { @apply bg-blue-500; }
+
+/* Presets: one grid per plugin, so a button is recognised by its picture rather than its name. */
+.preset-section { @apply grid gap-1.5 border-t border-neutral-800 py-2 first:border-t-0 first:pt-0; }
+.preset-heading { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }
+.preset-grid { @apply grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-1.5; }
+.preset-tile { @apply grid justify-items-center gap-1 border border-transparent p-1 transition hover:border-neutral-700 hover:bg-neutral-800/60; }
+.preset-key { @apply relative block h-14 w-14 overflow-hidden rounded bg-neutral-950; }
+.preset-name { @apply line-clamp-2 text-center text-[0.68rem] leading-tight text-neutral-300; }
 
 /* Navigation */
 .nav { @apply flex flex-col gap-3 py-2; }
+.nav-heading-row { @apply flex items-center gap-1 pr-2; }
 .nav-heading { @apply flex items-center justify-between gap-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-neutral-500 no-underline transition hover:text-neutral-300; }
 .nav-heading[data-status="active"] { @apply text-neutral-200; }
 .nav-item { @apply flex min-w-0 items-center gap-2 px-3 py-1.5 text-neutral-400 no-underline transition hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400; }
@@ -73,6 +132,10 @@ button, input, select, textarea { font: inherit; }
 .nav-item-meta { @apply truncate text-[0.68rem] text-neutral-500; }
 .nav-child { @apply pl-4; }
 .nav-empty { @apply px-3 py-1.5 text-xs text-neutral-600; }
+.nav-tile { @apply grid gap-1.5 px-2 py-2 no-underline transition hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400; }
+.nav-tile[data-status="active"] { @apply bg-neutral-800; box-shadow: inset 0.125rem 0 0 theme(colors.blue.500); }
+.nav-tile-head { @apply flex min-w-0 items-center gap-2 px-1 text-neutral-400; }
+.nav-tile:hover .nav-tile-head, .nav-tile[data-status="active"] .nav-tile-head { @apply text-neutral-100; }
 
 /* Device renders */
 .device-image { @apply shrink-0 object-contain; }
@@ -85,13 +148,10 @@ button, input, select, textarea { font: inherit; }
 .stage { @apply flex items-center justify-center bg-neutral-950 p-4; }
 .stage-compact { @apply p-2.5; }
 /* Dials live in the grid itself so knob and key sizes stay in the device's real proportions. */
-.key-grid { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows), auto); gap: 0.375rem; width: 100%; max-width: calc(var(--columns) * 4.5rem); }
-.key-grid-dials { grid-template-columns: 1.3fr repeat(var(--columns), minmax(0, 1fr)) 1.3fr; max-width: calc((var(--columns) + 3) * 4.5rem); }
-.key-grid-compact { gap: 0.125rem; max-width: calc(var(--columns) * 2.25rem); }
-.key-grid-compact.key-grid-dials { gap: 0.25rem; max-width: calc((var(--columns) + 3) * 2.25rem); }
-.dial-cell { @apply grid place-items-center; grid-row: 1 / -1; }
-.dial-cell-left { grid-column: 1; }
-.dial-cell-right { grid-column: -2 / -1; }
+.key-grid { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows), auto); gap: 0.375rem; width: 100%; max-width: calc(var(--cells, var(--columns)) * 4.5rem); }
+.key-grid-compact { gap: 0.125rem; max-width: calc(var(--cells, var(--columns)) * 2.25rem); }
+.key-grid-compact.key-grid-dials { gap: 0.25rem; }
+.dial-cell { @apply grid place-items-center; }
 .key { @apply relative aspect-square overflow-hidden bg-black ring-1 ring-inset ring-white/10; }
 .key-button { @apply transition hover:ring-neutral-500 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400; }
 .key-empty { @apply grid place-items-center bg-neutral-950 text-neutral-700 ring-white/5; }
@@ -101,6 +161,7 @@ button, input, select, textarea { font: inherit; }
 .key-selected::after, .key-pressed::after { @apply pointer-events-none absolute inset-0 border-2; content: ''; }
 .key-selected::after { @apply border-blue-400; }
 .key-pressed::after { @apply border-emerald-400; }
+.key-dimmed { @apply brightness-[0.35]; }
 
 /* Dials - sized by their container, never by themselves */
 .dial-ring { @apply grid w-full place-items-center rounded-full; aspect-ratio: 1; }
@@ -125,8 +186,9 @@ button, input, select, textarea { font: inherit; }
 
 /* Dialogs */
 .dialog-overlay { @apply fixed inset-0 z-40 bg-neutral-950/70; }
-.dialog-positioner { @apply fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[10vh]; }
+.dialog-positioner { @apply fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[6vh]; }
 .dialog-content { @apply w-full max-w-md border border-neutral-700 bg-neutral-900 shadow-xl shadow-black/60; }
+.dialog-content[data-size="wide"] { @apply max-w-4xl; }
 .dialog-head { @apply flex items-start justify-between gap-3 border-b border-neutral-800 px-4 py-3; }
 .dialog-title { @apply text-sm font-semibold text-neutral-50; }
 .dialog-description { @apply mt-1 text-xs leading-5 text-neutral-500; }

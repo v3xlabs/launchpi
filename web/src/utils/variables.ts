@@ -1,0 +1,106 @@
+import { Layer } from "../api/inventory";
+
+/**
+ * Mirrors the daemon's `$(instance:name)` parser so the browser preview shows what the hardware
+ * shows. `$$` is a literal dollar; anything that is not a well-formed reference is left as written,
+ * and a malformed `$(` never swallows a valid reference after it.
+ */
+const isReferencePart = (part: string): boolean =>
+  part.length > 0 && /^[\w.-]+$/.test(part);
+
+export const interpolateVariables = (
+  template: string,
+  lookup: (reference: string) => string | undefined,
+): string => {
+  let rendered = "";
+  let rest = template;
+
+  while (rest.includes("$")) {
+    const dollar = rest.indexOf("$");
+
+    rendered += rest.slice(0, dollar);
+
+    const afterDollar = rest.slice(dollar + 1);
+
+    if (afterDollar.startsWith("$")) {
+      rendered += "$";
+      rest = afterDollar.slice(1);
+      continue;
+    }
+
+    if (!afterDollar.startsWith("(")) {
+      rendered += "$";
+      rest = afterDollar;
+      continue;
+    }
+
+    const inside = afterDollar.slice(1);
+    const close = inside.indexOf(")");
+
+    if (close === -1) {
+      rendered += "$(";
+      rest = inside;
+      continue;
+    }
+
+    const body = inside.slice(0, close);
+    const separator = body.indexOf(":");
+    const integrationId = separator === -1 ? "" : body.slice(0, separator);
+    const name = separator === -1 ? "" : body.slice(separator + 1);
+
+    if (separator === -1 || !isReferencePart(integrationId) || !isReferencePart(name)) {
+      rendered += "$(";
+      rest = inside;
+      continue;
+    }
+
+    rendered += lookup(`${integrationId}:${name}`) ?? "";
+    rest = inside.slice(close + 1);
+  }
+
+  return rendered + rest;
+};
+
+/**
+ * The value names a template mentions. This is the only thing the browser needs to know about
+ * bindings: enough to tell when a key must be drawn again. What they resolve to is the daemon's
+ * business, so that there is exactly one implementation of it.
+ */
+export const referencesIn = (template: string | null): string[] => {
+  if (template === null) return [];
+
+  const found: string[] = [];
+
+  interpolateVariables(template, (reference) => {
+    found.push(reference);
+
+    return undefined;
+  });
+
+  return found;
+};
+
+/**
+ * Every value a layer mentions. Mirrors the daemon's own walk over a stack: a reference missed here
+ * is a key that never redraws when the value behind it moves.
+ */
+export const referencesInLayer = (layer: Layer): string[] => {
+  const bound = (value: unknown): string[] =>
+    (typeof value === "string" ? referencesIn(value) : []);
+
+  switch (layer.kind) {
+    case "fill":
+    case "border": {
+      return bound(layer.color);
+    }
+    case "image": {
+      return [...referencesIn(layer.image), ...bound(layer.tint)];
+    }
+    case "text": {
+      return [...referencesIn(layer.text), ...bound(layer.color)];
+    }
+    default: {
+      return [...bound(layer.value), ...bound(layer.maximum), ...bound(layer.color)];
+    }
+  }
+};

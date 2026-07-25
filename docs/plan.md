@@ -28,6 +28,12 @@ Buttons trigger actions when pressed, long pressed, ultra long pressed, released
 Different integrations allow for building cool experiences with buttons. For example, the homeassistant integrations allows for hooking up any light and connecting it.
 The http integration allows for making http calls, fetching status via http and basic scripting, and more.
 
+Integrations are delivered as plugins. Each plugin type can be instantiated
+more than once, and each instance is configured by its own TOML file. A plugin
+exposes actions, which run when a gesture fires, and variables and feedbacks,
+which flow back into what a button renders. See `plugins.md` for the design,
+`plugin-authoring.md` for adding one, and `configuration.md` for the schemas.
+
 ## Goals
 
 Launchpi aims to be fully config based, configuration changes can be made in the webui and saved as config file, and config file should be able to be declarative (via for example nix).
@@ -42,6 +48,16 @@ Ease of expansion for future integrations and custom scripting.
 2. Replace the React frontend with SolidJS after the network surfaces have a stable API.
    - Preserve the surface-management workflow while migrating components incrementally.
     - Add a panel editor and live surface preview driven by the daemon API.
+3. Make buttons do something, through the plugin system.
+   - Build the plugin engine against an empty registry: instances, variables,
+     feedbacks, the action executor, and dependency-tracked re-render.
+   - Ship the `http` plugin, the plugin API and the web UI that configures it,
+     including action and feedback editors on a button.
+   - Build the image pipeline so a key can show artwork rather than only text.
+   - Ship the `mpris` plugin, which proves push-driven re-render without polling.
+   - Scaffold `hass` and `spotify`.
+4. Give panels, devices and plugin instances a copy-TOML button, so a
+   declarative user can paste the daemon's own configuration format into Nix.
 
 ## Configuration Model
 
@@ -49,7 +65,9 @@ Devices are physical hardware endpoints. Each device declares its layout and
 capabilities, and may select one compatible active panel. Panels are reusable
 virtual control grids with default and pressed feedback per control. Device
 configuration is stored in `devices.toml`; reusable panels are stored in
-`panels.toml` and can also be exported independently.
+`panels.toml` and can also be exported independently. Plugin instances are
+stored one per file under `plugins/`, where the filename is the instance
+identity.
 
 The Stream Deck Studio profile is a horizontal 16-column by 2-row grid. A
 Stream Deck XL profile is 4 columns by 8 rows.

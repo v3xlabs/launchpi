@@ -11,19 +11,19 @@ import {
 } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 
-import { asDialPressEvent, asDialStateEvent, asEventFrame, asKeyStateEvent } from "../api/events";
-import * as api from "../api/inventory";
 import {
-  Control,
-  DialPress,
-  DialState,
-  Inventory,
-  isLogEntry,
-  KeyEvent,
-  LogEntry,
-  Panel,
-  studioDialCount,
-} from "../api/inventory";
+  asAssetReadyEvent,
+  asDeviceStatusEvent,
+  asDialPressEvent,
+  asDialStateEvent,
+  asEventFrame,
+  asKeyStateEvent,
+  asVariableChangedEvent,
+} from "../api/events";
+import * as api from "../api/inventory";
+import { Control, Device, Inventory, isLogEntry, KeyEvent, LogEntry, Panel } from "../api/inventory";
+import { DialLevels, dialLevelsOf, groupDialLevels, groupPressedDials } from "./dialState";
+import { createPluginStore, PluginStore } from "./pluginStore";
 
 /** Mirrors the daemon's per-surface ring buffer, so the tail stays bounded on a long session. */
 const logCapacity = 400;
@@ -48,34 +48,9 @@ const groupLogs = (logs: LogEntry[]): Record<string, LogEntry[]> => {
   return grouped;
 };
 
-const groupPressedDials = (dialPresses: DialPress[]): Record<string, number[]> => {
-  const grouped: Record<string, number[]> = {};
-
-  for (const dial of dialPresses) {
-    if (!dial.is_pressed) continue;
-
-    (grouped[dial.surface_id] ??= []).push(dial.dial_index);
-  }
-
-  return grouped;
-};
-
-// Live dial levels keyed by surface, then by dial index. A missing entry means the dial still sits
-// wherever its panel configured it.
-type DialLevels = Record<string, Record<string, number>>;
-const groupDialLevels = (dialStates: DialState[]): DialLevels => {
-  const grouped: DialLevels = {};
-
-  for (const dial of dialStates) {
-    (grouped[dial.surface_id] ??= {})[String(dial.dial_index)] = dial.level;
-  }
-
-  return grouped;
-};
-
 export type ControlClipboard = Pick<
   Control,
-    "name" | "default_state" | "pressed_state" | "action_bindings" | "feedback_bindings"
+    "name" | "default_state" | "pressed_state" | "action_bindings"
 >;
 
 export type InventoryStore = {
@@ -95,7 +70,7 @@ export type InventoryStore = {
   savePanel: (panel: Panel) => Promise<void>;
   deletePanel: (panelId: string) => Promise<boolean>;
   exportPanel: (panel: Panel) => Promise<void>;
-  saveConfiguration: () => Promise<void>;
+  saveConfig: () => Promise<void>;
   clipboard: Accessor<ControlClipboard | null>;
   copyControl: (control: Control) => void;
   clearClipboard: () => void;
@@ -108,7 +83,7 @@ export type InventoryStore = {
   pressedDialsForPanel: (panelId: string) => Set<number>;
   /** A device's activity log, oldest first. */
   logsFor: (surfaceId: string) => LogEntry[];
-};
+} & PluginStore;
 
 const InventoryContext = createContext<InventoryStore>();
 
@@ -117,7 +92,6 @@ const toClipboard = (control: Control): ControlClipboard => ({
   default_state: control.default_state,
   pressed_state: control.pressed_state,
   action_bindings: control.action_bindings,
-  feedback_bindings: control.feedback_bindings,
 });
 
 export const InventoryProvider: ParentComponent = (properties) => {
@@ -161,7 +135,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
     return pressed;
   };
   const dialLevelsFor = (surfaceId: string): Array<number | null> =>
-    Array.from({ length: studioDialCount }, (_, index) => dialLevels[surfaceId]?.[String(index)] ?? null);
+    dialLevelsOf(dialLevels, snapshot.devices.filter(device => device.surface_id === surfaceId));
   const pressedDialsFor = (surfaceId: string): Set<number> =>
     new Set(pressedDialsBySurface[surfaceId]);
   const pressedDialsForPanel = (panelId: string): Set<number> => {
@@ -189,19 +163,8 @@ export const InventoryProvider: ParentComponent = (properties) => {
       }),
     );
   };
-  const dialLevelsForPanel = (panelId: string): Array<number | null> => {
-    const devices = snapshot.devices.filter(device => device.active_panel_id === panelId);
-
-    return Array.from({ length: studioDialCount }, (_, index) => {
-      for (const device of devices) {
-        const level = dialLevels[device.surface_id]?.[String(index)];
-
-        if (level !== undefined) return level;
-      }
-
-      return null;
-    });
-  };
+  const dialLevelsForPanel = (panelId: string): Array<number | null> =>
+    dialLevelsOf(dialLevels, snapshot.devices.filter(device => device.active_panel_id === panelId));
 
   const refresh = async () => {
     try {
@@ -292,6 +255,37 @@ export const InventoryProvider: ParentComponent = (properties) => {
         return;
       }
 
+      const variable = asVariableChangedEvent(parsed);
+
+      if (variable !== null) {
+        pluginStore.setVariable(variable.integration_id, variable.name, variable.rendered);
+
+        return;
+      }
+
+      const deviceStatus = asDeviceStatusEvent(parsed);
+
+      if (deviceStatus !== null) {
+        // Patched in place. An unreachable surface flips status on every reconnect attempt, and
+        // refetching the whole inventory on that cadence made the entire UI churn.
+        setSnapshot(
+          "devices",
+          device => device.surface_id === deviceStatus.surface_id,
+          produce((device) => {
+            device.status = deviceStatus.status as Device["status"];
+            device.last_error = deviceStatus.last_error;
+          }),
+        );
+
+        return;
+      }
+
+      const asset = asAssetReadyEvent(parsed);
+
+      if (asset !== null) return pluginStore.assetReady(asset.asset);
+
+      if (parsed.type === "presets_changed") return void pluginStore.refreshPresets();
+
       if (parsed.type === "changed") scheduleResync();
     };
 
@@ -302,6 +296,9 @@ export const InventoryProvider: ParentComponent = (properties) => {
       socket.addEventListener("open", () => {
         setIsConnected(true);
         void refresh();
+        // A daemon that restarted republishes its presets to nobody: the browser missed the
+        // event while the socket was down, so they are refetched alongside the inventory.
+        void pluginStore.refreshPresets();
       });
       socket.addEventListener("message", (event) => {
         if (typeof event.data === "string") handleMessage(event.data);
@@ -344,6 +341,8 @@ export const InventoryProvider: ParentComponent = (properties) => {
       setIsSaving(false);
     }
   };
+
+  const pluginStore = createPluginStore(run, setError);
 
   const store: InventoryStore = {
     inventory,
@@ -408,7 +407,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
       }),
     exportPanel: async (panel) => {
       try {
-        const content = await api.fetchPanelConfiguration(panel.panel_id);
+        const content = await api.fetchPanelConfig(panel.panel_id);
         const url = URL.createObjectURL(new Blob([content], { type: "application/toml" }));
         const link = document.createElement("a");
         const slug = panel.name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")
@@ -427,9 +426,9 @@ export const InventoryProvider: ParentComponent = (properties) => {
         );
       }
     },
-    saveConfiguration: async () => {
+    saveConfig: async () => {
       await run(async () => {
-        await api.saveConfiguration();
+        await api.saveConfig();
       });
     },
     clipboard,
@@ -447,6 +446,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
     pressedDialsFor,
     pressedDialsForPanel,
     logsFor,
+    ...pluginStore,
   };
 
   return <InventoryContext.Provider value={store}>{properties.children}</InventoryContext.Provider>;

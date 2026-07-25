@@ -11,13 +11,15 @@ import { createStore, produce } from "solid-js/store";
 import {
   Control,
   Device,
+  dialsForPanel,
   displayName,
+  fetchPanelConfig,
   layoutLabel,
   Panel,
-  panelDialCount,
+  PanelDial,
   RgbaColor,
-  studioDialCount,
 } from "../api/inventory";
+import { CopyTomlButton } from "../components/CopyTomlButton";
 import { PanelInspector, PanelSelection } from "../components/PanelInspector";
 import { PanelStage, PanelThumbnail } from "../components/PanelPreview";
 import { StatusDot } from "../components/StatusDot";
@@ -28,11 +30,6 @@ import { newState } from "../utils/rendered";
 
 const cloneState = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-const padded = <T,>(values: T[], length: number, fallback: T): T[] =>
-  Array.from({ length }, (_, index) => values[index] ?? fallback);
-
-const defaultDialColor: RgbaColor = { red: 30, green: 41, blue: 59, alpha: 255 };
-
 export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const store = useInventory();
   const navigate = useNavigate();
@@ -41,7 +38,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     dirty: false,
   });
   const [selection, setSelection] = createSignal<PanelSelection | null>(null);
-
+  const [pasteTarget, setPasteTarget] = createSignal<{ column: number; row: number; } | null>(null);
   const serverPanel = createMemo(
     () => store.inventory().panels.find(panel => panel.panel_id === properties.panelId) ?? null,
   );
@@ -51,6 +48,8 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const assignedDevices = createMemo(() =>
     store.inventory().devices.filter(device => device.active_panel_id === properties.panelId),
   );
+  const dials = createMemo(() =>
+    (draft.panel === null ? [] : dialsForPanel(store.inventory().devices, draft.panel.layout)));
 
   createEffect(() => {
     const panelId = properties.panelId;
@@ -59,13 +58,13 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     if (draft.panel?.panel_id !== panelId) {
       setDraft({ panel: server ? cloneState(server) : null, dirty: false });
       setSelection(null);
+      setPasteTarget(null);
 
       return;
     }
 
     if (draft.panel === null && server) setDraft("panel", cloneState(server));
   });
-
   const selectedControlId = () => {
     const current = selection();
 
@@ -97,20 +96,21 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       if (control) mutate(control);
     });
 
-  const setDialColor = (index: number, color: RgbaColor) =>
+  const mutateDial = (index: number, mutate: (dial: PanelDial) => void) =>
     mutatePanel((panel) => {
-      const colors = padded(panel.dial_colors, studioDialCount, defaultDialColor);
+      const dial = panel.dials.find(entry => entry.index === index);
 
-      colors[index] = color;
-      panel.dial_colors = colors;
+      if (dial) mutate(dial);
+    });
+
+  const setDialColor = (index: number, color: RgbaColor) =>
+    mutateDial(index, (dial) => {
+      dial.color = color;
     });
 
   const setDialLevel = (index: number, level: number) =>
-    mutatePanel((panel) => {
-      const levels = padded(panel.dial_ring_levels, studioDialCount, 100);
-
-      levels[index] = level;
-      panel.dial_ring_levels = levels;
+    mutateDial(index, (dial) => {
+      dial.level = level;
     });
 
   const placeControl = (column: number, row: number, template?: ControlClipboard) => {
@@ -126,11 +126,14 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       default_state: cloneState(template?.default_state ?? newState(false)),
       pressed_state: template?.pressed_state ? cloneState(template.pressed_state) : null,
       action_bindings: cloneState(template?.action_bindings ?? []),
-      feedback_bindings: cloneState(template?.feedback_bindings ?? []),
     };
 
-    mutatePanel(entry => entry.controls.push(control));
+    mutatePanel((entry) => {
+      entry.controls = entry.controls.filter(existing => existing.position.column !== column || existing.position.row !== row);
+      entry.controls.push(control);
+    });
     setSelection({ kind: "control", controlId });
+    setPasteTarget(null);
   };
 
   const removeControl = () => {
@@ -165,12 +168,15 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const handleCellClick = (control: Control | undefined, column: number, row: number) => {
     if (control !== undefined) {
       setSelection({ kind: "control", controlId: control.control_id });
+      setPasteTarget({ column, row });
 
       return;
     }
 
     placeControl(column, row, store.clipboard() ?? undefined);
   };
+
+  const handleCellFocus = (_control: Control | undefined, column: number, row: number) => setPasteTarget({ column, row });
 
   const savePanel = async () => {
     const panel = draft.panel;
@@ -188,18 +194,29 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    const target = event.target as HTMLElement | null;
-
     if (event.key === "Escape") {
       store.clearClipboard();
       setSelection(null);
+      setPasteTarget(null);
 
       return;
     }
 
-    const isField = target !== null && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const isField = target !== null && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable);
 
-    if (isField || !(event.metaKey || event.ctrlKey)) return;
+    if (isField) return;
+
+    if (event.key === "Delete" || event.key === "Backspace") {
+      if (selectedControl() !== null) {
+        removeControl();
+        event.preventDefault();
+      }
+
+      return;
+    }
+
+    if (!(event.metaKey || event.ctrlKey)) return;
 
     const key = event.key.toLowerCase();
 
@@ -209,12 +226,16 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     }
 
     if (key === "v") {
-      const cell = firstFreeCell();
       const clip = store.clipboard();
+      const cell = pasteTarget() ?? firstFreeCell();
 
       if (cell !== null && clip !== null) {
-        placeControl(cell.column, cell.row, clip);
         event.preventDefault();
+        const existing = draft.panel?.controls.find(control => control.position.column === cell.column && control.position.row === cell.row);
+
+        if (existing && !globalThis.confirm(`Replace ${existing.name}? Its settings will be overwritten.`)) return;
+
+        placeControl(cell.column, cell.row, clip);
       }
     }
   };
@@ -245,10 +266,10 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     {" "}
                     keys assigned
                   </span>
-                  <Show when={panelDialCount(panel()) > 0}>
+                  <Show when={panel().dials.length > 0}>
                     <span class="meta-sep">-</span>
                     <span>
-                      {panelDialCount(panel())}
+                      {panel().dials.length}
                       {" "}
                       dials
                     </span>
@@ -268,6 +289,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                   <TbDownload class="h-3.5 w-3.5" />
                   Export TOML
                 </button>
+                <CopyTomlButton load={() => fetchPanelConfig(panel().panel_id)} />
                 <button
                   type="button"
                   class="primary-button"
@@ -302,9 +324,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     Copied
                     {" "}
                     <strong>{clip().name}</strong>
-                    {" "}
-                    - click an empty key to paste, Esc to
-                    clear.
+                    <span class="hidden sm:inline"> - click an empty key or use Ctrl/Cmd+V. Delete removes the selected key; Esc clears.</span>
                   </span>
                   <button
                     type="button"
@@ -330,6 +350,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                   </div>
                   <PanelStage
                     panel={panel()}
+                    dials={dials()}
                     pressedKeys={pressedKeys()}
                     dialLevels={dialLevels()}
                     pressedDials={pressedDials()}
@@ -337,6 +358,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     activeDialIndex={selectedDialIndex()}
                     pasteMode={store.clipboard() !== null}
                     onCellClick={handleCellClick}
+                    onCellFocus={handleCellFocus}
                     onDialClick={index => setSelection({ kind: "dial", index })}
                   />
                 </div>
@@ -358,6 +380,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
 
               <PanelInspector
                 panel={panel()}
+                dials={dials()}
                 selection={selection()}
                 control={selectedControl()}
                 onPanelMutate={mutatePanel}
@@ -413,6 +436,7 @@ const PanelCard: Component<{ panel: Panel; }> = (properties) => {
       </div>
       <PanelThumbnail
         panel={properties.panel}
+        dials={dialsForPanel(store.inventory().devices, properties.panel.layout)}
         pressedKeys={pressedKeys()}
         dialLevels={dialLevels()}
         pressedDials={pressedDials()}

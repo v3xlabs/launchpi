@@ -8,22 +8,30 @@ use axum::{
     routing::{get, patch, post, put},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::{
-    models::{
-        control::Control,
-        identifiers::PanelId,
-        network_surface::{
-            AddNetworkSurface, DeviceInventory, KeyRendering, ManagedNetworkSurface,
-            NetworkSurfaceStatus, UpdateNetworkSurface,
-        },
-        panel::{Panel, PanelLayout},
-        surface::SurfaceCapabilities,
+    api::error::ApiError,
+    drivers::streamdeck::{
+        model::{model_by_name, STREAM_DECK_NETWORK_DOCK, STREAM_DECK_STUDIO},
+        studio,
     },
-    state::{studio_capabilities, AppState},
-    streamdeck::studio,
+    identifiers::{PanelId, SurfaceId},
+    panels::{
+        control::Control, dial::PanelDial, rendered_state::RenderedState, Panel, PanelLayout,
+    },
+    rendering::context::RenderContext,
+    state::AppState,
+    surfaces::{
+        command::KeyRendering,
+        defaults::studio_capabilities,
+        inventory::DeviceInventory,
+        layout::{SurfaceCapabilities, SurfaceLayout},
+        managed::{
+            AddNetworkSurface, ManagedNetworkSurface, NetworkSurfaceStatus, UpdateNetworkSurface,
+        },
+    },
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -34,9 +42,7 @@ struct PanelRequest {
     capabilities: SurfaceCapabilities,
     controls: Vec<Control>,
     #[serde(default)]
-    dial_colors: Vec<crate::models::rendered_state::RgbaColor>,
-    #[serde(default)]
-    dial_ring_levels: Vec<u8>,
+    dials: Vec<PanelDial>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -54,6 +60,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/devices/:surface_id/active-panel",
             put(assign_active_panel),
+        )
+        .route(
+            "/api/devices/:surface_id/presentation",
+            get(device_presentation),
         )
         .route(
             "/api/discovered/:discovery_id/devices",
@@ -74,7 +84,9 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn list_devices(State(state): State<AppState>) -> Json<DeviceInventory> {
-    Json(state.surfaces.inventory())
+    let mut inventory = state.surfaces.inventory();
+    inventory.plugin_instances = state.plugins.instances();
+    Json(inventory)
 }
 
 async fn events(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> impl IntoResponse {
@@ -108,8 +120,36 @@ async fn list_panels(State(state): State<AppState>) -> Json<Vec<Panel>> {
     Json(state.surfaces.panels())
 }
 
-async fn render_key(Json(rendering): Json<KeyRendering>) -> Result<impl IntoResponse, ApiError> {
-    let image = studio::render_key(&rendering).map_err(|error| ApiError {
+#[derive(Deserialize)]
+struct RenderKeyRequest {
+    default_state: RenderedState,
+    #[serde(default)]
+    pressed_state: Option<RenderedState>,
+    #[serde(default)]
+    is_pressed: bool,
+}
+
+/// Draws a control exactly as a device would.
+///
+/// The browser sends the control's *unresolved* state, bindings intact, and the daemon resolves it
+/// here through the same code that feeds the hardware. That keeps one implementation of what a
+/// binding means, while still letting the editor preview a draft that has never been saved.
+async fn render_key(
+    State(state): State<AppState>,
+    Json(request): Json<RenderKeyRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let variables = state.surfaces.variables();
+    let resolved = RenderContext::new(&variables).resolve_states(
+        &request.default_state,
+        request.pressed_state.as_ref(),
+        request.is_pressed,
+    );
+    let rendering = KeyRendering {
+        key_index: 0,
+        layers: resolved.layers,
+        is_dimmed: false,
+    };
+    let image = studio::render_key(&rendering, Some(&state.assets)).map_err(|error| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         message: error,
     })?;
@@ -121,36 +161,22 @@ async fn add_device(
     Json(request): Json<AddNetworkSurface>,
 ) -> Result<Json<ManagedNetworkSurface>, ApiError> {
     let is_network_dock = request.kind.is_network_dock();
+    let model = request.kind.model();
     let surface = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
         name: non_empty(request.name, "name")?,
         host: non_empty(request.host, "host")?,
         port: request.port.unwrap_or_else(studio::default_port),
         serial_number: request.serial_number,
-        model: request.kind.model_name().to_string(),
-        layout: if is_network_dock {
-            crate::models::surface::SurfaceLayout::Freeform
-        } else {
-            crate::models::surface::SurfaceLayout::Grid {
-                columns: 16,
-                rows: 2,
-            }
-        },
+        model: model.name.to_string(),
+        layout: model.layout,
         capabilities: if is_network_dock {
             SurfaceCapabilities::default()
         } else {
             studio_capabilities()
         },
-        active_panel_id: (!is_network_dock)
-            .then(|| {
-                state
-                    .surfaces
-                    .panels()
-                    .into_iter()
-                    .find(|panel| panel.layout.columns == 16 && panel.layout.rows == 2)
-                    .map(|panel| panel.panel_id)
-            })
-            .flatten(),
+        active_panel_id: panel_for_layout(&state, model.layout),
+        open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
         status: NetworkSurfaceStatus::Connecting,
@@ -176,7 +202,10 @@ async fn add_discovered_device(
     {
         return Ok(Json(existing));
     }
-    let is_network_dock = discovered.model == "Stream Deck Network Dock";
+    // Discovery only advertises a model name. Anything it does not name is assumed to be a Studio,
+    // which is what it was before probing existed; connecting corrects the identity either way.
+    let model = model_by_name(&discovered.model).unwrap_or(&STREAM_DECK_STUDIO);
+    let is_network_dock = model.name == STREAM_DECK_NETWORK_DOCK.name;
     let surface = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
         name: discovered.name,
@@ -184,29 +213,14 @@ async fn add_discovered_device(
         port: discovered.port,
         serial_number: discovered.serial_number,
         model: discovered.model,
-        layout: if is_network_dock {
-            crate::models::surface::SurfaceLayout::Freeform
-        } else {
-            crate::models::surface::SurfaceLayout::Grid {
-                columns: 16,
-                rows: 2,
-            }
-        },
+        layout: model.layout,
         capabilities: if is_network_dock {
             SurfaceCapabilities::default()
         } else {
             studio_capabilities()
         },
-        active_panel_id: (!is_network_dock)
-            .then(|| {
-                state
-                    .surfaces
-                    .panels()
-                    .into_iter()
-                    .find(|panel| panel.layout.columns == 16 && panel.layout.rows == 2)
-                    .map(|panel| panel.panel_id)
-            })
-            .flatten(),
+        active_panel_id: panel_for_layout(&state, model.layout),
+        open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
         status: NetworkSurfaceStatus::Connecting,
@@ -257,6 +271,17 @@ async fn assign_active_panel(
     Ok(Json(device))
 }
 
+async fn device_presentation(
+    State(state): State<AppState>,
+    Path(surface_id): Path<String>,
+) -> Result<Json<crate::surfaces::presentation::SurfacePresentation>, ApiError> {
+    state
+        .surfaces
+        .presentation(&SurfaceId(surface_id))
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("device presentation"))
+}
+
 async fn create_panel(
     State(state): State<AppState>,
     Json(request): Json<PanelRequest>,
@@ -267,8 +292,7 @@ async fn create_panel(
         layout: request.layout,
         capabilities: request.capabilities,
         controls: request.controls,
-        dial_colors: request.dial_colors,
-        dial_ring_levels: request.dial_ring_levels,
+        dials: request.dials,
     };
     let panel = state
         .surfaces
@@ -291,8 +315,7 @@ async fn update_panel(
         layout: request.layout,
         capabilities: request.capabilities,
         controls: request.controls,
-        dial_colors: request.dial_colors,
-        dial_ring_levels: request.dial_ring_levels,
+        dials: request.dials,
     };
     let panel = state
         .surfaces
@@ -328,50 +351,24 @@ async fn save_configuration(State(state): State<AppState>) -> Result<StatusCode,
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// A panel already configured for exactly this grid, without provisioning one.
+fn panel_for_layout(state: &AppState, layout: SurfaceLayout) -> Option<PanelId> {
+    let SurfaceLayout::Grid { columns, rows } = layout else {
+        return None;
+    };
+    state
+        .surfaces
+        .panels()
+        .into_iter()
+        .find(|panel| panel.layout.columns == columns && panel.layout.rows == rows)
+        .map(|panel| panel.panel_id)
+}
+
 fn non_empty(value: String, field_name: &str) -> Result<String, ApiError> {
     let value = value.trim().to_string();
     if value.is_empty() {
         Err(ApiError::bad_request(format!("{field_name} is required")))
     } else {
         Ok(value)
-    }
-}
-#[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
-}
-struct ApiError {
-    status: StatusCode,
-    message: String,
-}
-impl ApiError {
-    fn bad_request(message: String) -> Self {
-        Self {
-            status: StatusCode::BAD_REQUEST,
-            message,
-        }
-    }
-    fn not_found(resource: &str) -> Self {
-        Self {
-            status: StatusCode::NOT_FOUND,
-            message: format!("{resource} was not found"),
-        }
-    }
-    fn internal(error: anyhow::Error) -> Self {
-        Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: error.to_string(),
-        }
-    }
-}
-impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
-        (
-            self.status,
-            Json(ErrorResponse {
-                error: self.message,
-            }),
-        )
-            .into_response()
     }
 }

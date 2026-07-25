@@ -1,47 +1,29 @@
 import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/tb";
 import { Component, For, Match, Show, Switch } from "solid-js";
 
-import { capabilityLabels, Control, Panel, panelDial, RgbaColor } from "../api/inventory";
-import { fromHex, newState, toHex } from "../utils/rendered";
-import { DialIndicator, litRingSegments, totalRingSegments } from "./DialIndicator";
+import {
+  capabilityLabels,
+  Control,
+  DialPlacement,
+  Layer,
+  Panel,
+  panelDial,
+  RgbaColor,
+} from "../api/inventory";
+import { PresetPickerDialog } from "../dialogs/PresetPickerDialog";
+import { newState } from "../utils/rendered";
+import { BindingsEditor } from "./BindingsEditor";
+import { DialEditor, DialsField } from "./DialEditor";
+import { TextField } from "./fields";
+import { LayersField } from "./LayerEditor";
 
 export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "dial"; index: number; };
 
-const TextField: Component<{
-  label: string;
-  value: string;
-  placeholder?: string;
-  onChange: (value: string) => void;
+const PanelSettings: Component<{
+  panel: Panel;
+  dials: DialPlacement[];
+  onMutate: (mutate: (panel: Panel) => void) => void;
 }> = properties => (
-  <label class="field-label">
-    {properties.label}
-    <input
-      class="field-input"
-      value={properties.value}
-      placeholder={properties.placeholder}
-      onInput={event => properties.onChange(event.currentTarget.value)}
-    />
-  </label>
-);
-
-const ColorField: Component<{
-  label: string;
-  value: RgbaColor | null;
-  fallback: string;
-  onChange: (color: RgbaColor) => void;
-}> = properties => (
-  <label class="field-label">
-    {properties.label}
-    <input
-      class="color-input"
-      type="color"
-      value={toHex(properties.value, properties.fallback)}
-      onInput={event => properties.onChange(fromHex(event.currentTarget.value))}
-    />
-  </label>
-);
-
-const PanelSettings: Component<{ panel: Panel; onMutate: (mutate: (panel: Panel) => void) => void; }> = properties => (
   <>
     <div class="card-head">
       <p class="card-title">Panel</p>
@@ -75,6 +57,11 @@ const PanelSettings: Component<{ panel: Panel; onMutate: (mutate: (panel: Panel)
           </For>
         </div>
       </fieldset>
+      <DialsField
+        panel={properties.panel}
+        dials={properties.dials}
+        onMutate={properties.onMutate}
+      />
     </div>
   </>
 );
@@ -95,6 +82,17 @@ const ControlEditor: Component<{
         {properties.control.position.column + 1}
       </p>
       <div class="flex gap-1.5">
+        <PresetPickerDialog
+          trigger={<button type="button" class="link-button">preset</button>}
+          onChoose={template =>
+            properties.onMutate((control) => {
+              // Everything about the button, nothing about where it sits.
+              control.name = template.name;
+              control.default_state = structuredClone(template.default_state);
+              control.pressed_state = structuredClone(template.pressed_state);
+              control.action_bindings = structuredClone(template.action_bindings);
+            })}
+        />
         <button
           type="button"
           class="icon-button"
@@ -124,35 +122,11 @@ const ControlEditor: Component<{
             control.name = value;
           })}
       />
-      <TextField
-        label="Label"
-        value={properties.control.default_state.text ?? ""}
-        placeholder="Shown on the key"
-        onChange={value =>
-          properties.onMutate((control) => {
-            control.default_state.text = value || null;
-          })}
+      <LayersField
+        layers={properties.control.default_state.layers}
+        onMutate={(mutate: (layers: Layer[]) => void) =>
+          properties.onMutate(control => mutate(control.default_state.layers))}
       />
-      <div class="grid grid-cols-2 gap-2">
-        <ColorField
-          label="Text"
-          value={properties.control.default_state.foreground_color}
-          fallback="#ffffff"
-          onChange={color =>
-            properties.onMutate((control) => {
-              control.default_state.foreground_color = color;
-            })}
-        />
-        <ColorField
-          label="Fill"
-          value={properties.control.default_state.background_color}
-          fallback="#1e293b"
-          onChange={color =>
-            properties.onMutate((control) => {
-              control.default_state.background_color = color;
-            })}
-        />
-      </div>
 
       <label class="check-tile">
         <input
@@ -169,105 +143,25 @@ const ControlEditor: Component<{
       <Show when={properties.control.pressed_state}>
         {pressed => (
           <div class="pressed-fields">
-            <TextField
-              label="Pressed label"
-              value={pressed().text ?? ""}
-              placeholder="Optional"
-              onChange={value =>
+            <LayersField
+              layers={pressed().layers}
+              onMutate={(mutate: (layers: Layer[]) => void) =>
                 properties.onMutate((control) => {
-                  if (control.pressed_state) control.pressed_state.text = value || null;
+                  if (control.pressed_state) mutate(control.pressed_state.layers);
                 })}
             />
-            <div class="grid grid-cols-2 gap-2">
-              <ColorField
-                label="Text"
-                value={pressed().foreground_color}
-                fallback="#ffffff"
-                onChange={color =>
-                  properties.onMutate((control) => {
-                    if (control.pressed_state) control.pressed_state.foreground_color = color;
-                  })}
-              />
-              <ColorField
-                label="Fill"
-                value={pressed().background_color}
-                fallback="#0f172a"
-                onChange={color =>
-                  properties.onMutate((control) => {
-                    if (control.pressed_state) control.pressed_state.background_color = color;
-                  })}
-              />
-            </div>
           </div>
         )}
       </Show>
+
+      <BindingsEditor control={properties.control} onMutate={properties.onMutate} />
     </div>
   </>
 );
 
-const DialEditor: Component<{
-  panel: Panel;
-  index: number;
-  onColorChange: (index: number, color: RgbaColor) => void;
-  onLevelChange: (index: number, level: number) => void;
-}> = (properties) => {
-  const dial = () => panelDial(properties.panel, properties.index);
-
-  return (
-    <>
-      <div class="card-head">
-        <p class="card-title">
-          Dial
-          {" "}
-          {properties.index + 1}
-        </p>
-        <span class="chip chip-muted">{properties.index === 0 ? "left" : "right"}</span>
-      </div>
-      <div class="card-body">
-        <div class="flex items-center gap-4 bg-neutral-950 p-3">
-          <div class="w-14 shrink-0">
-            <DialIndicator index={properties.index} color={dial().color} level={dial().level} />
-          </div>
-          <p class="mono">
-            {toHex(dial().color, "unset")}
-            {" - "}
-            {dial().level}
-            % -
-            {" "}
-            {litRingSegments(dial().level)}
-            /
-            {totalRingSegments}
-            {" "}
-            segments
-          </p>
-        </div>
-        <ColorField
-          label="Colour"
-          value={dial().color}
-          fallback="#1e293b"
-          onChange={color => properties.onColorChange(properties.index, color)}
-        />
-        <label class="field-label">
-          Ring level -
-          {" "}
-          {dial().level}
-          %
-          <input
-            class="range-input"
-            type="range"
-            min="0"
-            max="100"
-            value={dial().level}
-            onInput={event => properties.onLevelChange(properties.index, Number(event.currentTarget.value))}
-          />
-        </label>
-      </div>
-    </>
-  );
-};
-
 type PanelInspectorProperties = {
   panel: Panel;
+  dials: DialPlacement[];
   selection: PanelSelection | null;
   control: Control | null;
   onPanelMutate: (mutate: (panel: Panel) => void) => void;
@@ -279,17 +173,29 @@ type PanelInspectorProperties = {
 };
 
 export const PanelInspector: Component<PanelInspectorProperties> = (properties) => {
-  // Guard on the selection object, not the index - dial 0 is a falsy value.
-  const dialSelection = () => (properties.selection?.kind === "dial" ? properties.selection : null);
+  const selectedDial = () => {
+    const selection = properties.selection;
+
+    return selection?.kind === "dial" ? panelDial(properties.panel, selection.index) : null;
+  };
 
   return (
     <div class="card">
-      <Switch fallback={<PanelSettings panel={properties.panel} onMutate={properties.onPanelMutate} />}>
-        <Match when={dialSelection()}>
-          {selection => (
+      <Switch
+        fallback={(
+          <PanelSettings
+            panel={properties.panel}
+            dials={properties.dials}
+            onMutate={properties.onPanelMutate}
+          />
+        )}
+      >
+        <Match when={selectedDial()}>
+          {dial => (
             <DialEditor
-              panel={properties.panel}
-              index={selection().index}
+              dial={dial()}
+              placement={properties.dials.find(placement => placement.index === dial().index)}
+              layout={properties.panel.layout}
               onColorChange={properties.onDialColorChange}
               onLevelChange={properties.onDialLevelChange}
             />

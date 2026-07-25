@@ -1,3 +1,14 @@
+import {
+  fetchText,
+  getErrorMessage,
+  isNumber,
+  isOptionalString,
+  isRecord,
+  isString,
+  request,
+} from "./guards";
+import { isPluginInstance, PluginInstance } from "./plugins";
+
 export type DeviceStatus = "connecting" | "connected" | "unavailable" | "disabled";
 export type RgbaColor = { red: number; green: number; blue: number; alpha: number; };
 export type Capabilities = {
@@ -8,31 +19,96 @@ export type Capabilities = {
   supports_haptics: boolean;
 };
 export type GridLayout = { columns: number; rows: number; };
+/** A colour is either written out (a table) or read from a value (a `$(...)` string). */
+export type ColorBinding = RgbaColor | string;
+export type Anchor9
+  = | "top_start" | "top_center" | "top_end"
+    | "center_start" | "center" | "center_end"
+    | "bottom_start" | "bottom_center" | "bottom_end";
+export type ContentLayout = { text_anchor: Anchor9; };
+export type SubpanelPlacement
+  = | "top_start" | "top_center" | "top_end" | "start_center"
+    | "bottom_start" | "bottom_center" | "bottom_end" | "end_center";
+/** `cover` crops a picture to fill its square; `contain` fits the whole picture inside it. */
+export type Fit = "cover" | "contain";
+export type Edge = "top" | "bottom" | "start" | "end";
+/** A number written out, or a `$(...)` string that reads one from a value. */
+export type ValueBinding = number | string;
+/** A key's face, drawn in array order: index 0 first, later entries on top. */
+export type Layer
+  = | { kind: "fill"; color: ColorBinding; }
+    | {
+      kind: "image";
+      image: string;
+      fit: Fit;
+      anchor: Anchor9;
+      scale_percent: number;
+      tint: ColorBinding | null;
+    }
+    | { kind: "text"; text: string; color: ColorBinding; anchor: Anchor9; }
+    | {
+      kind: "bar";
+      value: ValueBinding;
+      maximum: ValueBinding;
+      color: ColorBinding;
+      edge: Edge;
+      thickness: number;
+    }
+    | { kind: "border"; color: ColorBinding; width: number; };
+export type LayerKind = Layer["kind"];
 export type RenderedState = {
-  text: string | null;
-  image: string | null;
-  foreground_color: RgbaColor | null;
-  background_color: RgbaColor | null;
-  progress: unknown | null;
+  layers: Layer[];
   is_pressed: boolean;
 };
+export type ActionTrigger
+  = | "press"
+    | "release"
+    | "rotate_clockwise"
+    | "rotate_counter_clockwise"
+    | "value_changed"
+    | { hold: { duration_ms: number; }; };
+export type Action
+  = | {
+    type: "invoke_integration";
+    integration_id: string;
+    action_name: string;
+    parameters: Record<string, unknown>;
+  }
+  | { type: "set_variable"; variable_name: string; value: unknown; }
+  | { type: "change_panel"; panel_id: string; }
+  | {
+    type: "open_subpanel";
+    panel_id: string;
+    placement: SubpanelPlacement;
+    offset_columns: number;
+    offset_rows: number;
+  }
+  | { type: "close_subpanel"; }
+  | { type: "wait"; duration_ms: number; };
+export type ActionBinding = { gesture: ActionTrigger; actions: Action[]; };
 export type Control = {
   control_id: string;
   name: string;
   position: { column: number; row: number; };
   default_state: RenderedState;
   pressed_state: RenderedState | null;
-  action_bindings: unknown[];
-  feedback_bindings: unknown[];
+  action_bindings: ActionBinding[];
 };
+/** One rotary dial a panel declares. `level` is the percentage of the ring lit when it loads. */
+export type PanelDial = { index: number; level: number; color: RgbaColor; };
+/**
+ * Where a knob sits on a device, in that device's key-grid cell coordinates: `(0, 0)` is the
+ * top-left key, so a negative column or a column past the last one puts the knob beside the keys.
+ * The daemon's model table is the only place this is written down.
+ */
+export type DialPlacement = { index: number; column: number; row: number; row_span: number; };
 export type Panel = {
   panel_id: string;
   name: string;
   layout: GridLayout;
   capabilities: Capabilities;
   controls: Control[];
-  dial_colors: RgbaColor[];
-  dial_ring_levels: number[];
+  dials: PanelDial[];
 };
 export type Device = {
   surface_id: string;
@@ -43,11 +119,18 @@ export type Device = {
   model: string;
   layout: unknown;
   capabilities: Capabilities;
+  dials: DialPlacement[];
   active_panel_id: string | null;
+  open_subpanels: Array<{ panel_id: string; column: number; row: number; }>;
   is_enabled: boolean;
   parent_surface_id: string | null;
   status: DeviceStatus;
   last_error: string | null;
+};
+export type SurfacePresentation = {
+  columns: number;
+  rows: number;
+  controls: Array<{ control: Control; key_index: number; is_dimmed: boolean; }>;
 };
 export type DiscoveredDevice = {
   discovery_id: string;
@@ -74,6 +157,7 @@ export type Inventory = {
   discovered: DiscoveredDevice[];
   devices: Device[];
   panels: Panel[];
+  plugin_instances: PluginInstance[];
   recent_key_events: KeyEvent[];
   key_states: KeyEvent[];
   dial_states: DialState[];
@@ -103,10 +187,12 @@ export const emptyCapabilities: Capabilities = {
   supports_brightness: false,
   supports_haptics: false,
 };
+export const defaultContentLayout: ContentLayout = { text_anchor: "center" };
 export const emptyInventory: Inventory = {
   discovered: [],
   devices: [],
   panels: [],
+  plugin_instances: [],
   recent_key_events: [],
   key_states: [],
   dial_states: [],
@@ -116,11 +202,6 @@ export const emptyInventory: Inventory = {
 
 const logLevels = new Set<string>(["input", "info", "warning"] satisfies LogLevel[]);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-const isString = (value: unknown): value is string => typeof value === "string";
-const isOptionalString = (value: unknown): value is string | null => value === null || isString(value);
-const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const isCapabilities = (value: unknown): value is Capabilities =>
   isRecord(value) && capabilityKeys.every(key => typeof value[key] === "boolean");
 const isColor = (value: unknown): value is RgbaColor =>
@@ -131,13 +212,33 @@ const isColor = (value: unknown): value is RgbaColor =>
   && isNumber(value.alpha);
 const isGridLayout = (value: unknown): value is GridLayout =>
   isRecord(value) && isNumber(value.columns) && isNumber(value.rows);
+const isBoundColor = (value: unknown): boolean => isString(value) || isColor(value);
+const isLayer = (value: unknown): value is Layer => {
+  if (!isRecord(value)) return false;
+
+  switch (value.kind) {
+    case "fill":
+    case "border": {
+      return isBoundColor(value.color);
+    }
+    case "image": {
+      return isString(value.image) && isString(value.anchor) && isNumber(value.scale_percent);
+    }
+    case "text": {
+      return isString(value.text) && isBoundColor(value.color) && isString(value.anchor);
+    }
+    case "bar": {
+      return isBoundColor(value.color) && isNumber(value.thickness);
+    }
+    default: {
+      return false;
+    }
+  }
+};
 const isRenderedState = (value: unknown): value is RenderedState =>
   isRecord(value)
-  && isOptionalString(value.text)
-  && isOptionalString(value.image)
-  && (value.foreground_color === null || isColor(value.foreground_color))
-  && (value.background_color === null || isColor(value.background_color))
-  && "progress" in value
+  && Array.isArray(value.layers)
+  && value.layers.every(isLayer)
   && typeof value.is_pressed === "boolean";
 const isControl = (value: unknown): value is Control =>
   isRecord(value)
@@ -148,8 +249,15 @@ const isControl = (value: unknown): value is Control =>
   && isNumber(value.position.row)
   && isRenderedState(value.default_state)
   && (value.pressed_state === null || isRenderedState(value.pressed_state))
-  && Array.isArray(value.action_bindings)
-  && Array.isArray(value.feedback_bindings);
+  && Array.isArray(value.action_bindings);
+const isPanelDial = (value: unknown): value is PanelDial =>
+  isRecord(value) && isNumber(value.index) && isNumber(value.level) && isColor(value.color);
+const isDialPlacement = (value: unknown): value is DialPlacement =>
+  isRecord(value)
+  && isNumber(value.index)
+  && isNumber(value.column)
+  && isNumber(value.row)
+  && isNumber(value.row_span);
 const isPanel = (value: unknown): value is Panel =>
   isRecord(value)
   && isString(value.panel_id)
@@ -158,10 +266,7 @@ const isPanel = (value: unknown): value is Panel =>
   && isCapabilities(value.capabilities)
   && Array.isArray(value.controls)
   && value.controls.every(isControl)
-  && (value.dial_colors === undefined
-    || (Array.isArray(value.dial_colors) && value.dial_colors.every(isColor)))
-  && (value.dial_ring_levels === undefined
-    || (Array.isArray(value.dial_ring_levels) && value.dial_ring_levels.every(isNumber)));
+  && (value.dials === undefined || (Array.isArray(value.dials) && value.dials.every(isPanelDial)));
 const isDevice = (value: unknown): value is Device =>
   isRecord(value)
   && isString(value.surface_id)
@@ -171,7 +276,9 @@ const isDevice = (value: unknown): value is Device =>
   && isOptionalString(value.serial_number)
   && isString(value.model)
   && isCapabilities(value.capabilities)
+  && (value.dials === undefined || (Array.isArray(value.dials) && value.dials.every(isDialPlacement)))
   && isOptionalString(value.active_panel_id)
+  && (value.open_subpanels === undefined || Array.isArray(value.open_subpanels))
   && typeof value.is_enabled === "boolean"
   && (value.parent_surface_id === undefined || isOptionalString(value.parent_surface_id))
   && ["connecting", "connected", "unavailable", "disabled"].includes(String(value.status))
@@ -214,6 +321,8 @@ const isInventory = (value: unknown): value is Inventory =>
   && value.devices.every(isDevice)
   && Array.isArray(value.panels)
   && value.panels.every(isPanel)
+  && (value.plugin_instances === undefined
+    || (Array.isArray(value.plugin_instances) && value.plugin_instances.every(isPluginInstance)))
   && Array.isArray(value.recent_key_events)
   && value.recent_key_events.every(isKeyEvent)
   && (value.key_states === undefined
@@ -236,16 +345,11 @@ export const deviceGridLayout = (value: unknown): GridLayout | null => {
   return null;
 };
 
-// The Studio is the only surface with rotary dials, and the daemon identifies it by this geometry.
-export const studioLayout: GridLayout = { columns: 16, rows: 2 };
-export const studioDialCount = 2;
-export const isStudioLayout = (layout: GridLayout | null): boolean =>
-  layout !== null && layout.columns === studioLayout.columns && layout.rows === studioLayout.rows;
-export const panelDialCount = (panel: Panel): number => (isStudioLayout(panel.layout) ? studioDialCount : 0);
-export const panelDial = (panel: Panel, index: number): { color: RgbaColor | null; level: number; } => ({
-  color: panel.dial_colors[index] ?? null,
-  level: panel.dial_ring_levels[index] ?? 100,
-});
+export const panelDial = (panel: Panel, index: number): PanelDial | null =>
+  panel.dials.find(dial => dial.index === index) ?? null;
+/** Live dial levels arrive as one entry per dial index, so an array has to cover the highest one. */
+export const dialSlotCount = (dials: DialPlacement[]): number =>
+  dials.reduce((count, dial) => Math.max(count, dial.index + 1), 0);
 
 export const layoutLabel = (layout: GridLayout | null): string =>
   (layout === null ? "Freeform" : `${layout.columns}x${layout.rows}`);
@@ -263,26 +367,27 @@ export const isPanelCompatible = (device: Device, panel: Panel): boolean => {
   );
 };
 
-const getErrorMessage = async (response: Response): Promise<string> => {
-  const body: unknown = await response.json().catch(() => null);
+/**
+ * The knobs a panel could be turned by. A panel is not bound to a device, so the dials it may
+ * declare are those of every device whose grid it fits; capabilities are left out because a
+ * capability mismatch does not remove a knob from the hardware.
+ */
+export const dialsForPanel = (devices: Device[], layout: GridLayout): DialPlacement[] => {
+  const placements: DialPlacement[] = [];
 
-  return isRecord(body) && isString(body.error) ? body.error : `Request failed with status ${response.status}`;
-};
+  for (const device of devices) {
+    const deviceLayout = deviceGridLayout(device.layout);
 
-const request = async (
-  path: string,
-  method: "POST" | "PATCH" | "PUT" | "DELETE",
-  body?: unknown,
-): Promise<Response> => {
-  const response = await fetch(path, {
-    method,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+    if (deviceLayout === null) continue;
 
-  if (!response.ok) throw new Error(await getErrorMessage(response));
+    if (deviceLayout.columns !== layout.columns || deviceLayout.rows !== layout.rows) continue;
 
-  return response;
+    for (const dial of device.dials) {
+      if (placements.every(existing => existing.index !== dial.index)) placements.push(dial);
+    }
+  }
+
+  return placements;
 };
 
 export type DeviceKind = "studio" | "network_dock";
@@ -306,21 +411,16 @@ export type CreatePanelInput = {
   layout: GridLayout;
   capabilities: Capabilities;
   controls: Control[];
-  dial_colors: RgbaColor[];
-  dial_ring_levels: number[];
+  dials: PanelDial[];
 };
-export type PanelPayload = Pick<
-  Panel,
-    "name" | "layout" | "capabilities" | "controls" | "dial_colors" | "dial_ring_levels"
->;
+export type PanelPayload = Pick<Panel, "name" | "layout" | "capabilities" | "controls" | "dials">;
 
 export const panelPayload = (panel: Panel): PanelPayload => ({
   name: panel.name,
   layout: panel.layout,
   capabilities: panel.capabilities,
   controls: panel.controls,
-  dial_colors: panel.dial_colors,
-  dial_ring_levels: panel.dial_ring_levels,
+  dials: panel.dials,
 });
 
 export const fetchInventory = async (): Promise<Inventory> => {
@@ -337,12 +437,11 @@ export const fetchInventory = async (): Promise<Inventory> => {
     devices: data.devices.map(device => ({
       ...device,
       parent_surface_id: device.parent_surface_id ?? null,
+      open_subpanels: device.open_subpanels ?? [],
+      dials: device.dials ?? [],
     })),
-    panels: data.panels.map(panel => ({
-      ...panel,
-      dial_colors: panel.dial_colors ?? [],
-      dial_ring_levels: panel.dial_ring_levels ?? [],
-    })),
+    panels: data.panels.map(panel => ({ ...panel, dials: panel.dials ?? [] })),
+    plugin_instances: data.plugin_instances ?? [],
     key_states: data.key_states ?? [],
     dial_states: data.dial_states ?? [],
     dial_presses: data.dial_presses ?? [],
@@ -359,16 +458,38 @@ export const removeDevice = (surfaceId: string): Promise<Response> =>
   request(`/api/devices/${encodeURIComponent(surfaceId)}`, "DELETE");
 export const assignActivePanel = (surfaceId: string, panelId: string): Promise<Response> =>
   request(`/api/devices/${encodeURIComponent(surfaceId)}/active-panel`, "PUT", { panel_id: panelId });
+export const fetchDevicePresentation = async (surfaceId: string): Promise<SurfacePresentation> => {
+  const response = await fetch(`/api/devices/${encodeURIComponent(surfaceId)}/presentation`);
+
+  if (!response.ok) throw new Error(await getErrorMessage(response));
+
+  const data: unknown = await response.json();
+
+  if (!isRecord(data) || !isNumber(data.columns) || !isNumber(data.rows) || !Array.isArray(data.controls)) {
+    throw new Error("The daemon returned an invalid device presentation.");
+  }
+
+  const controls = data.controls.flatMap((entry) => {
+    if (!isRecord(entry) || !isControl(entry.control) || !isNumber(entry.key_index) || typeof entry.is_dimmed !== "boolean") return [];
+
+    return [{ control: entry.control, key_index: entry.key_index, is_dimmed: entry.is_dimmed }];
+  });
+
+  if (controls.length !== data.controls.length) throw new Error("The daemon returned an invalid device presentation.");
+
+  return { columns: data.columns, rows: data.rows, controls };
+};
 export const createPanel = (input: CreatePanelInput): Promise<Response> => request("/api/panels", "POST", input);
 export const updatePanel = (panelId: string, payload: PanelPayload): Promise<Response> =>
   request(`/api/panels/${encodeURIComponent(panelId)}`, "PATCH", payload);
 export const deletePanel = (panelId: string): Promise<Response> =>
   request(`/api/panels/${encodeURIComponent(panelId)}`, "DELETE");
-export const saveConfiguration = (): Promise<Response> => request("/api/config", "POST");
-export const fetchPanelConfiguration = async (panelId: string): Promise<string> => {
-  const response = await fetch(`/api/panels/${encodeURIComponent(panelId)}/config`);
+export const saveConfig = (): Promise<Response> => request("/api/config", "POST");
 
-  if (!response.ok) throw new Error(await getErrorMessage(response));
+export const fetchPanelConfig = (panelId: string): Promise<string> =>
+  fetchText(`/api/panels/${encodeURIComponent(panelId)}/config`);
+export const fetchDeviceConfig = (surfaceId: string): Promise<string> =>
+  fetchText(`/api/devices/${encodeURIComponent(surfaceId)}/config`);
+export const fetchFullConfig = (): Promise<string> => fetchText("/api/config/export");
 
-  return response.text();
-};
+export { getErrorMessage, isNumber, isOptionalString, isRecord, isString, request } from "./guards";

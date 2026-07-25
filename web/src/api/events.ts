@@ -59,6 +59,55 @@ export const asDialStateEvent = (value: Record<string, unknown>): DialStateEvent
       }
     : null);
 
+export type DeviceStatusEvent = {
+  type: "device_status";
+  surface_id: string;
+  status: string;
+  last_error: string | null;
+};
+
+/** Patched into the existing device row rather than triggering a refetch. */
+export const asDeviceStatusEvent = (value: Record<string, unknown>): DeviceStatusEvent | null =>
+  (value.type === "device_status"
+    && typeof value.surface_id === "string"
+    && typeof value.status === "string"
+    ? {
+        type: "device_status",
+        surface_id: value.surface_id,
+        status: value.status,
+        last_error: typeof value.last_error === "string" ? value.last_error : null,
+      }
+    : null);
+
+export type AssetReadyEvent = { type: "asset_ready"; asset: string; };
+
+export const asAssetReadyEvent = (value: Record<string, unknown>): AssetReadyEvent | null =>
+  (value.type === "asset_ready" && typeof value.asset === "string"
+    ? { type: "asset_ready", asset: value.asset }
+    : null);
+
+export type VariableChangedEvent = {
+  type: "variable_changed";
+  integration_id: string;
+  name: string;
+  rendered: string;
+};
+
+export const asVariableChangedEvent = (
+  value: Record<string, unknown>,
+): VariableChangedEvent | null =>
+  (value.type === "variable_changed"
+    && typeof value.integration_id === "string"
+    && typeof value.name === "string"
+    && typeof value.rendered === "string"
+    ? {
+        type: "variable_changed",
+        integration_id: value.integration_id,
+        name: value.name,
+        rendered: value.rendered,
+      }
+    : null);
+
 export const asDialPressEvent = (value: Record<string, unknown>): DialPressEvent | null =>
   (value.type === "dial_press"
     && typeof value.surface_id === "string"

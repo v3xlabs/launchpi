@@ -1,31 +1,57 @@
-import { RenderedState, RgbaColor } from "./inventory";
+import { RenderedState } from "./inventory";
 
-type KeyRendering = {
-  key_index: number;
-  text: string | null;
-  icon: null;
-  foreground_color: RgbaColor | null;
-  background_color: RgbaColor | null;
+/**
+ * What the daemon needs to draw a key: the control's state with its bindings still intact. The
+ * daemon resolves them, through the same code that feeds the hardware, so the preview cannot drift
+ * from the device -- and an unsaved draft still renders, because the browser sends what it has
+ * rather than naming something the daemon would have to look up.
+ */
+export type RenderRequest = {
+  default_state: RenderedState;
+  pressed_state: RenderedState | null;
+  is_pressed: boolean;
 };
+
+/**
+ * Distinct renderings held at once. A key bound to a once-a-second value produces a new rendering
+ * every second, and every one of them is an object URL holding a decoded JPEG; without a bound
+ * this map is a memory leak that grows for as long as the tab is open.
+ */
+const CACHE_LIMIT = 256;
 
 const cache = new Map<string, Promise<string>>();
 
-// Renders a key exactly as the daemon draws it for the device (same ab_glyph font, same raster),
-// returning an object URL for the JPEG. Cached by rendering so identical keys share one request.
-export const renderedKeyImageUrl = (state: RenderedState): Promise<string> => {
-  const rendering: KeyRendering = {
-    key_index: 0,
-    text: state.text,
-    icon: null,
-    foreground_color: state.foreground_color,
-    background_color: state.background_color,
-  };
-  const body = JSON.stringify(rendering);
+const forget = (body: string): void => {
+  const held = cache.get(body);
+
+  cache.delete(body);
+  // Revoking releases the blob. Awaiting first matters: an in-flight request would otherwise leak
+  // the URL it is about to produce.
+  void held?.then(url => URL.revokeObjectURL(url)).catch(() => undefined);
+};
+
+/**
+ * Drops anything that might have been drawn with this asset. The browser no longer resolves
+ * bindings, so it cannot know which entries used it; clearing on a substring of the raw binding
+ * would be wrong, and clearing everything is both correct and rare - once per newly-seen image.
+ */
+export const forgetRendersUsing = (): void => {
+  for (const body of cache.keys()) forget(body);
+};
+
+export const renderedKeyImageUrl = (request: RenderRequest): Promise<string> => {
+  const body = JSON.stringify(request);
   const cached = cache.get(body);
 
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    // Refresh its place in insertion order so what is on screen is not what gets evicted.
+    cache.delete(body);
+    cache.set(body, cached);
 
-  const request = fetch("/api/render-key", {
+    return cached;
+  }
+
+  const pending = fetch("/api/render-key", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
@@ -37,7 +63,15 @@ export const renderedKeyImageUrl = (state: RenderedState): Promise<string> => {
     })
     .then(blob => URL.createObjectURL(blob));
 
-  cache.set(body, request);
+  cache.set(body, pending);
 
-  return request;
+  while (cache.size > CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+
+    if (oldest.done === true) break;
+
+    forget(oldest.value);
+  }
+
+  return pending;
 };
