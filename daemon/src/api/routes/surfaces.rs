@@ -33,6 +33,10 @@ struct PanelRequest {
     #[serde(default)]
     capabilities: SurfaceCapabilities,
     controls: Vec<Control>,
+    #[serde(default)]
+    dial_colors: Vec<crate::models::rendered_state::RgbaColor>,
+    #[serde(default)]
+    dial_ring_levels: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -58,7 +62,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/events", get(events))
         .route("/api/render-key", post(render_key))
         .route("/api/panels", get(list_panels).post(create_panel))
-        .route("/api/panels/:panel_id", patch(update_panel))
+        .route(
+            "/api/panels/:panel_id",
+            patch(update_panel).delete(delete_panel),
+        )
         .route(
             "/api/panels/:panel_id/config",
             get(export_panel_configuration),
@@ -163,6 +170,12 @@ async fn add_discovered_device(
         .surfaces
         .discovered(&discovery_id)
         .ok_or_else(|| ApiError::not_found("discovered Stream Deck Studio"))?;
+    if let Some(existing) = state
+        .surfaces
+        .managed_by_endpoint(&discovered.host, discovered.port)
+    {
+        return Ok(Json(existing));
+    }
     let is_network_dock = discovered.model == "Stream Deck Network Dock";
     let surface = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
@@ -217,8 +230,6 @@ async fn update_device(
     let _ = state.persist_configuration();
     if request.is_enabled {
         studio::start_connection_monitor(state, surface.clone());
-    } else {
-        state.surfaces.deactivate(&surface_id);
     }
     Ok(Json(surface))
 }
@@ -256,6 +267,8 @@ async fn create_panel(
         layout: request.layout,
         capabilities: request.capabilities,
         controls: request.controls,
+        dial_colors: request.dial_colors,
+        dial_ring_levels: request.dial_ring_levels,
     };
     let panel = state
         .surfaces
@@ -278,6 +291,8 @@ async fn update_panel(
         layout: request.layout,
         capabilities: request.capabilities,
         controls: request.controls,
+        dial_colors: request.dial_colors,
+        dial_ring_levels: request.dial_ring_levels,
     };
     let panel = state
         .surfaces
@@ -285,6 +300,19 @@ async fn update_panel(
         .map_err(ApiError::bad_request)?;
     let _ = state.persist_configuration();
     Ok(Json(panel))
+}
+/// Devices running the panel fall back to another compatible panel, or to nothing at all when none
+/// remains.
+async fn delete_panel(
+    State(state): State<AppState>,
+    Path(panel_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    state
+        .surfaces
+        .remove_panel(&panel_id)
+        .ok_or_else(|| ApiError::not_found("panel"))?;
+    let _ = state.persist_configuration();
+    Ok(StatusCode::NO_CONTENT)
 }
 async fn export_panel_configuration(
     State(state): State<AppState>,

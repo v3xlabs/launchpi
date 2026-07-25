@@ -29,6 +29,8 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element }> = (props) =>
             layout: { columns: Number(columns()), rows: Number(rows()) },
             capabilities: capabilities(),
             controls: [],
+            dial_colors: [],
+            dial_ring_levels: [],
         });
         if (panel) {
             reset();
@@ -46,74 +48,77 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element }> = (props) =>
                 <Dialog.Overlay class="dialog-overlay" />
                 <div class="dialog-positioner">
                     <Dialog.Content class="dialog-content">
-                        <div class="dialog-heading">
+                        <div class="dialog-head">
                             <div>
-                                <Dialog.Title class="text-lg font-semibold">Create panel</Dialog.Title>
-                                <Dialog.Description class="mt-1 text-sm text-neutral-400">
-                                    Define the grid and the capabilities a device must support.
+                                <Dialog.Title class="dialog-title">Create panel</Dialog.Title>
+                                <Dialog.Description class="dialog-description">
+                                    Define the grid and the capabilities a device must support. A 16 × 2 panel gets
+                                    the Studio dials.
                                 </Dialog.Description>
                             </div>
                             <Dialog.CloseButton class="icon-button" aria-label="Close create panel dialog">
-                                <TbX />
+                                <TbX class="h-4 w-4" />
                             </Dialog.CloseButton>
                         </div>
-                        <form class="mt-6 grid gap-4" onSubmit={submit}>
-                            <label class="field-label">
-                                Panel name
-                                <input
-                                    class="field-input"
-                                    value={name()}
-                                    onInput={(event) => setName(event.currentTarget.value)}
-                                    placeholder="Playback"
-                                    required
-                                />
-                            </label>
-                            <div class="grid grid-cols-2 gap-4">
+                        <form onSubmit={submit}>
+                            <div class="dialog-body">
                                 <label class="field-label">
-                                    Columns
+                                    Panel name
                                     <input
                                         class="field-input"
-                                        type="number"
-                                        min="1"
-                                        value={columns()}
-                                        onInput={(event) => setColumns(event.currentTarget.value)}
+                                        value={name()}
+                                        onInput={(event) => setName(event.currentTarget.value)}
+                                        placeholder="Playback"
                                         required
                                     />
                                 </label>
-                                <label class="field-label">
-                                    Rows
-                                    <input
-                                        class="field-input"
-                                        type="number"
-                                        min="1"
-                                        value={rows()}
-                                        onInput={(event) => setRows(event.currentTarget.value)}
-                                        required
-                                    />
-                                </label>
-                            </div>
-                            <fieldset>
-                                <legend class="field-label">Required capabilities</legend>
-                                <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                    <For each={capabilityLabels}>
-                                        {({ key, label }) => (
-                                            <label class="capability-toggle">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={capabilities()[key]}
-                                                    onInput={(event) =>
-                                                        setCapabilities((current) => ({
-                                                            ...current,
-                                                            [key]: event.currentTarget.checked,
-                                                        }))
-                                                    }
-                                                />
-                                                {label}
-                                            </label>
-                                        )}
-                                    </For>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="field-label">
+                                        Columns
+                                        <input
+                                            class="field-input"
+                                            type="number"
+                                            min="1"
+                                            value={columns()}
+                                            onInput={(event) => setColumns(event.currentTarget.value)}
+                                            required
+                                        />
+                                    </label>
+                                    <label class="field-label">
+                                        Rows
+                                        <input
+                                            class="field-input"
+                                            type="number"
+                                            min="1"
+                                            value={rows()}
+                                            onInput={(event) => setRows(event.currentTarget.value)}
+                                            required
+                                        />
+                                    </label>
                                 </div>
-                            </fieldset>
+                                <fieldset class="grid gap-1">
+                                    <legend class="field-label">Required capabilities</legend>
+                                    <div class="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                                        <For each={capabilityLabels}>
+                                            {({ key, label }) => (
+                                                <label class="check-tile">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={capabilities()[key]}
+                                                        onInput={(event) =>
+                                                            setCapabilities((current) => ({
+                                                                ...current,
+                                                                [key]: event.currentTarget.checked,
+                                                            }))
+                                                        }
+                                                    />
+                                                    {label}
+                                                </label>
+                                            )}
+                                        </For>
+                                    </div>
+                                </fieldset>
+                            </div>
                             <div class="dialog-actions">
                                 <Dialog.CloseButton class="secondary-button" type="button">
                                     Cancel

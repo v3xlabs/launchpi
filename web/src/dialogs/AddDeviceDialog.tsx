@@ -3,6 +3,7 @@ import { Component, createSignal, For, JSX, Show } from 'solid-js';
 import { TbFillCircleX as TbX } from 'solid-icons/tb';
 
 import { DeviceKind, deviceKindLabels } from '../api/inventory';
+import { DeviceImage } from '../components/DeviceImage';
 import { useInventory } from '../context/InventoryContext';
 
 export const AddDeviceDialog: Component<{ trigger: JSX.Element }> = (props) => {
@@ -47,63 +48,76 @@ export const AddDeviceDialog: Component<{ trigger: JSX.Element }> = (props) => {
                 <Dialog.Overlay class="dialog-overlay" />
                 <div class="dialog-positioner">
                     <Dialog.Content class="dialog-content">
-                        <div class="dialog-heading">
+                        <div class="dialog-head">
                             <div>
-                                <Dialog.Title class="text-lg font-semibold">Add device by address</Dialog.Title>
-                                <Dialog.Description class="mt-1 text-sm text-neutral-400">
+                                <Dialog.Title class="dialog-title">Add device by address</Dialog.Title>
+                                <Dialog.Description class="dialog-description">
                                     Connect a device that discovery cannot reach — for example a dock on another
                                     subnet.
                                 </Dialog.Description>
                             </div>
                             <Dialog.CloseButton class="icon-button" aria-label="Close add device dialog">
-                                <TbX />
+                                <TbX class="h-4 w-4" />
                             </Dialog.CloseButton>
                         </div>
-                        <form class="mt-6 grid gap-4" onSubmit={submit}>
-                            <label class="field-label">
-                                Name
-                                <input
-                                    class="field-input"
-                                    value={name()}
-                                    onInput={(event) => setName(event.currentTarget.value)}
-                                    placeholder="Control room dock"
-                                />
-                            </label>
-                            <label class="field-label">
-                                Device type
-                                <select
-                                    class="field-input"
-                                    value={kind()}
-                                    onChange={(event) => setKind(event.currentTarget.value as DeviceKind)}
-                                >
-                                    <For each={deviceKindLabels}>
-                                        {(entry) => <option value={entry.value}>{entry.label}</option>}
-                                    </For>
-                                </select>
-                            </label>
-                            <Show when={activeHint()}>
-                                {(hint) => <p class="-mt-2 text-xs text-neutral-500">{hint()}</p>}
-                            </Show>
-                            <div class="grid grid-cols-[minmax(0,1fr)_7rem] gap-4">
+                        <form onSubmit={submit}>
+                            <div class="dialog-body">
                                 <label class="field-label">
-                                    Host
+                                    Name
                                     <input
                                         class="field-input"
-                                        value={host()}
-                                        onInput={(event) => setHost(event.currentTarget.value)}
-                                        placeholder="192.168.1.42"
-                                        required
+                                        value={name()}
+                                        onInput={(event) => setName(event.currentTarget.value)}
+                                        placeholder="Control room dock"
                                     />
                                 </label>
                                 <label class="field-label">
-                                    Port
-                                    <input
+                                    Device type
+                                    <select
                                         class="field-input"
-                                        value={port()}
-                                        onInput={(event) => setPort(event.currentTarget.value)}
-                                        inputMode="numeric"
-                                    />
+                                        value={kind()}
+                                        onChange={(event) => setKind(event.currentTarget.value as DeviceKind)}
+                                    >
+                                        <For each={deviceKindLabels}>
+                                            {(entry) => <option value={entry.value}>{entry.label}</option>}
+                                        </For>
+                                    </select>
                                 </label>
+                                <Show when={activeHint()}>
+                                    {(hint) => (
+                                        <div class="flex items-center gap-3">
+                                            <DeviceImage
+                                                model={
+                                                    deviceKindLabels.find((entry) => entry.value === kind())
+                                                        ?.label ?? ''
+                                                }
+                                                class="h-10 w-16"
+                                            />
+                                            <p class="hint">{hint()}</p>
+                                        </div>
+                                    )}
+                                </Show>
+                                <div class="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
+                                    <label class="field-label">
+                                        Host
+                                        <input
+                                            class="field-input"
+                                            value={host()}
+                                            onInput={(event) => setHost(event.currentTarget.value)}
+                                            placeholder="192.168.1.42"
+                                            required
+                                        />
+                                    </label>
+                                    <label class="field-label">
+                                        Port
+                                        <input
+                                            class="field-input"
+                                            value={port()}
+                                            onInput={(event) => setPort(event.currentTarget.value)}
+                                            inputMode="numeric"
+                                        />
+                                    </label>
+                                </div>
                             </div>
                             <div class="dialog-actions">
                                 <Dialog.CloseButton class="secondary-button" type="button">

@@ -42,6 +42,7 @@
 
             nodejs_24
             pnpm_11
+            python3
             alsa-lib
             jack2
             pkg-config

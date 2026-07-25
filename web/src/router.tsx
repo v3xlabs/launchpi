@@ -3,6 +3,7 @@ import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/
 import { DevicesPage } from './pages/DevicesPage';
 import { PanelsPage } from './pages/PanelsPage';
 import { RootLayout } from './pages/RootLayout';
+import { SupportedDevicesPage } from './pages/SupportedDevicesPage';
 
 const rootRoute = createRootRoute({ component: RootLayout });
 
@@ -18,6 +19,12 @@ const devicesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: 'devices',
     component: () => <DevicesPage />,
+});
+
+const supportedDevicesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: 'devices/supported',
+    component: () => <SupportedDevicesPage />,
 });
 
 const deviceRoute = createRoute({
@@ -47,6 +54,7 @@ const panelRoute = createRoute({
 const routeTree = rootRoute.addChildren([
     indexRoute,
     devicesRoute,
+    supportedDevicesRoute,
     deviceRoute,
     panelsRoute,
     panelRoute,

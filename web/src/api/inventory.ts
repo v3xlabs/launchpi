@@ -31,6 +31,8 @@ export type Panel = {
     layout: GridLayout;
     capabilities: Capabilities;
     controls: Control[];
+    dial_colors: RgbaColor[];
+    dial_ring_levels: number[];
 };
 export type Device = {
     surface_id: string;
@@ -56,12 +58,27 @@ export type DiscoveredDevice = {
     model: string;
 };
 export type KeyEvent = { surface_id: string; key_index: number; is_pressed: boolean };
+/** Where a dial currently stands on a connected device, as a percentage of its ring. */
+export type DialState = { surface_id: string; dial_index: number; level: number };
+export type DialPress = { surface_id: string; dial_index: number; is_pressed: boolean };
+export type LogLevel = 'input' | 'info' | 'warning';
+/** One line of a device's activity log. `sequence` is monotonic per daemon run. */
+export type LogEntry = {
+    surface_id: string;
+    sequence: number;
+    at_ms: number;
+    level: LogLevel;
+    message: string;
+};
 export type Inventory = {
     discovered: DiscoveredDevice[];
     devices: Device[];
     panels: Panel[];
     recent_key_events: KeyEvent[];
     key_states: KeyEvent[];
+    dial_states: DialState[];
+    dial_presses: DialPress[];
+    logs: LogEntry[];
 };
 
 export const capabilityKeys: Array<keyof Capabilities> = [
@@ -92,7 +109,12 @@ export const emptyInventory: Inventory = {
     panels: [],
     recent_key_events: [],
     key_states: [],
+    dial_states: [],
+    dial_presses: [],
+    logs: [],
 };
+
+export const logLevels: LogLevel[] = ['input', 'info', 'warning'];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null;
@@ -135,7 +157,11 @@ const isPanel = (value: unknown): value is Panel =>
     isGridLayout(value.layout) &&
     isCapabilities(value.capabilities) &&
     Array.isArray(value.controls) &&
-    value.controls.every(isControl);
+    value.controls.every(isControl) &&
+    (value.dial_colors === undefined ||
+        (Array.isArray(value.dial_colors) && value.dial_colors.every(isColor))) &&
+    (value.dial_ring_levels === undefined ||
+        (Array.isArray(value.dial_ring_levels) && value.dial_ring_levels.every(isNumber)));
 const isDevice = (value: unknown): value is Device =>
     isRecord(value) &&
     isString(value.surface_id) &&
@@ -163,6 +189,22 @@ const isKeyEvent = (value: unknown): value is KeyEvent =>
     isString(value.surface_id) &&
     isNumber(value.key_index) &&
     typeof value.is_pressed === 'boolean';
+const isDialState = (value: unknown): value is DialState =>
+    isRecord(value) && isString(value.surface_id) && isNumber(value.dial_index) && isNumber(value.level);
+const isDialPress = (value: unknown): value is DialPress =>
+    isRecord(value) &&
+    isString(value.surface_id) &&
+    isNumber(value.dial_index) &&
+    typeof value.is_pressed === 'boolean';
+const isLogLevel = (value: unknown): value is LogLevel =>
+    isString(value) && logLevels.some((level) => level === value);
+export const isLogEntry = (value: unknown): value is LogEntry =>
+    isRecord(value) &&
+    isString(value.surface_id) &&
+    isNumber(value.sequence) &&
+    isNumber(value.at_ms) &&
+    isLogLevel(value.level) &&
+    isString(value.message);
 const isInventory = (value: unknown): value is Inventory =>
     isRecord(value) &&
     Array.isArray(value.discovered) &&
@@ -174,7 +216,12 @@ const isInventory = (value: unknown): value is Inventory =>
     Array.isArray(value.recent_key_events) &&
     value.recent_key_events.every(isKeyEvent) &&
     (value.key_states === undefined ||
-        (Array.isArray(value.key_states) && value.key_states.every(isKeyEvent)));
+        (Array.isArray(value.key_states) && value.key_states.every(isKeyEvent))) &&
+    (value.dial_states === undefined ||
+        (Array.isArray(value.dial_states) && value.dial_states.every(isDialState))) &&
+    (value.dial_presses === undefined ||
+        (Array.isArray(value.dial_presses) && value.dial_presses.every(isDialPress))) &&
+    (value.logs === undefined || (Array.isArray(value.logs) && value.logs.every(isLogEntry)));
 
 export const deviceGridLayout = (value: unknown): GridLayout | null => {
     if (isGridLayout(value)) return value;
@@ -183,6 +230,22 @@ export const deviceGridLayout = (value: unknown): GridLayout | null => {
     if (isGridLayout(value.grid)) return value.grid;
     return null;
 };
+
+// The Studio is the only surface with rotary dials, and the daemon identifies it by this geometry.
+export const studioLayout: GridLayout = { columns: 16, rows: 2 };
+export const studioDialCount = 2;
+export const isStudioLayout = (layout: GridLayout | null): boolean =>
+    layout !== null && layout.columns === studioLayout.columns && layout.rows === studioLayout.rows;
+export const panelDialCount = (panel: Panel): number => (isStudioLayout(panel.layout) ? studioDialCount : 0);
+export const panelDial = (panel: Panel, index: number): { color: RgbaColor | null; level: number } => ({
+    color: panel.dial_colors[index] ?? null,
+    level: panel.dial_ring_levels[index] ?? 100,
+});
+
+export const layoutLabel = (layout: GridLayout | null): string =>
+    layout === null ? 'Freeform' : `${layout.columns}×${layout.rows}`;
+// Discovery names arrive as raw mDNS instance names; the service suffix is noise in the UI.
+export const displayName = (name: string): string => name.replace(/\._elg\._tcp\.local\.?/i, '').trim();
 
 export const isPanelCompatible = (device: Device, panel: Panel): boolean => {
     const layout = deviceGridLayout(device.layout);
@@ -234,14 +297,21 @@ export type CreatePanelInput = {
     layout: GridLayout;
     capabilities: Capabilities;
     controls: Control[];
+    dial_colors: RgbaColor[];
+    dial_ring_levels: number[];
 };
-export type PanelPayload = Pick<Panel, 'name' | 'layout' | 'capabilities' | 'controls'>;
+export type PanelPayload = Pick<
+    Panel,
+    'name' | 'layout' | 'capabilities' | 'controls' | 'dial_colors' | 'dial_ring_levels'
+>;
 
 export const panelPayload = (panel: Panel): PanelPayload => ({
     name: panel.name,
     layout: panel.layout,
     capabilities: panel.capabilities,
     controls: panel.controls,
+    dial_colors: panel.dial_colors,
+    dial_ring_levels: panel.dial_ring_levels,
 });
 
 export const fetchInventory = async (): Promise<Inventory> => {
@@ -249,7 +319,22 @@ export const fetchInventory = async (): Promise<Inventory> => {
     if (!response.ok) throw new Error(await getErrorMessage(response));
     const data: unknown = await response.json();
     if (!isInventory(data)) throw new Error('The daemon returned an invalid device inventory.');
-    return { ...data, key_states: data.key_states ?? [] };
+    return {
+        ...data,
+        devices: data.devices.map((device) => ({
+            ...device,
+            parent_surface_id: device.parent_surface_id ?? null,
+        })),
+        panels: data.panels.map((panel) => ({
+            ...panel,
+            dial_colors: panel.dial_colors ?? [],
+            dial_ring_levels: panel.dial_ring_levels ?? [],
+        })),
+        key_states: data.key_states ?? [],
+        dial_states: data.dial_states ?? [],
+        dial_presses: data.dial_presses ?? [],
+        logs: data.logs ?? [],
+    };
 };
 
 export const addDevice = (input: AddDeviceInput): Promise<Response> => request('/api/devices', 'POST', input);
@@ -264,6 +349,8 @@ export const assignActivePanel = (surfaceId: string, panelId: string): Promise<R
 export const createPanel = (input: CreatePanelInput): Promise<Response> => request('/api/panels', 'POST', input);
 export const updatePanel = (panelId: string, payload: PanelPayload): Promise<Response> =>
     request(`/api/panels/${encodeURIComponent(panelId)}`, 'PATCH', payload);
+export const deletePanel = (panelId: string): Promise<Response> =>
+    request(`/api/panels/${encodeURIComponent(panelId)}`, 'DELETE');
 export const saveConfiguration = (): Promise<Response> => request('/api/config', 'POST');
 export const fetchPanelConfiguration = async (panelId: string): Promise<string> => {
     const response = await fetch(`/api/panels/${encodeURIComponent(panelId)}/config`);

@@ -90,9 +90,19 @@ pub enum KeyIcon {
     Triangle,
 }
 
+/// Rotary dials on a Stream Deck Studio, and the LED segments making up one dial ring.
+/// A single detent of the knob is one segment.
+pub const DIAL_COUNT: u8 = 2;
+pub const DIAL_RING_SEGMENTS: u8 = 24;
+
 #[derive(Clone, Debug)]
 pub enum SurfaceCommand {
     RenderKey(KeyRendering),
+    RenderDialColor {
+        dial_index: u8,
+        color: RgbaColor,
+        lit_segments: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -138,12 +148,51 @@ pub struct DeviceInventory {
     pub panels: Vec<crate::models::panel::Panel>,
     pub recent_key_events: Vec<SurfaceKeyEvent>,
     pub key_states: Vec<SurfaceKeyEvent>,
+    pub dial_states: Vec<SurfaceDialState>,
+    pub dial_presses: Vec<SurfaceDialPress>,
+    pub logs: Vec<SurfaceLogEntry>,
+}
+
+/// One line of a device's activity log: what the daemon saw the device do, and what it did back.
+/// Memory only — a live diagnostic, not history worth persisting.
+#[derive(Clone, Debug, Serialize)]
+pub struct SurfaceLogEntry {
+    pub surface_id: SurfaceId,
+    /// Per-surface and monotonic, so the web can dedupe a snapshot against the live stream.
+    pub sequence: u64,
+    pub at_ms: u64,
+    pub level: SurfaceLogLevel,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceLogLevel {
+    Input,
+    Info,
+    Warning,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SurfaceKeyEvent {
     pub surface_id: SurfaceId,
     pub key_index: u8,
+    pub is_pressed: bool,
+}
+
+/// Where a dial currently stands, as a percentage of its ring. Runtime only — the panel keeps the
+/// level the dial starts from, and turning the knob never rewrites it.
+#[derive(Clone, Debug, Serialize)]
+pub struct SurfaceDialState {
+    pub surface_id: SurfaceId,
+    pub dial_index: u8,
+    pub level: u8,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SurfaceDialPress {
+    pub surface_id: SurfaceId,
+    pub dial_index: u8,
     pub is_pressed: bool,
 }
 
@@ -155,5 +204,16 @@ pub enum ServerEvent {
         key_index: u8,
         is_pressed: bool,
     },
+    DialState {
+        surface_id: SurfaceId,
+        dial_index: u8,
+        level: u8,
+    },
+    DialPress {
+        surface_id: SurfaceId,
+        dial_index: u8,
+        is_pressed: bool,
+    },
+    Log(SurfaceLogEntry),
     Changed,
 }
