@@ -1205,6 +1205,323 @@ blocks simply fails the call with `Call timed out` and no further diagnosis. v2
 added `direction: 'cancel'` and `AbortSignal` specifically because there was
 previously no way to cancel work already in flight.
 
+## External Surfaces
+
+Separately from the module API, Companion exposes a set of network services by
+which a third party can drive it, read from it, or register itself as a panel.
+These matter because they are the only route to Companion's integrations that
+does not involve running its module code.
+
+Everything below was read from `bitfocus/companion` at `main` (5.1.0-dev) and at
+tag `v5.0.2`, plus `bitfocus/companion-satellite` and
+`bitfocus/companion-surface-api`. Defaults live in
+`companion/lib/Data/UserConfig.ts`; the model is
+`shared-lib/lib/Model/UserConfigModel.ts`.
+
+### Port and service map
+
+| Service | Port | Default | Direction | Enable key | File |
+| --- | --- | --- | --- | --- | --- |
+| Web UI, HTTP API, tRPC WS | 8000 | on | in | `--admin-port` | `lib/UI/Express.ts`, `lib/UI/Handler.ts` |
+| HTTPS | 8443 | off | in | `https_enabled` | `lib/Service/Https.ts` |
+| **Satellite TCP** | **16622** | **on, not configurable** | in | none | `lib/Service/SatelliteTcp.ts` |
+| **Satellite WebSocket** | **16623** | **on, not configurable** | in | none | `lib/Service/SatelliteWebsocket.ts` |
+| TCP API | 16759 | off | in | `tcp_enabled` | `lib/Service/Tcp.ts` |
+| UDP API | 16759 | off | in | `udp_enabled` | `lib/Service/Udp.ts` |
+| OSC | 12321 | off | in | `osc_enabled` | `lib/Service/OscListener.ts` |
+| Ember+ | 9092 | off | in | `emberplus_enabled` | `lib/Service/EmberPlus.ts` |
+| Rosstalk | 7788 | off | in | `rosstalk_enabled` | `lib/Service/Rosstalk.ts` |
+| Art-Net / DMX | 6454 | off | in | `artnet_enabled` | `lib/Service/Artnet.ts` |
+| Prometheus | 8000 `/api/metrics` | off | in | `prometheus_enabled` + bearer | `lib/Data/Metrics.ts` |
+| mDNS advertise | — | on | out | `mdns_announcements_enabled` | `lib/Service/MdnsAdvertise.ts` |
+| Bitfocus Cloud | 443 → `api.bitfocus.io` | off | out | account login | `lib/Cloud/*.ts` |
+
+Two services were **removed in 5.0** and became surface modules instead: the
+Elgato Plugin websocket on 28492, and Videohub panel emulation. The migration is
+in `lib/Data/Upgrades/v9tov10.ts`. `28492` appears nowhere in the 5.x tree.
+
+### The Satellite protocol
+
+This is the one genuinely designed-for-third-parties surface, and the only
+supported way for a non-Node program to appear to Companion as a panel.
+
+Implementation: `lib/Service/Satellite/SatelliteApi.ts` (protocol),
+`SatelliteRenderUtil.ts` (bitmap encoding),
+`SatelliteSurfaceManifestSchema.ts` (zod schema for the layout manifest),
+`lib/Surface/IP/Satellite.ts` (per-surface send side). Two transports run the
+identical `ServiceSatelliteApi`: raw TCP on 16622 (since Companion 2.2) and
+WebSocket on 16623 (since 3.5, and it accepts **any** path).
+
+`API_VERSION` is `1.13.0` on main and `1.12.0` on v5.0.2 — the delta is the
+`leds` capability. There is no v2; it is one semver-versioned protocol. **No
+specification file exists in either repository**; the normative source is the
+changelog comment above `API_VERSION` in `SatelliteApi.ts`.
+
+Framing is line-based on `\n` or `\r\n`, capped at 2 MB per line or the socket
+is destroyed. The parser is `parseLineParameters()` in
+`lib/Resources/Util.ts` — quote-aware, `\` escapes, split on the first `=`, bare
+tokens becoming `true`. The serialiser emits booleans as `1`/`0`, numbers bare,
+strings always quoted **with no escaping**, and a trailing space before the
+newline.
+
+On connect Companion immediately announces itself:
+
+```text
+BEGIN CompanionVersion="5.1.0+6xxx-main" ApiVersion="1.13.0" 
+CAPS SUBSCRIPTIONS=0 NONSQUARE=1 BITMAP_FORMATS="rgb,png,webp" 
+```
+
+Client to server: `ADD-DEVICE`, `REMOVE-DEVICE`, `KEY-PRESS`, `KEY-ROTATE`,
+`PINCODE-KEY`, `SET-VARIABLE-VALUE`, `CHANGE-PAGE`, `FIRMWARE-UPDATE-INFO`,
+`ADD-SUB`, `REMOVE-SUB`, `SUB-PRESS`, `SUB-ROTATE`, `PING`, `PONG`, `QUIT`.
+Server to client: `BEGIN`, `CAPS`, `KEY-STATE`, `KEYS-CLEAR`, `BRIGHTNESS`,
+`VARIABLE-VALUE`, `LOCKED-STATE`, `DEVICE-CONFIG`, `SUB-STATE`, `PONG`, plus
+`<CMD> OK|ERROR` acknowledgements.
+
+Real wire lines:
+
+```text
+ADD-DEVICE DEVICEID="quickkeys:ABC123" LAYOUT_MANIFEST="eyJzdHlsZVBy..." PRODUCT_NAME="Quick Keys" VARIABLES="W10=" BRIGHTNESS=1 PINCODE_LOCK="FULL" SERIAL="ABC123" SERIAL_IS_UNIQUE=1 BITMAP_FORMAT="webp" 
+ADD-DEVICE OK DEVICEID="quickkeys:ABC123" 
+KEY-STATE DEVICEID="sd:XL1" CONTROLID="0/0" LOCATION="1/0/0" PRESSED=1 TYPE="BUTTON" BITMAP="data:image/webp;base64,UklGRi..." COLOR="#ff0000" TEXTCOLOR="#ffffff" TEXT="UGxheQ==" FONT_SIZE="auto" 
+KEY-PRESS DEVICEID="sd:XL1" CONTROLID="0/3" KEY="0/3" PRESSED=1 
+KEY-ROTATE DEVICEID="sd:XL1" CONTROLID="1/2" KEY="1/2" DIRECTION=1 
+BRIGHTNESS DEVICEID="sd:XL1" VALUE=100 
+LOCKED-STATE DEVICEID="sd:XL1" LOCKED=1 CHARACTER_COUNT=0 ROTATION=0 
+VARIABLE-VALUE DEVICEID="qk:A1" VARIABLE="tbar" VALUE="NTA=" 
+KEYS-CLEAR DEVICEID="sd:XL1" 
+```
+
+Four properties of this protocol are worth stating precisely.
+
+**Bitmap format is negotiated, and resolution is client-chosen.** `BITMAP_FORMAT`
+is one of `rgb`, `png`, `webp`, defaulting to `rgb` when absent or unrecognised
+(`parseSatelliteBitmapFormat`). In `rgb` mode the `BITMAP` value is bare base64
+of `w*h*3` bytes, row-major, already rotated by Companion. In `png`/`webp` mode
+it is a self-describing data URL, and the `data:` prefix is the sole
+discriminator. There is no fixed 72×72: the client declares `bitmap: {w, h}` per
+style preset in its `LAYOUT_MANIFEST` and Companion renders at exactly that size
+through `ImageResult.drawNative`, caching per shape. `CAPS NONSQUARE=1` signals
+non-square support.
+
+**Colour-and-text-only surfaces are first-class.** A style preset with no
+`bitmap` and `colors: 'hex' | 'rgb'` receives `COLOR` and `TEXTCOLOR` and no
+pixels at all; `text: true` adds base64 `TEXT`, `textStyle: true` adds
+`FONT_SIZE` — which may be the literal string `"auto"`. Presets are assigned per
+control, so a single surface can mix RGB-only pads, bitmap LCD keys and encoder
+rings. The `leds` capability added in 1.13 describes an addressable ring as
+`{segments: 24, mode: 'full-ring' | 'simple'}`, with `full-ring` defined as
+segment 0 at six o'clock increasing clockwise. `LEDS` is always raw RGB base64
+regardless of the negotiated bitmap format.
+
+**Variables exist but are user-wired, not enumerable.** `ADD-DEVICE VARIABLES=`
+carries base64 JSON declaring `{id, type: 'input' | 'output', name}`. An
+`output` becomes an *expression* config field on the surface, which the user
+fills in; Companion evaluates it and pushes `VARIABLE-VALUE` on change, debounced
+5 ms with a 20 ms cap. An `input` becomes a custom-variable target that
+`SET-VARIABLE-VALUE` writes to. You cannot ask for a module's variables — the
+user wires each one up by hand in the UI.
+
+**Subscriptions let you watch a button without being a surface.**
+`ADD-SUB SUBID=x LOCATION=page/row/column [STYLE=… | BITMAP=72 COLORS=hex TEXT=1]`
+yields `SUB-STATE` on every redraw and accepts `SUB-PRESS`/`SUB-ROTATE` upward.
+This is gated behind `satellite_subscriptions_enabled`, which **defaults to
+false**, and toggling it force-closes every satellite socket. The reference
+client reads the capability flag, logs it, and does nothing with it.
+
+Keepalive is asymmetric and aggressive: the reference client sends a bare `PING`
+every 100 ms and disconnects after 15 unacknowledged pings with a second of
+silence, while the server kills idle sockets at 5 s.
+
+### HTTP API
+
+`lib/Service/HttpApi.ts`, mounted at `/api` **with `cors()`** — deliberately
+open cross-origin. Identical between 5.0.2 and main.
+
+| Method | Path | R/W |
+| --- | --- | --- |
+| POST | `/api/location/:page/:row/:column/press \| down \| up \| rotate-left \| rotate-right` | W |
+| POST | `/api/location/:page/:row/:column/step?step=N` | W |
+| POST | `/api/location/:page/:row/:column/style` (`bgcolor`, `color`, `size`, `text`, `png64`, `alignment`) | W |
+| POST / GET | `/api/custom-variable/:name/value` | W / R |
+| GET | `/api/variable/:label/:name/value` | R |
+| POST | `/api/surfaces/rescan` | W |
+| GET | `/api/connections` → `{id, label, moduleId, enabled, status}[]` | R |
+| GET | `/api/connections/:id/status` | R |
+| POST | `/api/connections/:id/restart \| /enable \| /disable` | W |
+
+Two answers matter more than the rest.
+
+**A module variable can be read, one at a time, by name.**
+`GET /api/variable/:label/:name/value` returns `text/plain`, 404 if unknown.
+There is **no enumeration endpoint, no bulk dump, and no push**. Mirroring a
+connection's variables over HTTP means discovering the names elsewhere and
+polling N endpoints.
+
+**A rendered button image cannot be read over HTTP at all.** There is no image
+route in `HttpApi.ts`. Rendered images leave Companion over exactly three
+channels: Satellite `BITMAP`, the tRPC preview subscriptions, and Bitfocus
+Cloud. The `style` endpoint accepts `png64` as input and returns `'ok'`, with a
+`// TODO - return style` in the source.
+
+### tRPC over WebSocket
+
+Companion's own web UI talks to the backend over **tRPC v11 on a WebSocket at
+`/trpc`** on the admin port. `lib/UI/Handler.ts` creates it with
+`new WebSocketServer({ noServer: true, path: '/trpc' })`. There is no HTTP tRPC
+adapter mounted, so HTTP-batch tRPC 404s. **socket.io is entirely gone** from
+5.x; the `socketcluster-client` dependency is the Cloud client and unrelated.
+
+The wire format is friendly to a non-JS client: `initTRPC.create()` is called
+with **no transformer**, so it is plain JSON over text frames. Server keepalive
+is a WebSocket ping every 30 s with a 5 s pong deadline.
+
+Root routers (`lib/UI/TRPC.ts`): `appInfo`, `bonjour`, `actionRecorder`,
+`surfaces`, `controls`, `variables`, `customVariables`, `pages`, `importExport`,
+`logs`, `userConfig`, `instances`, `cloud`, `usageStatistics`, `preview`,
+`imageLibrary`.
+
+The subscriptions that matter:
+
+| Path | Payload |
+| --- | --- |
+| `preview.graphics.location {pageNumber,row,column}` | `{image: dataurl \| null, isUsed}` then one message per redraw |
+| `preview.graphics.controlId` / `.preset` / `.reference` | data-url PNG |
+| `surfaces.emulatorImages {id}` | bulk `{images: [{x,y,buffer}], clearCache}`, whole grid then deltas |
+| `preview.expressionStream.watchExpression` | live expression or variable-string result, pushed |
+| `variables.definitions.watch` | all variable *definitions* per label, plus deltas |
+| `instances.connections.watch` | `Record<id, ClientConnectionConfig>` plus deltas |
+| `instances.statuses.watch` | `{category, level, message}` per connection |
+| `instances.definitions.actions` / `.feedbacks` / `.presets` | full definitions plus deltas |
+
+Preview images here are **fixed 288×288 lossless PNG data URLs**
+(`PREVIEW_RENDER_SIZE = 288`), not size-negotiable — unlike Satellite.
+
+**Variable values have no subscription.** `variables.values.connection` is a
+`.query()` returning `Record<name, value>` for one label; the web UI polls it at
+1 Hz. For push you must open one `preview.expressionStream.watchExpression`
+subscription per variable with `isVariableString: true`.
+
+**There is no authentication.** Every procedure is `publicProcedure`;
+`protectedProcedure` is commented out. `lib/UI/Handler.ts` says so directly:
+
+> The tRPC api has no authentication, so without this any web page the user
+> visits could open a WebSocket to a reachable Companion and drive the entire
+> api.
+
+The only gates are an `Origin` check and a loopback DNS-rebinding guard, and a
+**missing** `Origin` header is explicitly allowed for non-browser tooling. A
+client that omits `Origin` gets the full read-write API. `http_api_enabled` does
+not gate `/trpc`. `admin_password` is compared client-side in
+`webui/src/App.tsx` and is itself readable over `userConfig.watchConfig`, along
+with `prometheus_token` and stored HTTPS private keys;
+`instances.connections.watchEdit` returns per-connection module `secrets`.
+
+The API is **internal, undocumented and unversioned** — zero occurrences of
+"trpc" under `docs/` or in the changelog, typed structurally as
+`export type AppRouter = ReturnType<typeof createTrpcRouter>`, with the web UI
+importing it by relative path into the server source. The procedures listed
+above happen to be unchanged between 5.0.2 and 5.1.0-dev; that is evidence, not
+a promise.
+
+### The other services
+
+**OSC** on UDP 12321 mirrors the HTTP API's write half —
+`/location/:page/:row/:column/{press,down,up,rotate-left,rotate-right,step}`,
+style setters, `/custom-variable/:name/value`, `/surfaces/rescan`. It is
+**write-only**; there is no reply channel.
+
+**TCP and UDP on 16759** share `lib/Service/TcpUdpApi.ts` and take
+newline-delimited text: `location P/R/C press`, `location P/R/C set-step N`,
+`surface <id> page-up`, `custom-variable <n> set-value <v>` and
+`custom-variable <n> get-value`. TCP replies `+OK`/`-ERR`; UDP does not reply.
+TCP additionally pushes an unsolicited feed on every button redraw:
+
+```json
+{"type":"bank_bg_change","page":1,"row":0,"column":2,"red":255,"green":0,"blue":0}
+```
+
+That is the only push of button state outside Satellite and tRPC, and it is
+**background colour only** — no text, no image.
+
+**Ember+** on TCP 9092 is the most under-appreciated read surface. It exposes a
+real tree: `0.2.<page>.<row>.<column>.{1,2,3,4}` gives `Pressed`, `Label`,
+`Text_Color` and `Background_Color`, all ReadWrite so a client can both watch
+and drive them; `0.3.1.<i>.1` and `0.3.2.<i>.1` expose internal and custom
+variables with real types. It pushes on change. **But module variables are
+excluded** — the change handler early-returns unless the label set contains
+`internal` or `custom` — and adding a variable forces a debounced server restart
+that drops every client.
+
+**Art-Net** on UDP 6454 reads three DMX channels as page, bank and direction.
+**Rosstalk** on TCP 7788 accepts `CC <page>:<bank>`. Both are write-only.
+
+**Prometheus** at `/api/metrics` is the only authenticated surface anywhere: a
+`nanoid(32)` bearer token compared with `timingSafeEqual`, 404 when disabled. It
+exposes operational counters, not button or variable content.
+
+**mDNS.** Since 5.0 Companion advertises two services so each SRV points at the
+right port: `_companion-satellite-tcp._tcp` on 16622 and
+`_companion-satellite-ws._tcp` on 16623. The TXT record carries `id`, `version`
+and — usefully — **`protocolVersion`, the Satellite `API_VERSION`**, so a client
+can screen for compatibility before connecting. Re-announced every 60 s. In the
+other direction `lib/Surface/Discovery.ts` browses `_companion-satellite._tcp`,
+which is Satellite advertising its own REST port 9999, and Companion POSTs
+`{host, port: 16622}` to `http://<sat>:9999/api/config` to point it at itself.
+
+### What can actually be read out
+
+| Want | Satellite | HTTP | TCP/UDP | Ember+ | tRPC WS |
+| --- | --- | --- | --- | --- | --- |
+| Connection list and status | ✗ | ✓ poll | ✗ | ✗ | ✓ push |
+| Action / feedback definitions | ✗ | ✗ | ✗ | ✗ | **✓ push, only here** |
+| Every module variable's value | ~ user-wired expressions only | ~ one at a time by name, no enumeration | ~ custom variables only | ~ internal and custom only | ✓ names pushed, values polled or one subscription each |
+| Rendered image of every button | **✓ push, size negotiable** | ✗ | ~ background colour only | ~ colours and label | ✓ push, fixed 288 px |
+| Preset list | ✗ | ✗ | ✗ | ✗ | **✓ push, only here** |
+
+Stated bluntly: **action definitions, feedback definitions and presets are
+obtainable only over the undocumented tRPC WebSocket.** Rendered images are best
+obtained over Satellite, which is purpose-built and lets the consumer choose the
+resolution. A complete live mirror of module variables has no good answer
+anywhere in the system.
+
+### Registering as a surface
+
+Four mechanisms exist. Only one is usable by a non-Node program.
+
+1. **Satellite** — versioned, documented, transport- and language-agnostic. The
+   surface appears in Companion's Surfaces table like local hardware and gets
+   brightness, lock, pincode, page-change and user-editable config fields.
+2. **`@companion-surface/base`** — `bitfocus/companion-surface-api`. A
+   TypeScript in-process interface; `engines` is `node ^22.21 || ^26.5` and the
+   manifest's only legal `runtime.type` values are `node22` and `node26`.
+   Companion loads these in-process; Satellite spawns them as Node child
+   processes over a bespoke, undocumented, unversioned IPC. **Not reachable from
+   a non-Node host** without shipping a Node shim, at which point one is
+   reimplementing Satellite.
+3. **Elgato Plugin protocol on 28492** — removed in 5.0.
+4. **Videohub panel emulation** — now a surface module, and a Blackmagic control
+   protocol rather than a general surface API.
+
+### Security posture
+
+There is effectively none, and the project says so. `docs/user-guide/security.md`:
+
+> Although none of these features makes an installation secure, they can help to
+> stop casual browsers.
+
+The HTTP API has no token and is on by default with permissive CORS. Satellite
+has no authentication, no TLS, no allowlist, and **no way to disable it or move
+its port**. The tRPC WebSocket has no authentication and leaks `admin_password`,
+`prometheus_token`, HTTPS private keys and per-connection module secrets. TCP,
+UDP, OSC, Ember+, Rosstalk and Art-Net have no auth but are all off by default.
+Prometheus is the sole authenticated surface. `admin_lockout` is a client-side
+check and not a control. Only two operations are genuinely restricted to local
+clients: custom module bundle import and udev rule application.
+
+A reachable Companion should be treated as fully controllable by anyone on the
+network.
+
 ## Known Pain Points
 
 These are the design problems visible in the code and, in several cases,
@@ -1245,6 +1562,20 @@ acknowledged by Bitfocus in doc comments or changelogs.
    doing network I/O in `init` blocks its own `configUpdated` and `destroy`.
 10. **Respawn is the entire crash story.** No checkpoint, no staleness marking,
     no way for a button to say "this value is from a dead connection".
+11. **The rich read surface is the undocumented one.** Everything a third party
+    would actually want — action and feedback definitions, presets, variable
+    definitions, per-button renders — is available only over an internal,
+    unversioned tRPC WebSocket with no authentication, while the documented
+    HTTP API can read exactly one variable at a time by name and no images at
+    all.
+12. **No authentication anywhere that matters.** Satellite cannot be disabled or
+    moved off 16622, tRPC leaks `admin_password` and per-connection module
+    secrets to any client that omits an `Origin` header, and `admin_lockout` is
+    a client-side string comparison.
+13. **Two protocol families for one job.** Satellite exists to let a foreign
+    panel act as a surface; `@companion-surface/base` exists to let a Node
+    package act as a surface. They overlap heavily, and Satellite itself has to
+    host the latter as child processes over yet another bespoke IPC.
 
 ## What Companion Gets Right
 
@@ -1280,6 +1611,10 @@ Stated plainly, because these are the parts worth learning from.
 - [bitfocus/companion-module-tools](https://github.com/bitfocus/companion-module-tools)
 - [bitfocus/companion-module-generic-osc](https://github.com/bitfocus/companion-module-generic-osc)
 - [bitfocus/companion-module-template-ts](https://github.com/bitfocus/companion-module-template-ts)
+- [bitfocus/companion-satellite](https://github.com/bitfocus/companion-satellite)
+- [bitfocus/companion-surface-api](https://github.com/bitfocus/companion-surface-api)
 - [The Companion Module Libraries](https://companion.free/for-developers/module-development/module-lifecycle/companion-module-library/)
 - [Module API Changelog](https://companion.free/for-developers/module-development/api-changes/)
 - [Module packaging](https://companion.free/for-developers/module-development/module-lifecycle/module-packaging)
+- [Satellite API](https://companion.free/for-developers/Satellite-API/)
+- [Surface Developers' Guide](https://companion.free/for-developers/surface-development/)
