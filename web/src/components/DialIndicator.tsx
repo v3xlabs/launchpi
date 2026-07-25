@@ -54,9 +54,9 @@ export const DialIndicator: Component<DialIndicatorProperties> = (properties) =>
       class="dial-ring"
       data-pressed={properties.isPressed === true}
       style={{ "background": ringBackground(hex(), level()), "--dial-color": hex() }}
-      title={`Dial ${properties.index + 1} · ${level()}% · ${litRingSegments(level())}/${ringSegments} segments · ${
+      title={`Dial ${properties.index + 1} - ${level()}% - ${litRingSegments(level())}/${ringSegments} segments - ${
         properties.color === null ? "no colour" : hex()
-      }${properties.isPressed === true ? " · pressed" : ""}`}
+      }${properties.isPressed === true ? " - pressed" : ""}`}
     >
       <div class="dial-hub" />
     </div>

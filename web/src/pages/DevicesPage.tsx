@@ -89,9 +89,9 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
             <h1 class="page-title mt-1">{displayName(properties.device.name)}</h1>
             <div class="meta-line">
               <StatusLabel status={properties.device.status} />
-              <span class="meta-sep">·</span>
+              <span class="meta-sep">-</span>
               <span>{layoutLabel(layout())}</span>
-              <span class="meta-sep">·</span>
+              <span class="meta-sep">-</span>
               <span class="mono">
                 {properties.device.host}
                 :
@@ -181,8 +181,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
                       {panel => (
                         <option value={panel.panel_id}>
                           {panel.name}
-                          {" "}
-                          ·
+                          {" - "}
                           {layoutLabel(panel.layout)}
                         </option>
                       )}
@@ -240,7 +239,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
               <DetailRow label="Model" value={properties.device.model} />
               <DetailRow label="Host" value={properties.device.host} />
               <DetailRow label="Port" value={String(properties.device.port)} />
-              <DetailRow label="Serial" value={properties.device.serial_number ?? "—"} />
+              <DetailRow label="Serial" value={properties.device.serial_number ?? "-"} />
               <DetailRow label="Layout" value={layoutLabel(layout())} />
               <DetailRow label="Enabled" value={properties.device.is_enabled ? "yes" : "no"} />
             </div>
@@ -346,8 +345,7 @@ const DeviceRow: Component<{ device: Device; isChild?: boolean; }> = (properties
           <span class="row-title block">{displayName(properties.device.name)}</span>
           <span class="row-meta block">
             {properties.device.model}
-            {" "}
-            ·
+            {" - "}
             {properties.device.host}
             :
             {properties.device.port}
@@ -388,8 +386,7 @@ const DiscoveredRow: Component<{ discovered: DiscoveredDevice; }> = (properties)
         <span class="row-title block">{displayName(properties.discovered.name)}</span>
         <span class="row-meta block">
           {properties.discovered.model}
-          {" "}
-          ·
+          {" - "}
           {properties.discovered.host}
           :
           {properties.discovered.port}

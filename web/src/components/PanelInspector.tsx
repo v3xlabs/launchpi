@@ -218,6 +218,7 @@ const DialEditor: Component<{
       <div class="card-head">
         <p class="card-title">
           Dial
+          {" "}
           {properties.index + 1}
         </p>
         <span class="chip chip-muted">{properties.index === 0 ? "left" : "right"}</span>
@@ -229,10 +230,9 @@ const DialEditor: Component<{
           </div>
           <p class="mono">
             {toHex(dial().color, "unset")}
-            {" "}
-            ·
+            {" - "}
             {dial().level}
-            % ·
+            % -
             {" "}
             {litRingSegments(dial().level)}
             /
@@ -248,7 +248,7 @@ const DialEditor: Component<{
           onChange={color => properties.onColorChange(properties.index, color)}
         />
         <label class="field-label">
-          Ring level ·
+          Ring level -
           {" "}
           {dial().level}
           %
@@ -279,7 +279,7 @@ type PanelInspectorProperties = {
 };
 
 export const PanelInspector: Component<PanelInspectorProperties> = (properties) => {
-  // Guard on the selection object, not the index — dial 0 is a falsy value.
+  // Guard on the selection object, not the index - dial 0 is a falsy value.
   const dialSelection = () => (properties.selection?.kind === "dial" ? properties.selection : null);
 
   return (

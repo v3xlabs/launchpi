@@ -246,7 +246,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     keys assigned
                   </span>
                   <Show when={panelDialCount(panel()) > 0}>
-                    <span class="meta-sep">·</span>
+                    <span class="meta-sep">-</span>
                     <span>
                       {panelDialCount(panel())}
                       {" "}
@@ -254,7 +254,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     </span>
                   </Show>
                   <Show when={draft.dirty}>
-                    <span class="meta-sep">·</span>
+                    <span class="meta-sep">-</span>
                     <span class="text-amber-400">unsaved changes</span>
                   </Show>
                 </div>
@@ -275,7 +275,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                   disabled={store.isSaving() || !draft.dirty}
                 >
                   <TbCheck class="h-3.5 w-3.5" />
-                  {store.isSaving() ? "Saving…" : "Save panel"}
+                  {store.isSaving() ? "Saving..." : "Save panel"}
                 </button>
                 <DeletePanelDialog
                   panel={panel()}
@@ -303,7 +303,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     {" "}
                     <strong>{clip().name}</strong>
                     {" "}
-                    — click an empty key to paste, Esc to
+                    - click an empty key to paste, Esc to
                     clear.
                   </span>
                   <button
@@ -324,8 +324,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     <p class="card-title">Surface</p>
                     <span class="chip chip-muted">
                       {panel().layout.columns}
-                      {" "}
-                      ×
+                      {" x "}
                       {panel().layout.rows}
                     </span>
                   </div>
@@ -387,8 +386,7 @@ const AssignedDeviceRow: Component<{ device: Device; }> = properties => (
       <span class="row-title block">{displayName(properties.device.name)}</span>
       <span class="row-meta block">
         {properties.device.model}
-        {" "}
-        ·
+        {" - "}
         {properties.device.host}
       </span>
     </span>

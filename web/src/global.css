@@ -102,7 +102,7 @@ button, input, select, textarea { font: inherit; }
 .key-selected::after { @apply border-blue-400; }
 .key-pressed::after { @apply border-emerald-400; }
 
-/* Dials — sized by their container, never by themselves */
+/* Dials - sized by their container, never by themselves */
 .dial-ring { @apply grid w-full place-items-center rounded-full; aspect-ratio: 1; }
 /* Same live-press signal as a held key. */
 .dial-ring[data-pressed="true"] { box-shadow: 0 0 0 0.125rem theme(colors.emerald.400); }

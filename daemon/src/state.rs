@@ -1071,7 +1071,7 @@ fn segments_from_percent(percent: u8) -> u8 {
 }
 
 /// Rounds up, so a level reported to the API converts back to the same segment count the device is
-/// lighting — one lit segment reads as 5%, not 4% (which would floor back to zero).
+/// lighting - one lit segment reads as 5%, not 4% (which would floor back to zero).
 fn percent_from_segments(lit_segments: u8) -> u8 {
     let segments = u16::from(lit_segments.min(DIAL_RING_SEGMENTS));
     u8::try_from((segments * 100).div_ceil(u16::from(DIAL_RING_SEGMENTS))).unwrap_or(100)

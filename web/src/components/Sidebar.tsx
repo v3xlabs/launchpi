@@ -14,8 +14,7 @@ const DeviceItem: Component<{ device: Device; }> = properties => (
       <span class="nav-item-title block">{displayName(properties.device.name)}</span>
       <span class="nav-item-meta block">
         {layoutLabel(deviceGridLayout(properties.device.layout))}
-        {" "}
-        ·
+        {" - "}
         {properties.device.model}
       </span>
     </span>

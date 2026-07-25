@@ -248,7 +248,7 @@ export const panelDial = (panel: Panel, index: number): { color: RgbaColor | nul
 });
 
 export const layoutLabel = (layout: GridLayout | null): string =>
-  (layout === null ? "Freeform" : `${layout.columns}×${layout.rows}`);
+  (layout === null ? "Freeform" : `${layout.columns}x${layout.rows}`);
 // Discovery names arrive as raw mDNS instance names; the service suffix is noise in the UI.
 export const displayName = (name: string): string => name.replace(/\._elg\._tcp\.local\.?/i, "").trim();
 
@@ -287,11 +287,11 @@ const request = async (
 
 export type DeviceKind = "studio" | "network_dock";
 export const deviceKindLabels: Array<{ value: DeviceKind; label: string; hint: string; }> = [
-  { value: "studio", label: "Stream Deck Studio", hint: "16 × 2 keys, connects directly over the network." },
+  { value: "studio", label: "Stream Deck Studio", hint: "16 x 2 keys, connects directly over the network." },
   {
     value: "network_dock",
     label: "Stream Deck Network Dock",
-    hint: "Keyless dock — the attached Stream Deck appears as a child device once connected.",
+    hint: "Keyless dock - the attached Stream Deck appears as a child device once connected.",
   },
 ];
 export type AddDeviceInput = {

@@ -58,8 +58,7 @@ export const DeletePanelDialog: Component<{
                 </span>
                 <span class="chip chip-muted">
                   {properties.panel.layout.columns}
-                  {" "}
-                  ×
+                  {" x "}
                   {properties.panel.layout.rows}
                 </span>
               </div>
@@ -91,7 +90,7 @@ export const DeletePanelDialog: Component<{
                 onClick={() => void confirm()}
                 disabled={store.isSaving()}
               >
-                {store.isSaving() ? "Deleting…" : "Delete panel"}
+                {store.isSaving() ? "Deleting..." : "Delete panel"}
               </button>
             </div>
           </AlertDialog.Content>

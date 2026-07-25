@@ -67,7 +67,7 @@ const DIAL_KNOB_COMMAND: u8 = 0x10;
 /// Header plus one byte per dial: the last dial sits at `5 + DIAL_COUNT - 1`.
 const DIAL_REPORT_SIZE: usize = 5 + DIAL_COUNT as usize;
 const CHILD_QUERY_INTERVAL: Duration = Duration::from_secs(5);
-/// Replies the read loop owes the device — acknowledgements and probes, never renders.
+/// Replies the read loop owes the device - acknowledgements and probes, never renders.
 const REPLY_QUEUE_SIZE: usize = 8;
 
 const KEY_FONT_BYTES: &[u8] = include_bytes!("../../assets/DejaVuSans.ttf");
@@ -151,7 +151,7 @@ struct PendingRenders {
     keys: BTreeMap<u8, KeyRendering>,
     dials: BTreeMap<u8, (RgbaColor, u8)>,
     /// Knob colours already on the device. The ring report carries the level, so a spin at a fixed
-    /// colour needs no knob report at all — half the bytes per detent.
+    /// colour needs no knob report at all - half the bytes per detent.
     knob_colors: BTreeMap<u8, RgbaColor>,
 }
 
@@ -587,7 +587,7 @@ async fn read_transport_packet<R: AsyncRead + Unpin>(
         handle_cora_packet(state, surface_id, stream, stats, replies).await
     } else {
         // Once a session speaks Cora every packet carries the magic. A packet that does not means
-        // we are reading from the middle of one — the stream is out of frame.
+        // we are reading from the middle of one - the stream is out of frame.
         if negotiated == Some(TransportMode::Cora) {
             stats.suspicious_reads += 1;
             warn!(
@@ -700,7 +700,7 @@ async fn handle_cora_packet<R: AsyncRead + Unpin>(
 
     if payload_size > MAX_CORA_PAYLOAD_SIZE {
         return Err(format!(
-            "Cora payload of {payload_size} bytes exceeded {MAX_CORA_PAYLOAD_SIZE} (flags {flags:#06x}, operation {hid_operation:#04x}, message {message_id}) — the read stream is out of frame"
+            "Cora payload of {payload_size} bytes exceeded {MAX_CORA_PAYLOAD_SIZE} (flags {flags:#06x}, operation {hid_operation:#04x}, message {message_id}) - the read stream is out of frame"
         ));
     }
     // Real payloads are one HID report; anything far bigger means we parsed a header out of frame.
@@ -1086,7 +1086,7 @@ fn record_key_events(
             );
         }
         // An input report the daemon has no handler for. The device does not need a reply, so this
-        // is safe to skip — but it is exactly what to look at when the hardware misbehaves.
+        // is safe to skip - but it is exactly what to look at when the hardware misbehaves.
         report => {
             stats.unhandled_reports += 1;
             debug!(
@@ -1477,7 +1477,7 @@ mod tests {
 
         let wire = flush(&mut pending).await;
 
-        // One knob colour report, one ring report — not one pair per detent.
+        // One knob colour report, one ring report - not one pair per detent.
         assert_eq!(wire.len(), 2 * LEGACY_RESPONSE_SIZE);
         let ring = &wire[LEGACY_RESPONSE_SIZE..];
         assert_eq!(ring[1], DIAL_RING_COMMAND);

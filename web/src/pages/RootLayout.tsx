@@ -68,7 +68,7 @@ export const RootLayout: Component = () => {
             )}
           </Show>
           <Show when={store.isLoading()}>
-            <p class="px-4 pt-4 text-xs text-neutral-500 sm:px-6">Loading workspace…</p>
+            <p class="px-4 pt-4 text-xs text-neutral-500 sm:px-6">Loading workspace...</p>
           </Show>
           <Outlet />
         </main>

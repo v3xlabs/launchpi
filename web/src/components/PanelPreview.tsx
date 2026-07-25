@@ -1,3 +1,4 @@
+import { TbFillClipboard as TbCopy } from "solid-icons/tb";
 import { Component, For, JSX, Show } from "solid-js";
 
 import { Control, Panel, panelDial, panelDialCount, RenderedState } from "../api/inventory";
@@ -182,7 +183,9 @@ export const PanelStage: Component<PanelStageProperties> = properties => (
             >
               <Show
                 when={state()}
-                fallback={<span class="text-xs">{properties.pasteMode ? "⎘" : "+"}</span>}
+                fallback={properties.pasteMode
+                  ? <TbCopy class="h-3 w-3" />
+                  : <span class="text-xs">+</span>}
               >
                 {active => <KeyImage state={active()} />}
               </Show>

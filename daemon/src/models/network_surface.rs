@@ -154,7 +154,7 @@ pub struct DeviceInventory {
 }
 
 /// One line of a device's activity log: what the daemon saw the device do, and what it did back.
-/// Memory only — a live diagnostic, not history worth persisting.
+/// Memory only - a live diagnostic, not history worth persisting.
 #[derive(Clone, Debug, Serialize)]
 pub struct SurfaceLogEntry {
     pub surface_id: SurfaceId,
@@ -180,7 +180,7 @@ pub struct SurfaceKeyEvent {
     pub is_pressed: bool,
 }
 
-/// Where a dial currently stands, as a percentage of its ring. Runtime only — the panel keeps the
+/// Where a dial currently stands, as a percentage of its ring. Runtime only - the panel keeps the
 /// level the dial starts from, and turning the knob never rewrites it.
 #[derive(Clone, Debug, Serialize)]
 pub struct SurfaceDialState {

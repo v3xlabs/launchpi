@@ -53,7 +53,7 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
               <div>
                 <Dialog.Title class="dialog-title">Create panel</Dialog.Title>
                 <Dialog.Description class="dialog-description">
-                  Define the grid and the capabilities a device must support. A 16 × 2 panel gets
+                  Define the grid and the capabilities a device must support. A 16 x 2 panel gets
                   the Studio dials.
                 </Dialog.Description>
               </div>
@@ -124,7 +124,7 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                   Cancel
                 </Dialog.CloseButton>
                 <button class="primary-button" type="submit" disabled={store.isSaving()}>
-                  {store.isSaving() ? "Creating…" : "Create panel"}
+                  {store.isSaving() ? "Creating..." : "Create panel"}
                 </button>
               </div>
             </form>

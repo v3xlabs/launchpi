@@ -23,7 +23,7 @@ const connectionLabels: Record<Connection, string> = {
 const supportedDevices: SupportedDevice[] = [
   {
     model: "Stream Deck Studio",
-    grid: "16 × 2",
+    grid: "16 x 2",
     extras: "2 dials",
     connection: "network",
     isImplemented: true,
@@ -35,22 +35,22 @@ const supportedDevices: SupportedDevice[] = [
     connection: "network",
     isImplemented: true,
   },
-  { model: "Stream Deck XL", grid: "8 × 4", extras: null, connection: "dock", isImplemented: true },
-  { model: "Stream Deck Mk.2", grid: "5 × 3", extras: null, connection: "dock", isImplemented: false },
-  { model: "Stream Deck Mini", grid: "3 × 2", extras: null, connection: "dock", isImplemented: false },
+  { model: "Stream Deck XL", grid: "8 x 4", extras: null, connection: "dock", isImplemented: true },
+  { model: "Stream Deck Mk.2", grid: "5 x 3", extras: null, connection: "dock", isImplemented: false },
+  { model: "Stream Deck Mini", grid: "3 x 2", extras: null, connection: "dock", isImplemented: false },
   {
     model: "Stream Deck Plus",
-    grid: "4 × 2",
+    grid: "4 x 2",
     extras: "4 dials, touch strip",
     connection: "dock",
     isImplemented: false,
   },
-  { model: "Stream Deck Neo", grid: "4 × 2", extras: "2 touch keys", connection: "dock", isImplemented: false },
+  { model: "Stream Deck Neo", grid: "4 x 2", extras: "2 touch keys", connection: "dock", isImplemented: false },
   { model: "Stream Deck Pedal", grid: "3 pedals", extras: null, connection: "usb-midi", isImplemented: false },
-  { model: "Launchpad X", grid: "8 × 8", extras: null, connection: "usb-midi", isImplemented: false },
-  { model: "Launchpad Pro Mk3", grid: "8 × 8", extras: null, connection: "usb-midi", isImplemented: false },
-  { model: "Launchpad Mini Mk3", grid: "8 × 8", extras: null, connection: "usb-midi", isImplemented: false },
-  { model: "Launchpad Mini Mk1", grid: "8 × 8", extras: null, connection: "usb-midi", isImplemented: false },
+  { model: "Launchpad X", grid: "8 x 8", extras: null, connection: "usb-midi", isImplemented: false },
+  { model: "Launchpad Pro Mk3", grid: "8 x 8", extras: null, connection: "usb-midi", isImplemented: false },
+  { model: "Launchpad Mini Mk3", grid: "8 x 8", extras: null, connection: "usb-midi", isImplemented: false },
+  { model: "Launchpad Mini Mk1", grid: "8 x 8", extras: null, connection: "usb-midi", isImplemented: false },
 ];
 
 const DeviceTile: Component<{ device: SupportedDevice; }> = properties => (
@@ -63,8 +63,7 @@ const DeviceTile: Component<{ device: SupportedDevice; }> = properties => (
         <Show when={properties.device.extras}>
           {extras => (
             <>
-              {" "}
-              ·
+              {" - "}
               {extras()}
             </>
           )}

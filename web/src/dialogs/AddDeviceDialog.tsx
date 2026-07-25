@@ -53,7 +53,7 @@ export const AddDeviceDialog: Component<{ trigger: JSX.Element; }> = (properties
               <div>
                 <Dialog.Title class="dialog-title">Add device by address</Dialog.Title>
                 <Dialog.Description class="dialog-description">
-                  Connect a device that discovery cannot reach — for example a dock on another
+                  Connect a device that discovery cannot reach - for example a dock on another
                   subnet.
                 </Dialog.Description>
               </div>
@@ -125,7 +125,7 @@ export const AddDeviceDialog: Component<{ trigger: JSX.Element; }> = (properties
                   Cancel
                 </Dialog.CloseButton>
                 <button class="primary-button" type="submit" disabled={store.isSaving()}>
-                  {store.isSaving() ? "Adding…" : "Add device"}
+                  {store.isSaving() ? "Adding..." : "Add device"}
                 </button>
               </div>
             </form>
