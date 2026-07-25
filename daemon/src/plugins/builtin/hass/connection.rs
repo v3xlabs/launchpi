@@ -59,6 +59,52 @@ fn fields_for(domain: &str) -> &'static [&'static str] {
     }
 }
 
+/// Domains in the order someone is likely to want them on a key. Anything unlisted sorts after,
+/// which keeps the hundreds of `update.*` and `button.*` entities an installation accumulates from
+/// crowding out the lights.
+const DOMAIN_ORDER: &[&str] = &[
+    "light",
+    "switch",
+    "input_boolean",
+    "media_player",
+    "climate",
+    "cover",
+    "lock",
+    "fan",
+    "binary_sensor",
+    "sensor",
+    "scene",
+    "script",
+];
+
+/// How well an entity answers the query; lower is better, `None` means it does not match.
+///
+/// A match at the start of the friendly name or the id beats one buried in the middle, so typing
+/// "light" offers `light.kitchen` before the automation called "Auto Shower Lights".
+fn score(needle: &str, entity_id: &str, entry: &CatalogueEntry) -> Option<(usize, usize)> {
+    let domain_rank = DOMAIN_ORDER
+        .iter()
+        .position(|domain| *domain == entry.domain)
+        .unwrap_or(DOMAIN_ORDER.len());
+
+    if needle.is_empty() {
+        return Some((0, domain_rank));
+    }
+
+    let name = entry
+        .friendly_name
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    let id = entity_id.to_lowercase();
+    let best = [name.find(needle), id.find(needle)]
+        .into_iter()
+        .flatten()
+        .min()?;
+
+    Some((best, domain_rank))
+}
+
 pub struct Shared {
     pub bindings: RwLock<Vec<ValueBinding>>,
     /// Every entity the seed reported, so the UI can offer real names instead of asking someone to
@@ -132,24 +178,29 @@ impl Shared {
     }
 
     /// Matched on the id and the friendly name together, because people search for "kitchen"
-    /// whichever of the two they happen to remember.
+    /// whichever of the two they happen to remember, and ordered by how well each matched.
+    ///
+    /// Ordering is not a nicety here: an installation has hundreds of entities and the caller keeps
+    /// only the first page, so anything ranked badly is not merely further down, it is gone.
     fn matching(&self, query: &str) -> std::vec::IntoIter<(String, CatalogueEntry)> {
         let needle = query.trim().to_lowercase();
         let catalogue = self.catalogue.read().unwrap();
-        let matched: Vec<_> = catalogue
+        let mut matched: Vec<_> = catalogue
             .iter()
-            .filter(|(entity_id, entry)| {
-                needle.is_empty()
-                    || entity_id.to_lowercase().contains(&needle)
-                    || entry
-                        .friendly_name
-                        .as_deref()
-                        .is_some_and(|name| name.to_lowercase().contains(&needle))
+            .filter_map(|(entity_id, entry)| {
+                score(&needle, entity_id, entry)
+                    .map(|score| (score, entity_id.clone(), entry.clone()))
             })
-            .map(|(entity_id, entry)| (entity_id.clone(), entry.clone()))
             .collect();
 
-        matched.into_iter()
+        // Stable, so entities that score alike stay in the catalogue's alphabetical order.
+        matched.sort_by_key(|(score, _, _)| *score);
+
+        matched
+            .into_iter()
+            .map(|(_, entity_id, entry)| (entity_id, entry))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     /// Replaces the watched set. Names that do not read like an entity are dropped here, so the
@@ -412,5 +463,94 @@ where
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn catalogued(entries: &[(&str, &str)]) -> Shared {
+        let (commands, _receiver) = mpsc::channel(1);
+        let shared = Shared::new(commands);
+        let mut catalogue = shared.catalogue.write().unwrap();
+
+        for (entity_id, friendly_name) in entries {
+            catalogue.insert(
+                (*entity_id).to_string(),
+                CatalogueEntry {
+                    friendly_name: Some((*friendly_name).to_string()),
+                    domain: entity_id.split('.').next().unwrap_or_default().to_string(),
+                },
+            );
+        }
+        drop(catalogue);
+
+        shared
+    }
+
+    fn fixture() -> Shared {
+        catalogued(&[
+            ("automation.auto_shower_lights", "Auto Shower Lights"),
+            ("automation.kitchen_off", "Kitchen Elongated Off"),
+            ("light.kitchen_ceiling", "Kitchen Ceiling"),
+            ("update.esphome_kitchen", "Kitchen ESPHome Update"),
+        ])
+    }
+
+    /// The caller keeps only the first page, so an entity ranked badly is not lower down, it is
+    /// absent. Typing the domain has to offer the domain.
+    #[test]
+    fn ranks_a_light_above_an_automation_merely_named_lights() {
+        let options = fixture().entity_options("light");
+
+        assert_eq!(
+            options.first().map(|option| option.value.as_str()),
+            Some("light.kitchen_ceiling")
+        );
+    }
+
+    /// Every one of these matches its friendly name at position zero, so the domain decides.
+    #[test]
+    fn ranks_equally_good_matches_by_domain() {
+        let ordered: Vec<_> = fixture()
+            .entity_options("kitchen")
+            .into_iter()
+            .map(|option| option.value)
+            .collect();
+
+        assert_eq!(
+            ordered,
+            [
+                "light.kitchen_ceiling",
+                "automation.kitchen_off",
+                "update.esphome_kitchen",
+            ]
+        );
+    }
+
+    #[test]
+    fn matches_an_id_that_the_friendly_name_does_not_mention() {
+        let options = fixture().entity_options("esphome");
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].value, "update.esphome_kitchen");
+    }
+
+    /// A light is worth binding a colour to; an automation is not.
+    #[test]
+    fn offers_only_the_fields_a_domain_reports() {
+        let options = fixture().value_options("kitchen_ceiling");
+        let values: Vec<_> = options.iter().map(|option| option.value.as_str()).collect();
+
+        assert_eq!(
+            values,
+            [
+                "light.kitchen_ceiling.state",
+                "light.kitchen_ceiling.on",
+                "light.kitchen_ceiling.color",
+                "light.kitchen_ceiling.brightness_pct",
+            ]
+        );
     }
 }

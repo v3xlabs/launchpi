@@ -46,6 +46,42 @@ pub const SUGGESTION_SOURCE: &str = "values";
 /// Enough to scroll, few enough to render. Anything longer is a sign the query needs narrowing.
 const SUGGESTION_LIMIT: usize = 50;
 
+/// Takes from each source in turn until the page is full, so no one instance can crowd out the
+/// others.
+///
+/// Sorting the union instead would rank by name, which is not relevance at all: an instance whose
+/// id sorts early would take every slot and the entity actually being searched for would fall off
+/// the end. Each source arrives already ranked by whoever knows how to rank it, and this preserves
+/// that while guaranteeing every source is represented.
+fn interleave(sources: Vec<Vec<LookupOption>>, limit: usize) -> Vec<LookupOption> {
+    let mut taken: Vec<LookupOption> = Vec::new();
+    let mut round = 0;
+
+    while taken.len() < limit {
+        let mut offered_any = false;
+
+        for source in &sources {
+            let Some(option) = source.get(round) else {
+                continue;
+            };
+            offered_any = true;
+            if !taken.iter().any(|existing| existing.value == option.value) {
+                taken.push(option.clone());
+                if taken.len() == limit {
+                    return taken;
+                }
+            }
+        }
+
+        if !offered_any {
+            break;
+        }
+        round += 1;
+    }
+
+    taken
+}
+
 /// A gesture that reached the daemon. Deliberately not the `ServerEvent` broadcast, which drops
 /// messages when a receiver lags: a dropped render is cosmetic, a dropped action is a light that
 /// did not turn on.
@@ -273,12 +309,15 @@ impl PluginEngine {
     /// published, plus what each running instance says it could publish. The second half matters
     /// because a plugin only publishes what something already watches, so a fresh installation
     /// would otherwise suggest nothing at all.
+    ///
+    /// Only the first page is returned, so which suggestions survive is the whole feature: see
+    /// [`interleave`].
     pub async fn suggest_references(&self, query: &str) -> Vec<LookupOption> {
         let needle = query.trim().to_lowercase();
         let matches =
             |haystack: &str| needle.is_empty() || haystack.to_lowercase().contains(&needle);
 
-        let mut suggestions: Vec<LookupOption> = self
+        let mut live: Vec<LookupOption> = self
             .variables
             .snapshot()
             .into_iter()
@@ -291,7 +330,9 @@ impl PluginEngine {
                 group: Some(reference.integration_id.0),
             })
             .collect();
+        live.sort_by(|left, right| left.value.cmp(&right.value));
 
+        let mut sources = vec![live];
         let instances: Vec<IntegrationId> =
             self.instances.read().unwrap().keys().cloned().collect();
         for integration_id in instances {
@@ -301,24 +342,21 @@ impl PluginEngine {
             let Ok(offered) = plugin.lookup(SUGGESTION_SOURCE, &needle).await else {
                 continue;
             };
-            for option in offered {
-                let reference = format!("$({}:{})", integration_id.0, option.value);
-                if suggestions
-                    .iter()
-                    .any(|existing| existing.value == reference)
-                {
-                    continue;
-                }
-                suggestions.push(LookupOption {
-                    value: reference,
-                    label: option.label,
-                    group: Some(integration_id.0.clone()),
-                });
-            }
+            // Kept in the order the plugin gave them: it ranked them by how well each answers the
+            // query, and it is the only thing here that knows how.
+            sources.push(
+                offered
+                    .into_iter()
+                    .map(|option| LookupOption {
+                        value: format!("$({}:{})", integration_id.0, option.value),
+                        label: option.label,
+                        group: Some(integration_id.0.clone()),
+                    })
+                    .collect(),
+            );
         }
-        suggestions.sort_by(|left, right| left.value.cmp(&right.value));
-        suggestions.truncate(SUGGESTION_LIMIT);
-        suggestions
+
+        interleave(sources, SUGGESTION_LIMIT)
     }
 
     pub async fn invoke(
@@ -875,5 +913,63 @@ async fn watch_inventory(engine: Arc<PluginEngine>) {
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn options(values: &[&str]) -> Vec<LookupOption> {
+        values
+            .iter()
+            .map(|value| LookupOption {
+                value: (*value).to_string(),
+                label: (*value).to_string(),
+                group: None,
+            })
+            .collect()
+    }
+
+    fn values(options: Vec<LookupOption>) -> Vec<String> {
+        options.into_iter().map(|option| option.value).collect()
+    }
+
+    /// The failure this exists to prevent: one instance with hundreds of matches filling the page
+    /// so that the entity being searched for never appears.
+    #[test]
+    fn a_long_source_cannot_crowd_out_a_short_one() {
+        let crowded: Vec<&str> = ["a1", "a2", "a3", "a4", "a5", "a6"].to_vec();
+        let merged = interleave(vec![options(&crowded), options(&["b1"])], 4);
+
+        assert!(values(merged).contains(&"b1".to_string()));
+    }
+
+    #[test]
+    fn each_source_keeps_the_order_it_was_given() {
+        let merged = interleave(vec![options(&["a1", "a2"]), options(&["b1", "b2"])], 10);
+
+        assert_eq!(values(merged), ["a1", "b1", "a2", "b2"]);
+    }
+
+    #[test]
+    fn an_exhausted_source_does_not_stall_the_rest() {
+        let merged = interleave(vec![options(&["a1"]), options(&["b1", "b2", "b3"])], 10);
+
+        assert_eq!(values(merged), ["a1", "b1", "b2", "b3"]);
+    }
+
+    /// A live value and the same reference offered by its plugin are one suggestion, not two.
+    #[test]
+    fn the_same_reference_from_two_sources_appears_once() {
+        let merged = interleave(vec![options(&["same"]), options(&["same", "other"])], 10);
+
+        assert_eq!(values(merged), ["same", "other"]);
+    }
+
+    #[test]
+    fn nothing_to_offer_is_not_an_endless_loop() {
+        assert!(interleave(vec![Vec::new(), Vec::new()], 10).is_empty());
+        assert!(interleave(Vec::new(), 10).is_empty());
     }
 }

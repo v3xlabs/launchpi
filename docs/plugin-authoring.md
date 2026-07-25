@@ -212,6 +212,45 @@ showing; `hass` will use it to watch a handful of entities rather than mirror an
 entire installation. `http` ignores it, because its work is defined by its poll
 configuration rather than by what is on screen.
 
+## Being autocompletable
+
+`lookup` is how a plugin answers "what could I bind this to". The editor calls it
+for two things, distinguished by `source`:
+
+```rust
+async fn lookup(&self, source: &str, query: &str)
+    -> Result<Vec<LookupOption>, PluginError>
+{
+    match source {
+        // Whatever a manifest field named as its lookup source.
+        "entities" => Ok(self.entity_options(query)),
+        // The reserved source behind the editor's value autocomplete.
+        SUGGESTION_SOURCE => Ok(self.value_options(query)),
+        other => Err(PluginError::Configuration(format!("unknown lookup {other}"))),
+    }
+}
+```
+
+Answering `SUGGESTION_SOURCE` is what makes a plugin's values discoverable before
+anything has published one. The daemon merges the answer with the values already
+live, and offers both under the `$(...)` autocomplete. Without it a plugin's
+values only appear once something already references them, which is the wrong way
+round: a value nobody can find is a value nobody will bind.
+
+Two rules follow from the daemon keeping only the first page of results:
+
+- **Rank, do not just filter.** Return the best answers first. The daemon
+  preserves the order it is given, because the plugin is the only thing that
+  knows its own vocabulary — that a `light.` domain match beats an automation
+  whose name happens to contain "lights".
+- **Match names as well as identifiers.** People search for "kitchen", not
+  `light.kitchen_ceiling_2`, and are as likely to remember the friendly name as
+  the id.
+
+The daemon interleaves the sources rather than sorting the union, so no single
+instance can fill the page. Returning a thousand options is not rewarded; a
+well-ranked fifty is.
+
 ## Errors
 
 ```rust
