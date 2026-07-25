@@ -24,8 +24,8 @@ use crate::{
         feedback::FeedbackCache,
         index::{DependencyIndex, RenderTarget},
         instance::{
-            InstanceConfig, InstanceDocument, InstanceIdentity, PluginInstance,
-            PluginInstanceStatus,
+            parse_instance_stem, InstanceConfig, InstanceDocument, InstanceIdentity,
+            PluginInstance, PluginInstanceStatus, INSTANCE_DOCUMENT_VERSION,
         },
         manifest::PluginManifest,
         plugin::{cancellation, CancelHandle, Plugin, PluginContext, PluginError},
@@ -75,7 +75,13 @@ struct RunningInstance {
 
 impl RunningInstance {
     fn describe(&self) -> PluginInstance {
+        let mut config = self.document.config.clone();
+        for key in secret_keys(&self.identity.plugin_type) {
+            config.remove(&key);
+        }
+
         PluginInstance {
+            config: serde_json::to_value(&config).unwrap_or(serde_json::Value::Null),
             integration_id: self.identity.integration_id(),
             plugin_type: self.identity.plugin_type.clone(),
             name: self.identity.name.clone(),
@@ -95,6 +101,7 @@ pub struct PluginEngine {
     variables: Arc<VariableStore>,
     feedbacks: Arc<FeedbackCache>,
     directory: PluginDirectory,
+    http: reqwest::Client,
     instances: RwLock<HashMap<IntegrationId, RunningInstance>>,
     index: RwLock<DependencyIndex>,
     dirty: Mutex<HashSet<RenderTarget>>,
@@ -117,6 +124,7 @@ impl PluginEngine {
             variables,
             feedbacks,
             directory,
+            http: reqwest::Client::new(),
             instances: RwLock::default(),
             index: RwLock::default(),
             dirty: Mutex::default(),
@@ -254,6 +262,7 @@ impl PluginEngine {
             self.variables.clone(),
             self.signals.clone(),
             cancel_token,
+            self.http.clone(),
         );
         let config = InstanceConfig {
             integration_id: integration_id.clone(),
@@ -287,6 +296,149 @@ impl PluginEngine {
                 });
             }
         }
+    }
+
+    pub fn describe_instance(&self, integration_id: &IntegrationId) -> Option<PluginInstance> {
+        self.instances
+            .read()
+            .unwrap()
+            .get(integration_id)
+            .map(RunningInstance::describe)
+    }
+
+    pub async fn create_instance(
+        &self,
+        plugin_type: &str,
+        name: &str,
+        display_name: Option<String>,
+        config: toml::Table,
+    ) -> Result<PluginInstance, String> {
+        let identity = parse_instance_stem(&format!("{plugin_type}.{name}"))?;
+        if !registry()
+            .iter()
+            .any(|factory| factory.plugin_type == identity.plugin_type)
+        {
+            return Err(format!(
+                "{plugin_type} is not a plugin type this daemon knows"
+            ));
+        }
+        let integration_id = identity.integration_id();
+        if self.instances.read().unwrap().contains_key(&integration_id) {
+            return Err(format!("{} already exists", integration_id.0));
+        }
+        let document = InstanceDocument {
+            version: INSTANCE_DOCUMENT_VERSION,
+            enabled: true,
+            display_name,
+            config,
+        };
+        self.write_and_restart(identity, document).await
+    }
+
+    pub async fn update_instance(
+        &self,
+        integration_id: &IntegrationId,
+        is_enabled: Option<bool>,
+        display_name: Option<String>,
+        config: Option<toml::Table>,
+    ) -> Result<PluginInstance, String> {
+        let (identity, mut document) = {
+            let instances = self.instances.read().unwrap();
+            let instance = instances
+                .get(integration_id)
+                .ok_or_else(|| format!("{} was not found", integration_id.0))?;
+            (instance.identity.clone(), instance.document.clone())
+        };
+        if let Some(is_enabled) = is_enabled {
+            document.enabled = is_enabled;
+        }
+        if let Some(display_name) = display_name {
+            document.display_name = Some(display_name);
+        }
+        if let Some(mut config) = config {
+            // The browser is never sent a stored secret, so an unchanged one comes back absent
+            // rather than unchanged. Carrying it over is what makes "leave blank to keep" true.
+            for key in secret_keys(&identity.plugin_type) {
+                if let (false, Some(existing)) =
+                    (config.contains_key(&key), document.config.get(&key))
+                {
+                    config.insert(key, existing.clone());
+                }
+            }
+            document.config = config;
+        }
+        self.write_and_restart(identity, document).await
+    }
+
+    pub async fn delete_instance(&self, integration_id: &IntegrationId) -> Result<(), String> {
+        let identity = {
+            let instances = self.instances.read().unwrap();
+            instances
+                .get(integration_id)
+                .ok_or_else(|| format!("{} was not found", integration_id.0))?
+                .identity
+                .clone()
+        };
+        self.stop_instance(integration_id).await;
+        self.instances.write().unwrap().remove(integration_id);
+        self.directory
+            .delete(&identity)
+            .map_err(|error| error.to_string())?;
+        self.rebuild_index().await;
+        self.surfaces.emit_event(ServerEvent::Changed);
+        Ok(())
+    }
+
+    /// Configuration changes replace the instance rather than reconfiguring it: a plugin still
+    /// holding a connection opened under old credentials is harder to reason about than one that
+    /// starts fresh.
+    async fn write_and_restart(
+        &self,
+        identity: InstanceIdentity,
+        document: InstanceDocument,
+    ) -> Result<PluginInstance, String> {
+        let integration_id = identity.integration_id();
+        self.directory
+            .save(&identity, &document)
+            .map_err(|error| error.to_string())?;
+        self.stop_instance(&integration_id).await;
+        self.start_instance(identity, document).await;
+        self.rebuild_index().await;
+        self.surfaces.emit_event(ServerEvent::Changed);
+        self.describe_instance(&integration_id)
+            .ok_or_else(|| format!("{} did not come back up", integration_id.0))
+    }
+
+    async fn stop_instance(&self, integration_id: &IntegrationId) {
+        let (plugin, cancel) = {
+            let mut instances = self.instances.write().unwrap();
+            match instances.get_mut(integration_id) {
+                Some(instance) => (instance.plugin.take(), instance.cancel.take()),
+                None => (None, None),
+            }
+        };
+        if let Some(cancel) = cancel {
+            cancel.cancel();
+        }
+        if let Some(plugin) = plugin {
+            plugin.shutdown().await;
+        }
+        let stale = self.variables.clear_instance(integration_id);
+        self.feedbacks.clear_instance(integration_id);
+        let targets = {
+            let index = self.index.read().unwrap();
+            stale
+                .iter()
+                .flat_map(|reference| index.targets_for_variable(reference))
+                .chain(
+                    index
+                        .feedback_keys_for(integration_id)
+                        .iter()
+                        .flat_map(|key| index.targets_for_feedback(key)),
+                )
+                .collect()
+        };
+        self.mark_dirty(targets);
     }
 
     fn record_instance(&self, instance: RunningInstance) {
@@ -498,6 +650,19 @@ impl PluginEngine {
     }
 }
 
+fn secret_keys(plugin_type: &str) -> Vec<String> {
+    manifest_for(plugin_type)
+        .map(|manifest| {
+            manifest
+                .config_schema
+                .iter()
+                .filter(|field| field.is_secret())
+                .map(|field| field.key.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn manifest_for(plugin_type: &str) -> Option<PluginManifest> {
     registry()
         .iter()
@@ -524,6 +689,12 @@ async fn run_signals(engine: Arc<PluginEngine>, mut signals: mpsc::Receiver<Engi
                     .unwrap()
                     .targets_for_variable(&reference);
                 engine.mark_dirty(targets);
+                let rendered = engine.variables.text(&reference).unwrap_or_default();
+                engine.surfaces.emit_event(ServerEvent::VariableChanged {
+                    integration_id: reference.integration_id,
+                    name: reference.name,
+                    rendered,
+                });
             }
             EngineSignal::FeedbacksInvalidated(integration_id) => {
                 engine.reevaluate_feedbacks(&integration_id).await

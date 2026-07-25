@@ -122,6 +122,9 @@ pub struct PluginInstance {
     pub display_name: String,
     pub is_enabled: bool,
     pub status: PluginInstanceStatus,
+    /// Current configuration with every declared secret removed. The browser needs the rest to
+    /// populate its form, and must never be handed a credential to echo back.
+    pub config: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

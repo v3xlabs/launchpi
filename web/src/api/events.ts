@@ -59,6 +59,28 @@ export const asDialStateEvent = (value: Record<string, unknown>): DialStateEvent
       }
     : null);
 
+export type VariableChangedEvent = {
+  type: "variable_changed";
+  integration_id: string;
+  name: string;
+  rendered: string;
+};
+
+export const asVariableChangedEvent = (
+  value: Record<string, unknown>,
+): VariableChangedEvent | null =>
+  (value.type === "variable_changed"
+    && typeof value.integration_id === "string"
+    && typeof value.name === "string"
+    && typeof value.rendered === "string"
+    ? {
+        type: "variable_changed",
+        integration_id: value.integration_id,
+        name: value.name,
+        rendered: value.rendered,
+      }
+    : null);
+
 export const asDialPressEvent = (value: Record<string, unknown>): DialPressEvent | null =>
   (value.type === "dial_press"
     && typeof value.surface_id === "string"

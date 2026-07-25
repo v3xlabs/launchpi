@@ -2,6 +2,7 @@ import { Link } from "@tanstack/solid-router";
 import { Component, For, Show } from "solid-js";
 
 import { Device, deviceGridLayout, displayName, layoutLabel } from "../api/inventory";
+import { statusTone } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
 import { DeviceImage } from "./DeviceImage";
 import { StatusDot } from "./StatusDot";
@@ -69,6 +70,33 @@ export const Sidebar: Component = () => {
                     {" "}
                     controls
                   </span>
+                </span>
+              </Link>
+            )}
+          </For>
+        </Show>
+      </section>
+
+      <section>
+        <Link to="/plugins" class="nav-heading">
+          Plugins
+          <span class="chip chip-muted">{store.plugins().instances.length}</span>
+        </Link>
+        <Show
+          when={store.plugins().instances.length > 0}
+          fallback={<p class="nav-empty">No plugins configured.</p>}
+        >
+          <For each={store.plugins().instances}>
+            {instance => (
+              <Link
+                to="/plugins/$integrationId"
+                params={{ integrationId: instance.integration_id }}
+                class="nav-item"
+              >
+                <StatusDot status={statusTone(instance.status)} />
+                <span class="min-w-0 flex-1">
+                  <span class="nav-item-title block">{instance.display_name}</span>
+                  <span class="nav-item-meta block">{instance.plugin_type}</span>
                 </span>
               </Link>
             )}

@@ -8,10 +8,12 @@ import {
   deviceGridLayout,
   DiscoveredDevice,
   displayName,
+  fetchDeviceConfiguration,
   isPanelCompatible,
   layoutLabel,
   Panel,
 } from "../api/inventory";
+import { CopyTomlButton } from "../components/CopyTomlButton";
 import { DeviceImage } from "../components/DeviceImage";
 import { PanelThumbnail } from "../components/PanelPreview";
 import { StatusDot, StatusLabel } from "../components/StatusDot";
@@ -101,6 +103,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
           </div>
         </div>
         <div class="flex gap-2">
+          <CopyTomlButton load={() => fetchDeviceConfiguration(properties.device.surface_id)} />
           <button
             type="button"
             class="secondary-button"

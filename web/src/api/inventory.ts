@@ -1,3 +1,16 @@
+import {
+  fetchText,
+  getErrorMessage,
+  isNumber,
+  isOptionalString,
+  isRecord,
+  isString,
+  request,
+} from "./guards";
+import { isPluginInstance, PluginInstance } from "./plugins";
+
+export { getErrorMessage, isNumber, isOptionalString, isRecord, isString, request };
+
 export type DeviceStatus = "connecting" | "connected" | "unavailable" | "disabled";
 export type RgbaColor = { red: number; green: number; blue: number; alpha: number; };
 export type Capabilities = {
@@ -16,14 +29,46 @@ export type RenderedState = {
   progress: unknown | null;
   is_pressed: boolean;
 };
+/** Mirrors `RenderedState` minus `is_pressed`; every absent field leaves the state untouched. */
+export type RenderedStateOverride = {
+  text: string | null;
+  image: string | null;
+  foreground_color: RgbaColor | null;
+  background_color: RgbaColor | null;
+  progress: unknown | null;
+};
+export type ActionTrigger =
+  | "press"
+  | "release"
+  | "rotate_clockwise"
+  | "rotate_counter_clockwise"
+  | "value_changed"
+  | { hold: { duration_ms: number; }; };
+export type Action =
+  | {
+    type: "invoke_integration";
+    integration_id: string;
+    action_name: string;
+    parameters: Record<string, unknown>;
+  }
+  | { type: "set_variable"; variable_name: string; value: unknown; }
+  | { type: "change_panel"; panel_id: string; }
+  | { type: "wait"; duration_ms: number; };
+export type ActionBinding = { gesture: ActionTrigger; actions: Action[]; };
+export type Feedback = {
+  integration_id: string;
+  feedback_name: string;
+  parameters: Record<string, unknown>;
+};
+export type FeedbackBinding = { feedback: Feedback; state: RenderedStateOverride; };
 export type Control = {
   control_id: string;
   name: string;
   position: { column: number; row: number; };
   default_state: RenderedState;
   pressed_state: RenderedState | null;
-  action_bindings: unknown[];
-  feedback_bindings: unknown[];
+  action_bindings: ActionBinding[];
+  feedback_bindings: FeedbackBinding[];
 };
 export type Panel = {
   panel_id: string;
@@ -74,6 +119,7 @@ export type Inventory = {
   discovered: DiscoveredDevice[];
   devices: Device[];
   panels: Panel[];
+  plugin_instances: PluginInstance[];
   recent_key_events: KeyEvent[];
   key_states: KeyEvent[];
   dial_states: DialState[];
@@ -107,6 +153,7 @@ export const emptyInventory: Inventory = {
   discovered: [],
   devices: [],
   panels: [],
+  plugin_instances: [],
   recent_key_events: [],
   key_states: [],
   dial_states: [],
@@ -116,11 +163,6 @@ export const emptyInventory: Inventory = {
 
 const logLevels = new Set<string>(["input", "info", "warning"] satisfies LogLevel[]);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-const isString = (value: unknown): value is string => typeof value === "string";
-const isOptionalString = (value: unknown): value is string | null => value === null || isString(value);
-const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const isCapabilities = (value: unknown): value is Capabilities =>
   isRecord(value) && capabilityKeys.every(key => typeof value[key] === "boolean");
 const isColor = (value: unknown): value is RgbaColor =>
@@ -214,6 +256,8 @@ const isInventory = (value: unknown): value is Inventory =>
   && value.devices.every(isDevice)
   && Array.isArray(value.panels)
   && value.panels.every(isPanel)
+  && (value.plugin_instances === undefined
+    || (Array.isArray(value.plugin_instances) && value.plugin_instances.every(isPluginInstance)))
   && Array.isArray(value.recent_key_events)
   && value.recent_key_events.every(isKeyEvent)
   && (value.key_states === undefined
@@ -261,28 +305,6 @@ export const isPanelCompatible = (device: Device, panel: Panel): boolean => {
     && layout.rows === panel.layout.rows
     && capabilityKeys.every(key => !panel.capabilities[key] || device.capabilities[key])
   );
-};
-
-const getErrorMessage = async (response: Response): Promise<string> => {
-  const body: unknown = await response.json().catch(() => null);
-
-  return isRecord(body) && isString(body.error) ? body.error : `Request failed with status ${response.status}`;
-};
-
-const request = async (
-  path: string,
-  method: "POST" | "PATCH" | "PUT" | "DELETE",
-  body?: unknown,
-): Promise<Response> => {
-  const response = await fetch(path, {
-    method,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-
-  if (!response.ok) throw new Error(await getErrorMessage(response));
-
-  return response;
 };
 
 export type DeviceKind = "studio" | "network_dock";
@@ -343,6 +365,7 @@ export const fetchInventory = async (): Promise<Inventory> => {
       dial_colors: panel.dial_colors ?? [],
       dial_ring_levels: panel.dial_ring_levels ?? [],
     })),
+    plugin_instances: data.plugin_instances ?? [],
     key_states: data.key_states ?? [],
     dial_states: data.dial_states ?? [],
     dial_presses: data.dial_presses ?? [],
@@ -365,10 +388,9 @@ export const updatePanel = (panelId: string, payload: PanelPayload): Promise<Res
 export const deletePanel = (panelId: string): Promise<Response> =>
   request(`/api/panels/${encodeURIComponent(panelId)}`, "DELETE");
 export const saveConfiguration = (): Promise<Response> => request("/api/config", "POST");
-export const fetchPanelConfiguration = async (panelId: string): Promise<string> => {
-  const response = await fetch(`/api/panels/${encodeURIComponent(panelId)}/config`);
 
-  if (!response.ok) throw new Error(await getErrorMessage(response));
-
-  return response.text();
-};
+export const fetchPanelConfiguration = (panelId: string): Promise<string> =>
+  fetchText(`/api/panels/${encodeURIComponent(panelId)}/config`);
+export const fetchDeviceConfiguration = (surfaceId: string): Promise<string> =>
+  fetchText(`/api/devices/${encodeURIComponent(surfaceId)}/config`);
+export const fetchFullConfiguration = (): Promise<string> => fetchText("/api/config/export");

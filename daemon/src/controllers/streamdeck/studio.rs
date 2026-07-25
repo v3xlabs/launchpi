@@ -70,7 +70,7 @@ const CHILD_QUERY_INTERVAL: Duration = Duration::from_secs(5);
 /// Replies the read loop owes the device - acknowledgements and probes, never renders.
 const REPLY_QUEUE_SIZE: usize = 8;
 
-const KEY_FONT_BYTES: &[u8] = include_bytes!("../../assets/DejaVuSans.ttf");
+const KEY_FONT_BYTES: &[u8] = include_bytes!("../../../assets/DejaVuSans.ttf");
 
 lazy_static! {
     static ref KEY_FONT: FontRef<'static> =

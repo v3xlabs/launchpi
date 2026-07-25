@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::scripts::Script;
 
-use super::{Alles, Controller, DeviceInfo, ScriptRunner};
+use crate::controllers::{Alles, Controller, DeviceInfo, ScriptRunner};
 use launchy::{
     launchpad_mini_mk3::PaletteColor, InputDevice, InputDeviceHandlerPolling, MidiError,
     MsgPollingWrapper, OutputDevice,

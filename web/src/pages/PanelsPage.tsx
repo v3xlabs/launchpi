@@ -12,12 +12,14 @@ import {
   Control,
   Device,
   displayName,
+  fetchPanelConfiguration,
   layoutLabel,
   Panel,
   panelDialCount,
   RgbaColor,
   studioDialCount,
 } from "../api/inventory";
+import { CopyTomlButton } from "../components/CopyTomlButton";
 import { PanelInspector, PanelSelection } from "../components/PanelInspector";
 import { PanelStage, PanelThumbnail } from "../components/PanelPreview";
 import { StatusDot } from "../components/StatusDot";
@@ -268,6 +270,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                   <TbDownload class="h-3.5 w-3.5" />
                   Export TOML
                 </button>
+                <CopyTomlButton load={() => fetchPanelConfiguration(panel().panel_id)} />
                 <button
                   type="button"
                   class="primary-button"

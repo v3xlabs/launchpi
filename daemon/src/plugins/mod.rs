@@ -1,3 +1,4 @@
+pub mod builtin;
 pub mod config;
 pub mod engine;
 pub mod feedback;
@@ -16,5 +17,5 @@ use crate::plugins::plugin::PluginFactory;
 /// Adding one is a module and an entry here. There is no registration macro, and no dynamic
 /// loading: a plugin that needs D-Bus depends on a D-Bus crate.
 pub fn registry() -> &'static [PluginFactory] {
-    &[]
+    &[builtin::http::FACTORY]
 }

@@ -7,7 +7,6 @@ mod persistence;
 mod plugins;
 mod scripts;
 mod state;
-mod streamdeck;
 
 /// `fmt::init()` pins INFO and ignores the environment unless tracing-subscriber is built with
 /// `env-filter`, which we do not depend on. Read a bare level instead: `RUST_LOG=debug just dev`.
@@ -47,10 +46,10 @@ async fn main() {
         .into_iter()
         .filter(|surface| surface.is_enabled)
     {
-        streamdeck::studio::start_connection_monitor(state.clone(), surface);
+        controllers::streamdeck::studio::start_connection_monitor(state.clone(), surface);
     }
 
-    if let Err(error) = streamdeck::studio::start_discovery(state.clone()) {
+    if let Err(error) = controllers::streamdeck::studio::start_discovery(state.clone()) {
         error!(%error, "unable to start Stream Deck Studio discovery");
     }
 

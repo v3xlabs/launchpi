@@ -4,7 +4,7 @@ use launchy::{InputDevice, InputDeviceHandlerPolling, MidiError, MsgPollingWrapp
 
 use crate::scripts::Script;
 
-use super::{Alles, Controller, DeviceInfo, ScriptRunner};
+use crate::controllers::{Alles, Controller, DeviceInfo, ScriptRunner};
 
 pub struct LaunchpadMiniMk1 {
     midi_in: Arc<Mutex<InputDeviceHandlerPolling<launchy::mini::Message>>>,

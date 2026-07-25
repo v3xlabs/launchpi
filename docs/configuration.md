@@ -239,7 +239,7 @@ display_name = "Weather"
 [config]
 base_url = "https://api.open-meteo.com"
 timeout_ms = 5000
-api_key = { env = "LAUNCHPI_WEATHER_KEY" }
+authorization = { env = "LAUNCHPI_WEATHER_KEY" }
 
 [[config.poll]]
 name = "temperature"
@@ -303,8 +303,8 @@ instance's file.
 | --- | --- | --- |
 | Panel editor | `GET /api/panels/:panel_id/config` | one-panel `panels.toml` |
 | Device detail | `GET /api/devices/:surface_id/config` | one-device `devices.toml` |
-| Plugin instance | `GET /api/plugins/:instance_id/config` | one instance file |
-| Whole config | `GET /api/config` | every file, separated by path comments |
+| Plugin instance | `GET /api/plugins/:integration_id/config` | one instance file |
+| Whole config | `GET /api/config/export` | every file, separated by path comments |
 
 Two consequences worth stating. Concatenating two copied panels under a single
 `version` header is a valid `panels.toml`, because the schema is a list.

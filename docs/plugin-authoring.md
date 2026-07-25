@@ -253,7 +253,10 @@ enabled = true
 [config]
 base_url = "https://api.open-meteo.com"
 timeout_ms = 5000
-api_key = { env = "LAUNCHPI_WEATHER_KEY" }
+authorization = { env = "LAUNCHPI_WEATHER_KEY" }
+
+[config.headers]
+"X-Client" = "launchpi"
 
 [[config.poll]]
 name = "temperature"
@@ -262,14 +265,28 @@ interval_ms = 60000
 extract = "current.temperature_2m"
 ```
 
-| Actions | `request` |
+| Actions | `request` with `method`, `path`, `body`, `content_type` |
 | --- | --- |
-| Feedbacks | `status_matches`, `value_equals`, `value_above`, `value_below` |
+| Feedbacks | `value_equals`, `value_above`, `value_below`, `status_matches` |
 | Variables | one per `[[config.poll]]` entry, named by its `name` |
 
-`extract` is a dotted path into the JSON response. Method, path, headers and
-body all interpolate `$(...)` references, so one instance can serve several
+`authorization` is sent verbatim as the `Authorization` header;
+`[config.headers]` adds static headers to every request. `base_url` is optional,
+and a request path that is already an absolute URL ignores it.
+
+`extract` is a dotted path into the JSON response, where a numeric segment
+indexes an array, so `results.0.temperature` works. A poll with no `extract`
+publishes the response body as text. The `method`, `path` and `body` of an
+action all interpolate `$(...)` references, so one instance can serve several
 buttons that differ only in their parameters.
+
+Each feedback takes a `poll` naming the entry it reads. A feedback about a poll
+that has not run yet is inactive rather than an error, so a button looks like its
+configured state until the first response arrives.
+
+Unknown keys under `[config]` are rejected rather than ignored, so a typo is an
+instance error with a readable message instead of a setting that silently does
+nothing.
 
 ### mpris
 

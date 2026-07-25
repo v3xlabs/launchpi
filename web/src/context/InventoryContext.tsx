@@ -11,7 +11,13 @@ import {
 } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 
-import { asDialPressEvent, asDialStateEvent, asEventFrame, asKeyStateEvent } from "../api/events";
+import {
+  asDialPressEvent,
+  asDialStateEvent,
+  asEventFrame,
+  asKeyStateEvent,
+  asVariableChangedEvent,
+} from "../api/events";
 import * as api from "../api/inventory";
 import {
   Control,
@@ -24,6 +30,7 @@ import {
   Panel,
   studioDialCount,
 } from "../api/inventory";
+import { createPluginStore, PluginStore } from "./pluginStore";
 
 /** Mirrors the daemon's per-surface ring buffer, so the tail stays bounded on a long session. */
 const logCapacity = 400;
@@ -108,7 +115,7 @@ export type InventoryStore = {
   pressedDialsForPanel: (panelId: string) => Set<number>;
   /** A device's activity log, oldest first. */
   logsFor: (surfaceId: string) => LogEntry[];
-};
+} & PluginStore;
 
 const InventoryContext = createContext<InventoryStore>();
 
@@ -292,6 +299,14 @@ export const InventoryProvider: ParentComponent = (properties) => {
         return;
       }
 
+      const variable = asVariableChangedEvent(parsed);
+
+      if (variable !== null) {
+        pluginStore.setVariable(variable.integration_id, variable.name, variable.rendered);
+
+        return;
+      }
+
       if (parsed.type === "changed") scheduleResync();
     };
 
@@ -344,6 +359,8 @@ export const InventoryProvider: ParentComponent = (properties) => {
       setIsSaving(false);
     }
   };
+
+  const pluginStore = createPluginStore(run, setError);
 
   const store: InventoryStore = {
     inventory,
@@ -447,6 +464,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
     pressedDialsFor,
     pressedDialsForPanel,
     logsFor,
+    ...pluginStore,
   };
 
   return <InventoryContext.Provider value={store}>{properties.children}</InventoryContext.Provider>;

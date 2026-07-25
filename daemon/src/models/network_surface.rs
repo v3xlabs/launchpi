@@ -146,6 +146,8 @@ pub struct DeviceInventory {
     pub discovered: Vec<DiscoveredNetworkSurface>,
     pub devices: Vec<ManagedNetworkSurface>,
     pub panels: Vec<crate::models::panel::Panel>,
+    /// Filled in by the API layer, which is where the plugin engine is reachable from.
+    pub plugin_instances: Vec<crate::plugins::instance::PluginInstance>,
     pub recent_key_events: Vec<SurfaceKeyEvent>,
     pub key_states: Vec<SurfaceKeyEvent>,
     pub dial_states: Vec<SurfaceDialState>,
@@ -215,5 +217,12 @@ pub enum ServerEvent {
         is_pressed: bool,
     },
     Log(SurfaceLogEntry),
+    /// A plugin published a new value. Carries the rendered text so the UI can show it without
+    /// re-implementing how each variable kind formats.
+    VariableChanged {
+        integration_id: crate::models::identifiers::IntegrationId,
+        name: String,
+        rendered: String,
+    },
     Changed,
 }

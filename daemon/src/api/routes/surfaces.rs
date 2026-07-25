@@ -8,10 +8,12 @@ use axum::{
     routing::{get, patch, post, put},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::{
+    api::error::ApiError,
+    controllers::streamdeck::studio,
     models::{
         control::Control,
         identifiers::PanelId,
@@ -23,7 +25,6 @@ use crate::{
         surface::SurfaceCapabilities,
     },
     state::{studio_capabilities, AppState},
-    streamdeck::studio,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -74,7 +75,9 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn list_devices(State(state): State<AppState>) -> Json<DeviceInventory> {
-    Json(state.surfaces.inventory())
+    let mut inventory = state.surfaces.inventory();
+    inventory.plugin_instances = state.plugins.instances();
+    Json(inventory)
 }
 
 async fn events(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> impl IntoResponse {
@@ -334,44 +337,5 @@ fn non_empty(value: String, field_name: &str) -> Result<String, ApiError> {
         Err(ApiError::bad_request(format!("{field_name} is required")))
     } else {
         Ok(value)
-    }
-}
-#[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
-}
-struct ApiError {
-    status: StatusCode,
-    message: String,
-}
-impl ApiError {
-    fn bad_request(message: String) -> Self {
-        Self {
-            status: StatusCode::BAD_REQUEST,
-            message,
-        }
-    }
-    fn not_found(resource: &str) -> Self {
-        Self {
-            status: StatusCode::NOT_FOUND,
-            message: format!("{resource} was not found"),
-        }
-    }
-    fn internal(error: anyhow::Error) -> Self {
-        Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: error.to_string(),
-        }
-    }
-}
-impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
-        (
-            self.status,
-            Json(ErrorResponse {
-                error: self.message,
-            }),
-        )
-            .into_response()
     }
 }

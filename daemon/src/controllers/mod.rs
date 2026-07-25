@@ -4,8 +4,8 @@ use launchy::MidiError;
 
 use crate::scripts::Script;
 
-pub mod launchpad_mini_mk1;
-pub mod launchpad_mini_mk3;
+pub mod launchpad;
+pub mod streamdeck;
 
 #[async_trait::async_trait]
 pub trait Controller: Send {

@@ -166,6 +166,33 @@ impl Persistence {
         })?)
     }
 
+    pub fn render_device(&self, device: ManagedNetworkSurface) -> Result<String> {
+        Ok(toml::to_string_pretty(&PersistedDevicesDocument {
+            version: 1,
+            devices: vec![PersistedDevice::from(device)],
+        })?)
+    }
+
+    /// Every configuration file as one document, separated by the path each section belongs in.
+    /// The sections are the same schema the daemon loads, so they can be split back apart verbatim.
+    pub fn render_configuration(
+        &self,
+        devices: Vec<ManagedNetworkSurface>,
+        panels: Vec<Panel>,
+    ) -> Result<String> {
+        let devices = toml::to_string_pretty(&PersistedDevicesDocument {
+            version: 1,
+            devices: devices.into_iter().map(PersistedDevice::from).collect(),
+        })?;
+        let panels = toml::to_string_pretty(&PanelsDocument {
+            version: PANEL_DOCUMENT_VERSION,
+            panels,
+        })?;
+        Ok(format!(
+            "# devices.toml\n{devices}\n# panels.toml\n{panels}"
+        ))
+    }
+
     pub async fn record_status(
         &self,
         surface_id: String,

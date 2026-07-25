@@ -2,44 +2,12 @@ import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/t
 import { Component, For, Match, Show, Switch } from "solid-js";
 
 import { capabilityLabels, Control, Panel, panelDial, RgbaColor } from "../api/inventory";
-import { fromHex, newState, toHex } from "../utils/rendered";
+import { newState, toHex } from "../utils/rendered";
+import { BindingsEditor } from "./BindingsEditor";
 import { DialIndicator, litRingSegments, totalRingSegments } from "./DialIndicator";
+import { ColorField, TextField } from "./fields";
 
 export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "dial"; index: number; };
-
-const TextField: Component<{
-  label: string;
-  value: string;
-  placeholder?: string;
-  onChange: (value: string) => void;
-}> = properties => (
-  <label class="field-label">
-    {properties.label}
-    <input
-      class="field-input"
-      value={properties.value}
-      placeholder={properties.placeholder}
-      onInput={event => properties.onChange(event.currentTarget.value)}
-    />
-  </label>
-);
-
-const ColorField: Component<{
-  label: string;
-  value: RgbaColor | null;
-  fallback: string;
-  onChange: (color: RgbaColor) => void;
-}> = properties => (
-  <label class="field-label">
-    {properties.label}
-    <input
-      class="color-input"
-      type="color"
-      value={toHex(properties.value, properties.fallback)}
-      onInput={event => properties.onChange(fromHex(event.currentTarget.value))}
-    />
-  </label>
-);
 
 const PanelSettings: Component<{ panel: Panel; onMutate: (mutate: (panel: Panel) => void) => void; }> = properties => (
   <>
@@ -201,6 +169,8 @@ const ControlEditor: Component<{
           </div>
         )}
       </Show>
+
+      <BindingsEditor control={properties.control} onMutate={properties.onMutate} />
     </div>
   </>
 );

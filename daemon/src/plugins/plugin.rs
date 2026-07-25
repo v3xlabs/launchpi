@@ -11,7 +11,7 @@ use crate::{
         engine::EngineSignal,
         instance::InstanceConfig,
         manifest::PluginManifest,
-        variables::{VariableRef, VariableStore, VariableValue},
+        variables::{self, VariableRef, VariableStore, VariableValue},
     },
 };
 
@@ -92,6 +92,8 @@ pub struct PluginFactory {
 pub struct PluginContext {
     pub integration_id: IntegrationId,
     pub cancel: CancelToken,
+    /// Shared across every instance so connection pools and DNS caching are not duplicated.
+    pub http: reqwest::Client,
     variables: Arc<VariableStore>,
     signals: mpsc::Sender<EngineSignal>,
 }
@@ -102,13 +104,21 @@ impl PluginContext {
         variables: Arc<VariableStore>,
         signals: mpsc::Sender<EngineSignal>,
         cancel: CancelToken,
+        http: reqwest::Client,
     ) -> Self {
         Self {
             integration_id,
             cancel,
+            http,
             variables,
             signals,
         }
+    }
+
+    /// Resolves `$(instance:name)` references against live variables, so an action's parameters
+    /// can depend on what other plugins are publishing.
+    pub fn interpolate(&self, template: &str) -> String {
+        variables::interpolate(template, |reference| self.variables.text(reference))
     }
 
     pub fn set_variable(&self, name: impl Into<String>, value: VariableValue) {

@@ -109,6 +109,24 @@ impl AppState {
         self.persistence.render_panel(panel).map(Some)
     }
 
+    pub fn export_device_configuration(&self, surface_id: &str) -> anyhow::Result<Option<String>> {
+        let Some(device) = self.surfaces.managed(&SurfaceId(surface_id.to_string())) else {
+            return Ok(None);
+        };
+        self.persistence.render_device(device).map(Some)
+    }
+
+    pub fn export_configuration(&self) -> anyhow::Result<String> {
+        let devices = self
+            .surfaces
+            .managed_surfaces()
+            .into_iter()
+            .filter(|device| device.parent_surface_id.is_none())
+            .collect();
+        self.persistence
+            .render_configuration(devices, self.surfaces.panels())
+    }
+
     pub fn update_status(
         &self,
         surface_id: &SurfaceId,
@@ -270,6 +288,11 @@ impl SurfaceRegistry {
         let _ = self.events.send(event);
     }
 
+    /// Lets the plugin engine put its own events on the same stream the web already watches.
+    pub fn emit_event(&self, event: ServerEvent) {
+        self.emit(event);
+    }
+
     /// Appends one line to a surface's log and streams it to anyone watching the device page.
     pub fn log(&self, surface_id: &SurfaceId, level: SurfaceLogLevel, message: String) {
         let entry = SurfaceLogEntry {
@@ -354,6 +377,7 @@ impl SurfaceRegistry {
             discovered,
             devices,
             panels,
+            plugin_instances: Vec::new(),
             recent_key_events,
             key_states,
             dial_states,
@@ -1095,7 +1119,7 @@ fn default_device(
         surface_id: SurfaceId(format!("stream-deck-studio-{}", devices.len() + 1)),
         name: "Stream Deck Studio".to_string(),
         host: "127.0.0.1".to_string(),
-        port: crate::streamdeck::studio::default_port(),
+        port: crate::controllers::streamdeck::studio::default_port(),
         serial_number: None,
         model: "Stream Deck Studio".to_string(),
         layout: SurfaceLayout::Grid {
@@ -1222,11 +1246,140 @@ fn color(red: u8, green: u8, blue: u8) -> RgbaColor {
 #[cfg(test)]
 mod tests {
     use super::{default_device, default_panel, SurfaceRegistry};
-    use crate::models::{
-        identifiers::{PanelId, SurfaceId},
-        network_surface::ServerEvent,
-        surface::SurfaceLayout,
+    use crate::{
+        models::{
+            feedback::{Feedback, FeedbackBinding},
+            identifiers::{IntegrationId, PanelId, SurfaceId},
+            network_surface::{ServerEvent, SurfaceCommand},
+            rendered_state::{RenderedStateOverride, RgbaColor},
+            surface::SurfaceLayout,
+        },
+        plugins::{
+            feedback::FeedbackKey,
+            variables::{VariableRef, VariableValue},
+        },
     };
+
+    fn amber() -> RgbaColor {
+        RgbaColor {
+            red: 232,
+            green: 185,
+            blue: 35,
+            alpha: 255,
+        }
+    }
+
+    fn next_rendering(
+        commands: &mut tokio::sync::mpsc::Receiver<SurfaceCommand>,
+    ) -> Option<crate::models::network_surface::KeyRendering> {
+        match commands.try_recv().ok()? {
+            SurfaceCommand::RenderKey(rendering) => Some(rendering),
+            SurfaceCommand::RenderDialColor { .. } => None,
+        }
+    }
+
+    #[test]
+    fn a_live_variable_reaches_the_device_as_interpolated_text() {
+        let mut panel = default_panel();
+        panel.controls[0].default_state.text = Some("$(http.local:value)".to_string());
+        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
+        let surface_id = SurfaceId("stream-deck-studio-1".to_string());
+        let (_is_active, mut commands) = registry.activate(&surface_id);
+
+        registry.variables().set(
+            VariableRef::new("http.local", "value"),
+            VariableValue::Number(21.0),
+        );
+        registry.refresh_key(&surface_id, 0);
+
+        let rendering = next_rendering(&mut commands).expect("a repaint should have been queued");
+        assert_eq!(rendering.key_index, 0);
+        assert_eq!(rendering.text, Some("21".to_string()));
+    }
+
+    #[test]
+    fn a_repaint_that_resolves_to_the_same_image_is_not_sent_again() {
+        let mut panel = default_panel();
+        panel.controls[0].default_state.text = Some("$(http.local:value)".to_string());
+        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
+        let surface_id = SurfaceId("stream-deck-studio-1".to_string());
+        let (_is_active, mut commands) = registry.activate(&surface_id);
+        let reference = VariableRef::new("http.local", "value");
+
+        registry
+            .variables()
+            .set(reference.clone(), VariableValue::Number(21.0));
+        registry.refresh_key(&surface_id, 0);
+        assert!(next_rendering(&mut commands).is_some());
+
+        registry.refresh_key(&surface_id, 0);
+        assert!(
+            commands.try_recv().is_err(),
+            "an unchanged resolution should never reach the device"
+        );
+
+        registry
+            .variables()
+            .set(reference, VariableValue::Number(22.0));
+        registry.refresh_key(&surface_id, 0);
+        assert_eq!(
+            next_rendering(&mut commands).and_then(|rendering| rendering.text),
+            Some("22".to_string())
+        );
+    }
+
+    #[test]
+    fn an_active_feedback_restyles_a_key_without_a_panel_save() {
+        let feedback = Feedback {
+            integration_id: IntegrationId("http.local".to_string()),
+            feedback_name: "value_equals".to_string(),
+            parameters: serde_json::json!({ "poll": "value", "value": "on" }),
+        };
+        let mut panel = default_panel();
+        panel.controls[0].pressed_state = None;
+        panel.controls[0].feedback_bindings.push(FeedbackBinding {
+            feedback: feedback.clone(),
+            state: RenderedStateOverride {
+                background_color: Some(amber()),
+                ..RenderedStateOverride::default()
+            },
+        });
+        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
+        let surface_id = SurfaceId("stream-deck-studio-1".to_string());
+        let (_is_active, mut commands) = registry.activate(&surface_id);
+
+        registry.refresh_key(&surface_id, 0);
+        let before = next_rendering(&mut commands).expect("a baseline repaint");
+        assert_ne!(before.background_color, Some(amber()));
+
+        registry.feedbacks().set(FeedbackKey::new(&feedback), true);
+        registry.refresh_key(&surface_id, 0);
+
+        let after = next_rendering(&mut commands).expect("the feedback should repaint the key");
+        assert_eq!(after.background_color, Some(amber()));
+    }
+
+    #[test]
+    fn a_key_press_is_handed_to_the_action_engine() {
+        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![default_panel()]);
+        let surface_id = SurfaceId("stream-deck-studio-1".to_string());
+        let mut input = registry
+            .take_input_receiver()
+            .expect("the receiver is available once");
+
+        assert!(registry.record_key_state(&surface_id, 0, true));
+
+        match input.try_recv().expect("the press should be queued") {
+            crate::plugins::engine::InputEvent::Key {
+                key_index,
+                is_pressed,
+                ..
+            } => {
+                assert_eq!(key_index, 0);
+                assert!(is_pressed);
+            }
+        }
+    }
 
     #[test]
     fn creates_a_studio_device_with_the_hello_panel_active() {
