@@ -37,14 +37,14 @@ pub struct AssetStore {
     in_flight: Mutex<HashSet<String>>,
     failed: Mutex<HashMap<String, Instant>>,
     /// Poked when bytes land, so whatever is on screen can be drawn again with the picture.
-    ready: mpsc::Sender<()>,
+    ready: mpsc::Sender<String>,
 }
 
 impl AssetStore {
     pub fn open(
         cache_directory: PathBuf,
         http: reqwest::Client,
-        ready: mpsc::Sender<()>,
+        ready: mpsc::Sender<String>,
     ) -> Result<Self> {
         fs::create_dir_all(&cache_directory)
             .with_context(|| format!("unable to create {}", cache_directory.display()))?;
@@ -149,7 +149,7 @@ impl AssetStore {
             match outcome {
                 Ok(bytes) => match store.insert_bytes_at(&url, &bytes) {
                     Ok(()) => {
-                        let _ = store.ready.try_send(());
+                        let _ = store.ready.try_send(url.clone());
                     }
                     Err(error) => debug!(url, %error, "could not store a fetched image"),
                 },
@@ -291,7 +291,7 @@ mod tests {
 
     fn store() -> (Arc<AssetStore>, tempdir::TempDir) {
         let directory = tempdir::TempDir::new();
-        let (ready, _receiver) = mpsc::channel(8);
+        let (ready, _receiver) = mpsc::channel::<String>(8);
         let store = AssetStore::open(
             directory.path().to_path_buf(),
             reqwest::Client::new(),

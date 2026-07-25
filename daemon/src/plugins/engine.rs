@@ -118,7 +118,7 @@ impl PluginEngine {
         directory: PluginDirectory,
         values_path: PathBuf,
         assets: Arc<AssetStore>,
-        assets_ready: mpsc::Receiver<()>,
+        assets_ready: mpsc::Receiver<String>,
         input: mpsc::Receiver<InputEvent>,
     ) -> Arc<Self> {
         let (signals, signal_receiver) = mpsc::channel(SIGNAL_QUEUE_SIZE);
@@ -196,16 +196,26 @@ impl PluginEngine {
             return Err("a value needs a name".to_string());
         }
         let mut values = self.user_values();
-        match values
+        let is_new = match values
             .iter_mut()
             .find(|existing| existing.name == value.name)
         {
-            Some(existing) => *existing = value.clone(),
-            None => values.push(value.clone()),
-        }
+            Some(existing) => {
+                *existing = value.clone();
+                false
+            }
+            None => {
+                values.push(value.clone());
+                true
+            }
+        };
         values.sort_by(|left, right| left.name.cmp(&right.name));
         values::save(&self.values_path, values).map_err(|error| error.to_string())?;
         self.publish_user_value(&value.name, value.as_variable());
+        if is_new {
+            // The set of user values changed, not just one reading.
+            self.surfaces.emit_event(ServerEvent::Changed);
+        }
         Ok(())
     }
 
@@ -226,12 +236,7 @@ impl PluginEngine {
     }
 
     fn publish_user_value(&self, name: &str, value: VariableValue) {
-        let reference = VariableRef::user(name);
-        if self.variables.set(reference.clone(), value) {
-            let targets = self.index.read().unwrap().targets_for_variable(&reference);
-            self.mark_dirty(targets);
-        }
-        self.surfaces.emit_event(ServerEvent::Changed);
+        self.publish(VariableRef::user(name), value);
     }
 
     pub fn export_instance(
@@ -577,11 +582,25 @@ impl PluginEngine {
     }
 
     fn set_user_variable(&self, name: &str, value: &JsonValue) {
-        let reference = VariableRef::user(name);
-        if self.variables.set(reference.clone(), variable_value(value)) {
-            let targets = self.index.read().unwrap().targets_for_variable(&reference);
-            self.mark_dirty(targets);
+        self.publish(VariableRef::user(name), variable_value(value));
+    }
+
+    /// The one way a value reaches both consumers. Repaints the keys that read it and tells the
+    /// web, so a browser cannot drift from what a device is showing. Everything that publishes a
+    /// value goes through here; a path that only marked keys dirty would update the hardware and
+    /// leave the UI stale.
+    fn publish(&self, reference: VariableRef, value: VariableValue) {
+        if !self.variables.set(reference.clone(), value) {
+            return;
         }
+        let targets = self.index.read().unwrap().targets_for_variable(&reference);
+        self.mark_dirty(targets);
+        let rendered = self.variables.text(&reference).unwrap_or_default();
+        self.surfaces.emit_event(ServerEvent::VariableChanged {
+            integration_id: reference.integration_id,
+            name: reference.name,
+            rendered,
+        });
     }
 
     async fn handle_input(self: &Arc<Self>, event: InputEvent) {
@@ -773,10 +792,10 @@ async fn run_flush(engine: Arc<PluginEngine>) {
 /// An image that was not on disk when a key was drawn arrives later. Which key wanted it is not
 /// worth tracking: repainting everything is cheap, because the render ledger drops every key whose
 /// resolution did not actually change, and this fires once per newly-seen URL.
-async fn watch_assets(engine: Arc<PluginEngine>, mut ready: mpsc::Receiver<()>) {
-    while ready.recv().await.is_some() {
+async fn watch_assets(engine: Arc<PluginEngine>, mut ready: mpsc::Receiver<String>) {
+    while let Some(asset) = ready.recv().await {
         engine.surfaces.forget_renderings();
-        engine.surfaces.emit_event(ServerEvent::AssetsChanged);
+        engine.surfaces.emit_event(ServerEvent::AssetReady { asset });
         let targets = engine.index.read().unwrap().every_target();
         engine.mark_dirty(targets);
     }

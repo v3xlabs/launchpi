@@ -100,6 +100,7 @@ type PanelStageProperties = {
   pressedDials?: Set<number>;
   pasteMode?: boolean;
   onCellClick: (control: Control | undefined, column: number, row: number) => void;
+  onCellFocus: (control: Control | undefined, column: number, row: number) => void;
   onDialClick: (index: number) => void;
 };
 
@@ -173,6 +174,7 @@ export const PanelStage: Component<PanelStageProperties> = properties => (
                 "key-pressed": isPressed(),
               }}
               onClick={() => properties.onCellClick(control(), cell.column, cell.row)}
+              onFocus={() => properties.onCellFocus(control(), cell.column, cell.row)}
               aria-label={
                 control() === undefined
                   ? `${properties.pasteMode ? "Paste into" : "Add control at"} row ${

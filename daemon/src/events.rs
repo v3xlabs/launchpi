@@ -39,9 +39,9 @@ pub enum ServerEvent {
         status: NetworkSurfaceStatus,
         last_error: Option<String>,
     },
-    /// An image finished downloading. The browser caches rendered keys by request, so it needs
-    /// telling that the same request now produces a different picture.
-    AssetsChanged,
+    /// An image finished downloading. Carries which one, so a browser can redraw only the keys
+    /// showing it rather than every key on screen.
+    AssetReady { asset: String },
     /// The set of things changed: something was added, removed, renamed or reassigned. Not for
     /// status, which has its own event.
     Changed,

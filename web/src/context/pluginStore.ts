@@ -2,7 +2,7 @@ import { Accessor, createSignal, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 
 import * as pluginApi from "../api/plugins";
-import { forgetRenderedKeys } from "../api/render";
+import { forgetRendersUsing } from "../api/render";
 
 export type PluginStore = {
   plugins: Accessor<pluginApi.PluginCatalogue>;
@@ -22,9 +22,9 @@ export type PluginStore = {
   variables: Record<string, string>;
   setVariable: (integrationId: string, name: string, rendered: string) => void;
   copyToClipboard: (load: () => Promise<string>) => Promise<boolean>;
-  /** Bumped when the daemon reports a fetched image; keyed into every rendered key. */
-  assetGeneration: Accessor<number>;
-  assetsChanged: () => void;
+  /** Arrival count per asset, so a key redraws only when its own picture lands. */
+  assetArrivals: Record<string, number>;
+  assetReady: (asset: string) => void;
   values: Accessor<pluginApi.ValueCatalogue>;
   refreshValues: () => Promise<void>;
   saveUserValue: (value: pluginApi.UserValue) => Promise<boolean>;
@@ -42,13 +42,14 @@ export const createPluginStore = (
   const [catalogue, setCatalogue] = createSignal<pluginApi.PluginCatalogue>(pluginApi.emptyCatalogue);
   const [values, setValues] = createSignal<pluginApi.ValueCatalogue>(pluginApi.emptyValueCatalogue);
   const [variables, setVariables] = createStore<Record<string, string>>({});
-  const [assetGeneration, setAssetGeneration] = createSignal(0);
+  const [assetArrivals, setAssetArrivals] = createStore<Record<string, number>>({});
 
   const refreshValues = async (): Promise<void> => {
     try {
       const catalogue = await pluginApi.fetchValues();
 
       setValues(catalogue);
+
       // Seed the live map too. It is otherwise filled only by change events, so a freshly loaded
       // page would resolve every `$(...)` to nothing until something happened to move.
       for (const entry of catalogue.values) {
@@ -105,10 +106,10 @@ export const createPluginStore = (
     variables,
     setVariable: (integrationId, name, rendered) =>
       setVariables(`${integrationId}:${name}`, rendered),
-    assetGeneration,
-    assetsChanged: () => {
-      forgetRenderedKeys();
-      setAssetGeneration(generation => generation + 1);
+    assetArrivals,
+    assetReady: (asset) => {
+      forgetRendersUsing(asset);
+      setAssetArrivals(asset, arrivals => (arrivals ?? 0) + 1);
     },
     values,
     refreshValues,

@@ -10,16 +10,44 @@ type KeyRendering = {
   background_color: RgbaColor | null;
 };
 
+/**
+ * Distinct renderings held at once. A key bound to a once-a-second value produces a new rendering
+ * every second, and every one of them is an object URL holding a decoded JPEG; without a bound
+ * this map is a memory leak that grows for as long as the tab is open.
+ */
+const CACHE_LIMIT = 256;
+
 const cache = new Map<string, Promise<string>>();
 
-/**
- * A key whose image is a URL renders blank until the download lands, and this cache would
- * otherwise hold that blank result forever. Dropping it is what lets the picture appear.
- */
-export const forgetRenderedKeys = (): void => cache.clear();
+const forget = (body: string): void => {
+  const held = cache.get(body);
 
-// Renders a key exactly as the daemon draws it for the device (same ab_glyph font, same raster),
-// returning an object URL for the JPEG. Cached by rendering so identical keys share one request.
+  cache.delete(body);
+  // Revoking releases the blob. Awaiting first matters: an in-flight request would otherwise leak
+  // the URL it is about to produce.
+  void held?.then(url => URL.revokeObjectURL(url)).catch(() => undefined);
+};
+
+/**
+ * Drops anything drawn with this asset, so the next render picks up the bytes that just landed.
+ * Matched on the parsed body rather than a substring, so a label that happens to contain the URL
+ * does not evict unrelated keys.
+ */
+export const forgetRendersUsing = (asset: string): void => {
+  // Copied because `forget` deletes from the map being walked.
+  for (const body of [...cache.keys()]) {
+    const rendering: unknown = JSON.parse(body);
+
+    if (
+      typeof rendering === "object"
+      && rendering !== null
+      && (rendering as KeyRendering).image === asset
+    ) {
+      forget(body);
+    }
+  }
+};
+
 export type ResolvedState = {
   text: string | null;
   image: string | null;
@@ -27,6 +55,9 @@ export type ResolvedState = {
   background_color: RgbaColor | null;
 };
 
+// Renders a key exactly as the daemon draws it for the device (same font, same raster), returning
+// an object URL for the JPEG. Cached by rendering, so the same key shown on the stage and in a
+// sidebar thumbnail costs one request rather than two.
 export const renderedKeyImageUrl = (state: ResolvedState): Promise<string> => {
   const rendering: KeyRendering = {
     key_index: 0,
@@ -40,7 +71,13 @@ export const renderedKeyImageUrl = (state: ResolvedState): Promise<string> => {
   const body = JSON.stringify(rendering);
   const cached = cache.get(body);
 
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    // Refresh its place in insertion order so what is on screen is not what gets evicted.
+    cache.delete(body);
+    cache.set(body, cached);
+
+    return cached;
+  }
 
   const request = fetch("/api/render-key", {
     method: "POST",
@@ -55,6 +92,14 @@ export const renderedKeyImageUrl = (state: ResolvedState): Promise<string> => {
     .then(blob => URL.createObjectURL(blob));
 
   cache.set(body, request);
+
+  while (cache.size > CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+
+    if (oldest.done === true) break;
+
+    forget(oldest.value);
+  }
 
   return request;
 };

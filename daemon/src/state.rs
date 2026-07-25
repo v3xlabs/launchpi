@@ -26,7 +26,7 @@ impl AppState {
         let config_directory = crate::config::config_directory()?;
         let directory = PluginDirectory::open(&config_directory)?;
         // The engine repaints when bytes land, so the store needs a way to say so.
-        let (assets_ready, assets_ready_receiver) = tokio::sync::mpsc::channel(8);
+        let (assets_ready, assets_ready_receiver) = tokio::sync::mpsc::channel::<String>(8);
         let assets = Arc::new(AssetStore::open(
             crate::config::cache_directory()?.join("assets"),
             reqwest::Client::new(),

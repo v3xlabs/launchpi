@@ -12,6 +12,7 @@ import {
 import { createStore, produce, reconcile } from "solid-js/store";
 
 import {
+  asAssetReadyEvent,
   asDeviceStatusEvent,
   asDialPressEvent,
   asDialStateEvent,
@@ -325,7 +326,9 @@ export const InventoryProvider: ParentComponent = (properties) => {
         return;
       }
 
-      if (parsed.type === "assets_changed") return pluginStore.assetsChanged();
+      const asset = asAssetReadyEvent(parsed);
+
+      if (asset !== null) return pluginStore.assetReady(asset.asset);
 
       if (parsed.type === "changed") scheduleResync();
     };

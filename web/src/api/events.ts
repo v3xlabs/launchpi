@@ -79,6 +79,13 @@ export const asDeviceStatusEvent = (value: Record<string, unknown>): DeviceStatu
       }
     : null);
 
+export type AssetReadyEvent = { type: "asset_ready"; asset: string; };
+
+export const asAssetReadyEvent = (value: Record<string, unknown>): AssetReadyEvent | null =>
+  (value.type === "asset_ready" && typeof value.asset === "string"
+    ? { type: "asset_ready", asset: value.asset }
+    : null);
+
 export type VariableChangedEvent = {
   type: "variable_changed";
   integration_id: string;

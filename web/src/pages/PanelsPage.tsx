@@ -43,6 +43,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     dirty: false,
   });
   const [selection, setSelection] = createSignal<PanelSelection | null>(null);
+  const [pasteTarget, setPasteTarget] = createSignal<{ column: number; row: number; } | null>(null);
 
   const serverPanel = createMemo(
     () => store.inventory().panels.find(panel => panel.panel_id === properties.panelId) ?? null,
@@ -132,6 +133,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
 
     mutatePanel(entry => entry.controls.push(control));
     setSelection({ kind: "control", controlId });
+    setPasteTarget(null);
   };
 
   const removeControl = () => {
@@ -166,12 +168,15 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const handleCellClick = (control: Control | undefined, column: number, row: number) => {
     if (control !== undefined) {
       setSelection({ kind: "control", controlId: control.control_id });
+      setPasteTarget(null);
 
       return;
     }
 
     placeControl(column, row, store.clipboard() ?? undefined);
   };
+
+  const handleCellFocus = (control: Control | undefined, column: number, row: number) => setPasteTarget(control === undefined ? { column, row } : null);
 
   const savePanel = async () => {
     const panel = draft.panel;
@@ -189,18 +194,29 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    const target = event.target as HTMLElement | null;
-
     if (event.key === "Escape") {
       store.clearClipboard();
       setSelection(null);
+      setPasteTarget(null);
 
       return;
     }
 
-    const isField = target !== null && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const isField = target !== null && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable);
 
-    if (isField || !(event.metaKey || event.ctrlKey)) return;
+    if (isField) return;
+
+    if (event.key === "Delete" || event.key === "Backspace") {
+      if (selectedControl() !== null) {
+        removeControl();
+        event.preventDefault();
+      }
+
+      return;
+    }
+
+    if (!(event.metaKey || event.ctrlKey)) return;
 
     const key = event.key.toLowerCase();
 
@@ -210,8 +226,8 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
     }
 
     if (key === "v") {
-      const cell = firstFreeCell();
       const clip = store.clipboard();
+      const cell = pasteTarget() ?? firstFreeCell();
 
       if (cell !== null && clip !== null) {
         placeControl(cell.column, cell.row, clip);
@@ -304,9 +320,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     Copied
                     {" "}
                     <strong>{clip().name}</strong>
-                    {" "}
-                    - click an empty key to paste, Esc to
-                    clear.
+                    <span class="hidden sm:inline"> - click an empty key or use Ctrl/Cmd+V. Delete removes the selected key; Esc clears.</span>
                   </span>
                   <button
                     type="button"
@@ -339,6 +353,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     activeDialIndex={selectedDialIndex()}
                     pasteMode={store.clipboard() !== null}
                     onCellClick={handleCellClick}
+                    onCellFocus={handleCellFocus}
                     onDialClick={index => setSelection({ kind: "dial", index })}
                   />
                 </div>
