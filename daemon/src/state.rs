@@ -1,8 +1,12 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{
+        hash_map::DefaultHasher,
+        {HashMap, VecDeque},
+    },
+    hash::{Hash, Hasher},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
     },
 };
 
@@ -23,6 +27,13 @@ use crate::{
         surface::{SurfaceCapabilities, SurfaceLayout, SurfacePosition},
     },
     persistence::Persistence,
+    plugins::{
+        config::PluginDirectory,
+        engine::{InputEvent, PluginEngine, INPUT_QUEUE_SIZE},
+        feedback::FeedbackCache,
+        render::RenderContext,
+        variables::VariableStore,
+    },
 };
 
 /// How many pending renders a surface can queue before the daemon starts dropping them.
@@ -50,6 +61,7 @@ fn unix_epoch_ms() -> u64 {
 #[derive(Clone)]
 pub struct AppState {
     pub surfaces: Arc<SurfaceRegistry>,
+    pub plugins: Arc<PluginEngine>,
     persistence: Arc<Persistence>,
 }
 
@@ -59,8 +71,22 @@ impl AppState {
         if panels.is_empty() {
             panels.push(default_panel());
         }
+        let surfaces = Arc::new(SurfaceRegistry::from_configuration(devices, panels));
+        let directory = PluginDirectory::open(&crate::persistence::config_directory()?)?;
+        let input = surfaces
+            .take_input_receiver()
+            .expect("the input receiver has not been taken yet");
+        let plugins = PluginEngine::start(
+            surfaces.clone(),
+            surfaces.variables(),
+            surfaces.feedbacks(),
+            directory,
+            input,
+        )
+        .await;
         Ok(Self {
-            surfaces: Arc::new(SurfaceRegistry::from_configuration(devices, panels)),
+            surfaces,
+            plugins,
             persistence: Arc::new(persistence),
         })
     }
@@ -115,6 +141,16 @@ pub struct SurfaceRegistry {
     dock_children: RwLock<HashMap<String, Vec<String>>>,
     /// The newest `SURFACE_LOG_CAPACITY` lines per surface, oldest first.
     logs: RwLock<HashMap<String, VecDeque<SurfaceLogEntry>>>,
+    /// What each key was last told to show. A repaint that resolves to the same thing costs a hash
+    /// lookup instead of a JPEG encode, which is what makes a live variable affordable.
+    last_rendered: RwLock<HashMap<(String, u8), u64>>,
+    /// Live plugin state the render path resolves against.
+    variables: Arc<VariableStore>,
+    feedbacks: Arc<FeedbackCache>,
+    /// Gestures on their way to the action engine. Separate from `events` because that broadcast
+    /// drops on lag, and a dropped action is not the same kind of loss as a dropped repaint.
+    input: mpsc::Sender<InputEvent>,
+    input_receiver: Mutex<Option<mpsc::Receiver<InputEvent>>>,
     events: broadcast::Sender<ServerEvent>,
     next_surface_number: AtomicU64,
     next_panel_number: AtomicU64,
@@ -150,6 +186,7 @@ impl SurfaceRegistry {
             .filter_map(|panel| panel.panel_id.0.strip_prefix("studio-panel-")?.parse().ok())
             .max()
             .unwrap_or(0);
+        let (input, input_receiver) = mpsc::channel(INPUT_QUEUE_SIZE);
         Self {
             discovered: RwLock::default(),
             managed: RwLock::new(
@@ -171,6 +208,11 @@ impl SurfaceRegistry {
             dial_presses: RwLock::default(),
             dock_children: RwLock::default(),
             logs: RwLock::default(),
+            last_rendered: RwLock::default(),
+            variables: Arc::default(),
+            feedbacks: Arc::default(),
+            input,
+            input_receiver: Mutex::new(Some(input_receiver)),
             events: broadcast::channel(256).0,
             next_surface_number: AtomicU64::new(next_surface_number),
             next_panel_number: AtomicU64::new(next_panel_number),
@@ -180,6 +222,48 @@ impl SurfaceRegistry {
 
     pub fn subscribe(&self) -> broadcast::Receiver<ServerEvent> {
         self.events.subscribe()
+    }
+
+    pub fn variables(&self) -> Arc<VariableStore> {
+        self.variables.clone()
+    }
+
+    pub fn feedbacks(&self) -> Arc<FeedbackCache> {
+        self.feedbacks.clone()
+    }
+
+    /// Handed to the action engine at startup. Until something takes it the receiver stays here,
+    /// so input queues rather than failing to send.
+    pub fn take_input_receiver(&self) -> Option<mpsc::Receiver<InputEvent>> {
+        self.input_receiver.lock().unwrap().take()
+    }
+
+    fn render_context(&self) -> RenderContext<'_> {
+        RenderContext::new(&self.variables, &self.feedbacks)
+    }
+
+    /// The control a key belongs to on whatever panel the surface is showing.
+    pub fn control_at(&self, surface_id: &SurfaceId, key_index: u8) -> Option<Control> {
+        let device = self.managed(surface_id)?;
+        let panel = self.panel(&device.active_panel_id?.0)?;
+        panel
+            .controls
+            .into_iter()
+            .find(|control| key_index_for(control, panel.layout.columns) == Some(key_index))
+    }
+
+    /// Re-resolves one key against current plugin state and pushes it if anything changed.
+    pub fn refresh_key(&self, surface_id: &SurfaceId, key_index: u8) {
+        let is_pressed = self
+            .key_states
+            .read()
+            .unwrap()
+            .get(&(surface_id.0.clone(), key_index))
+            .copied()
+            .unwrap_or(false);
+        if let Some(rendering) = self.rendering_for_key(surface_id, key_index, is_pressed) {
+            self.send_rendering(surface_id, rendering);
+        }
     }
 
     fn emit(&self, event: ServerEvent) {
@@ -560,6 +644,7 @@ impl SurfaceRegistry {
     }
     pub fn deactivate(&self, surface_id: &str) {
         self.reset_dial_positions(surface_id);
+        self.forget_renderings(surface_id);
         if let Some(connection) = self.active_connections.write().unwrap().remove(surface_id) {
             connection.is_active.store(false, Ordering::Release);
         }
@@ -603,10 +688,13 @@ impl SurfaceRegistry {
         let Some(panel) = self.panel(&panel_id.0) else {
             return Vec::new();
         };
+        let context = self.render_context();
         panel
             .controls
             .iter()
-            .filter_map(|control| rendering_for_control(control, false, panel.layout.columns))
+            .filter_map(|control| {
+                rendering_for_control(control, false, panel.layout.columns, &context)
+            })
             .collect()
     }
 
@@ -679,7 +767,9 @@ impl SurfaceRegistry {
         self.log(
             surface_id,
             SurfaceLogLevel::Input,
-            format!("dial {dial_index} turned {detents:+} to {level}% ({next}/{DIAL_RING_SEGMENTS})"),
+            format!(
+                "dial {dial_index} turned {detents:+} to {level}% ({next}/{DIAL_RING_SEGMENTS})"
+            ),
         );
         self.emit(ServerEvent::DialState {
             surface_id: surface_id.clone(),
@@ -800,7 +890,21 @@ impl SurfaceRegistry {
         if let Some(rendering) = self.rendering_for_key(surface_id, key_index, is_pressed) {
             self.send_rendering(surface_id, rendering);
         }
+        self.dispatch_input(InputEvent::Key {
+            surface_id: surface_id.clone(),
+            key_index,
+            is_pressed,
+        });
         true
+    }
+
+    fn dispatch_input(&self, event: InputEvent) {
+        if let Err(mpsc::error::TrySendError::Full(_)) = self.input.try_send(event) {
+            warn!(
+                capacity = INPUT_QUEUE_SIZE,
+                "input queue is full, dropped a gesture; bound actions did not run"
+            );
+        }
     }
 
     fn rendering_for_key(
@@ -812,11 +916,16 @@ impl SurfaceRegistry {
         let device = self.managed(surface_id)?;
         let panel_id = device.active_panel_id?;
         let panel = self.panel(&panel_id.0)?;
-        panel
-            .controls
-            .iter()
-            .find(|control| key_index_for(control, panel.layout.columns) == Some(key_index))
-            .and_then(|control| rendering_for_control(control, is_pressed, panel.layout.columns))
+        panel.controls.iter().find_map(|control| {
+            (key_index_for(control, panel.layout.columns) == Some(key_index)).then(|| {
+                rendering_for_control(
+                    control,
+                    is_pressed,
+                    panel.layout.columns,
+                    &self.render_context(),
+                )
+            })?
+        })
     }
     fn render_active_panel(&self, surface_id: &str) {
         let surface_id = SurfaceId(surface_id.to_string());
@@ -827,13 +936,34 @@ impl SurfaceRegistry {
             self.send_dial_color(&surface_id, dial_index, color, lit_segments);
         }
     }
+    /// Drops a repaint that would produce the identical image. Without this a single one-hertz
+    /// variable on a 16x2 Studio would re-encode thirty-two JPEGs a second to change one of them.
     fn send_rendering(&self, surface_id: &SurfaceId, rendering: KeyRendering) {
         let key_index = rendering.key_index;
+        let fingerprint = fingerprint(&rendering);
+        if self
+            .last_rendered
+            .write()
+            .unwrap()
+            .insert((surface_id.0.clone(), key_index), fingerprint)
+            == Some(fingerprint)
+        {
+            return;
+        }
         self.dispatch(
             surface_id,
             SurfaceCommand::RenderKey(rendering),
             &format!("key {key_index} rendering"),
         );
+    }
+
+    /// Forgets what a surface was showing, so the next repaint is sent rather than deduplicated
+    /// against a device that has since been reset.
+    fn forget_renderings(&self, surface_id: &str) {
+        self.last_rendered
+            .write()
+            .unwrap()
+            .retain(|(id, _), _| id != surface_id);
     }
     fn send_dial_color(
         &self,
@@ -930,7 +1060,7 @@ fn validate_panel(panel: &Panel) -> Result<(), String> {
     }
     Ok(())
 }
-fn key_index_for(control: &Control, columns: u16) -> Option<u8> {
+pub fn key_index_for(control: &Control, columns: u16) -> Option<u8> {
     u8::try_from(
         u32::from(control.position.row) * u32::from(columns) + u32::from(control.position.column),
     )
@@ -940,22 +1070,22 @@ fn rendering_for_control(
     control: &Control,
     is_pressed: bool,
     columns: u16,
+    context: &RenderContext<'_>,
 ) -> Option<KeyRendering> {
-    let state = if is_pressed {
-        control
-            .pressed_state
-            .as_ref()
-            .unwrap_or(&control.default_state)
-    } else {
-        &control.default_state
-    };
+    let state = context.resolve(control, is_pressed);
     Some(KeyRendering {
         key_index: key_index_for(control, columns)?,
-        text: state.text.clone(),
+        text: state.text,
         icon: None,
-        foreground_color: state.foreground_color.clone(),
-        background_color: state.background_color.clone(),
+        foreground_color: state.foreground_color,
+        background_color: state.background_color,
     })
+}
+
+fn fingerprint(rendering: &KeyRendering) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    rendering.hash(&mut hasher);
+    hasher.finish()
 }
 fn default_device(
     devices: &[ManagedNetworkSurface],
@@ -1137,7 +1267,8 @@ mod tests {
     fn deleting_the_active_panel_falls_back_to_a_compatible_one() {
         let mut spare = default_panel();
         spare.panel_id = PanelId("studio-panel-2".to_string());
-        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![default_panel(), spare]);
+        let registry =
+            SurfaceRegistry::from_configuration(Vec::new(), vec![default_panel(), spare]);
 
         registry
             .remove_panel("studio-panel-1")

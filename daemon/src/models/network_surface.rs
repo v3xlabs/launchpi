@@ -70,7 +70,7 @@ fn default_stream_deck_capabilities() -> SurfaceCapabilities {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct KeyRendering {
     pub key_index: u8,
     pub text: Option<String>,
@@ -79,7 +79,7 @@ pub struct KeyRendering {
     pub background_color: Option<RgbaColor>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KeyIcon {
     Circle,

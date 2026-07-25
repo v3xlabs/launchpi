@@ -71,6 +71,11 @@ struct PanelsDocument {
     panels: Vec<Panel>,
 }
 
+/// Version 2 tags `Action` and `ActionTrigger` for readable TOML. Version 1 files parse
+/// identically because no `action_bindings` written under it were ever non-empty.
+const PANEL_DOCUMENT_VERSION: u8 = 2;
+const SUPPORTED_PANEL_VERSIONS: [u8; 2] = [1, PANEL_DOCUMENT_VERSION];
+
 pub struct Persistence {
     devices_path: PathBuf,
     panels_path: PathBuf,
@@ -145,12 +150,18 @@ impl Persistence {
                 devices: devices.into_iter().map(PersistedDevice::from).collect(),
             },
         )?;
-        write_toml(&self.panels_path, &PanelsDocument { version: 1, panels })
+        write_toml(
+            &self.panels_path,
+            &PanelsDocument {
+                version: PANEL_DOCUMENT_VERSION,
+                panels,
+            },
+        )
     }
 
     pub fn render_panel(&self, panel: Panel) -> Result<String> {
         Ok(toml::to_string_pretty(&PanelsDocument {
-            version: 1,
+            version: PANEL_DOCUMENT_VERSION,
             panels: vec![panel],
         })?)
     }
@@ -223,13 +234,13 @@ fn load_panels(path: &Path) -> Result<Vec<Panel>> {
         fs::read_to_string(path).with_context(|| format!("unable to read {}", path.display()))?;
     let config: PanelsDocument =
         toml::from_str(&contents).with_context(|| format!("unable to parse {}", path.display()))?;
-    if config.version != 1 {
+    if !SUPPORTED_PANEL_VERSIONS.contains(&config.version) {
         anyhow::bail!("unsupported panel configuration version {}", config.version);
     }
     Ok(config.panels)
 }
 
-fn config_directory() -> Result<PathBuf> {
+pub fn config_directory() -> Result<PathBuf> {
     if let Some(path) = env::var_os("LAUNCHPI_CONFIG_DIR") {
         return Ok(PathBuf::from(path));
     }

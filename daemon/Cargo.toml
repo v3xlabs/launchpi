@@ -21,7 +21,7 @@ mdns-sd = "0.20"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.108"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time", "io-util"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time", "io-util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3" }
 lazy_static = "1.4.0"

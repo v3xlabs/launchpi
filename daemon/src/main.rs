@@ -4,6 +4,7 @@ mod api;
 mod controllers;
 mod models;
 mod persistence;
+mod plugins;
 mod scripts;
 mod state;
 mod streamdeck;
