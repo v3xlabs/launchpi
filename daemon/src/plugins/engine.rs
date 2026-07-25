@@ -28,7 +28,7 @@ use crate::{
             PluginInstance, PluginInstanceStatus, INSTANCE_DOCUMENT_VERSION,
         },
         manifest::PluginManifest,
-        plugin::{cancellation, CancelHandle, Plugin, PluginContext, PluginError},
+        plugin::{cancellation, CancelHandle, LookupOption, Plugin, PluginContext, PluginError},
         registry,
     },
     rendering::index::{DependencyIndex, RenderTarget},
@@ -244,6 +244,17 @@ impl PluginEngine {
             &instance.document,
             &manifest,
         ))
+    }
+
+    pub async fn lookup(
+        &self,
+        integration_id: &IntegrationId,
+        source: &str,
+    ) -> Result<Vec<LookupOption>, PluginError> {
+        let plugin = self.plugin(integration_id).ok_or_else(|| {
+            PluginError::Configuration(format!("{} is not running", integration_id.0))
+        })?;
+        plugin.lookup(source).await
     }
 
     pub async fn invoke(

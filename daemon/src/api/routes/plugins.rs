@@ -14,6 +14,7 @@ use crate::{
     plugins::{
         instance::PluginInstance,
         manifest::{ConfigField, PluginManifest},
+        plugin::LookupOption,
     },
     state::AppState,
     variables::{VariableRef, VariableValue},
@@ -27,6 +28,10 @@ pub fn router() -> Router<AppState> {
             axum::routing::patch(update_instance).delete(delete_instance),
         )
         .route("/api/plugins/:integration_id/config", get(export_instance))
+        .route(
+            "/api/plugins/:integration_id/lookup/:source",
+            get(lookup_options),
+        )
         .route(
             "/api/plugins/:integration_id/variables",
             get(list_variables),
@@ -223,6 +228,20 @@ async fn export_instance(
         .export_instance(&IntegrationId(integration_id))
         .ok_or_else(|| ApiError::not_found("plugin instance"))?
         .map_err(ApiError::bad_request)
+}
+
+/// Backs the combobox on a lookup field: real choices from the running instance, with free text
+/// still accepted so a raw identifier keeps working.
+async fn lookup_options(
+    State(state): State<AppState>,
+    Path((integration_id, source)): Path<(String, String)>,
+) -> Result<Json<Vec<LookupOption>>, ApiError> {
+    state
+        .plugins
+        .lookup(&IntegrationId(integration_id), &source)
+        .await
+        .map(Json)
+        .map_err(|error| ApiError::bad_request(error.to_string()))
 }
 
 async fn list_variables(
