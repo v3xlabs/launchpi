@@ -101,6 +101,21 @@ const ControlEditor: Component<{
             control.default_state.text = value || null;
           })}
       />
+      <TextField
+        label="Image"
+        value={properties.control.default_state.image ?? ""}
+        placeholder="$(mpris.default:art_url) or a URL"
+        onChange={value =>
+          properties.onMutate((control) => {
+            control.default_state.image = value || null;
+          })}
+      />
+      <p class="hint">
+        A value reference, an image URL, or
+        {" "}
+        <span class="mono">builtin:play</span>
+        . Downloaded once and cached.
+      </p>
       <div class="grid grid-cols-2 gap-2">
         <ColorField
           label="Text"

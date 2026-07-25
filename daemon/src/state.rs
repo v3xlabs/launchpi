@@ -28,7 +28,7 @@ impl AppState {
         // The engine repaints when bytes land, so the store needs a way to say so.
         let (assets_ready, assets_ready_receiver) = tokio::sync::mpsc::channel(8);
         let assets = Arc::new(AssetStore::open(
-            crate::config::cache_directory()?,
+            crate::config::cache_directory()?.join("assets"),
             reqwest::Client::new(),
             assets_ready,
         )?);

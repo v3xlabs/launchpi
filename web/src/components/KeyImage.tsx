@@ -22,6 +22,9 @@ export const KeyImage: Component<{ state: RenderedState; }> = (properties) => {
     text: properties.state.text === null
       ? null
       : interpolateVariables(properties.state.text, lookup) || null,
+    image: properties.state.image === null
+      ? null
+      : interpolateVariables(properties.state.image, lookup) || null,
     foreground_color: resolveColor(properties.state.foreground_color),
     background_color: resolveColor(properties.state.background_color),
   });

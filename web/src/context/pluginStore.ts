@@ -46,7 +46,14 @@ export const createPluginStore = (
 
   const refreshValues = async (): Promise<void> => {
     try {
-      setValues(await pluginApi.fetchValues());
+      const catalogue = await pluginApi.fetchValues();
+
+      setValues(catalogue);
+      // Seed the live map too. It is otherwise filled only by change events, so a freshly loaded
+      // page would resolve every `$(...)` to nothing until something happened to move.
+      for (const entry of catalogue.values) {
+        setVariables(`${entry.integration_id}:${entry.name}`, entry.rendered);
+      }
     }
     catch (valuesError) {
       setError(valuesError instanceof Error ? valuesError.message : "Unable to load values.");

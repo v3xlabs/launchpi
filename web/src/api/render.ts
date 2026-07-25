@@ -4,6 +4,8 @@ type KeyRendering = {
   key_index: number;
   text: string | null;
   icon: null;
+  image: string | null;
+  progress: null;
   foreground_color: RgbaColor | null;
   background_color: RgbaColor | null;
 };
@@ -20,6 +22,7 @@ export const forgetRenderedKeys = (): void => cache.clear();
 // returning an object URL for the JPEG. Cached by rendering so identical keys share one request.
 export type ResolvedState = {
   text: string | null;
+  image: string | null;
   foreground_color: RgbaColor | null;
   background_color: RgbaColor | null;
 };
@@ -29,6 +32,8 @@ export const renderedKeyImageUrl = (state: ResolvedState): Promise<string> => {
     key_index: 0,
     text: state.text,
     icon: null,
+    image: state.image,
+    progress: null,
     foreground_color: state.foreground_color,
     background_color: state.background_color,
   };
