@@ -6,6 +6,7 @@ import { newState, toHex } from "../utils/rendered";
 import { BindingsEditor } from "./BindingsEditor";
 import { DialIndicator, litRingSegments, totalRingSegments } from "./DialIndicator";
 import { ColorField, TextField } from "./fields";
+import { ValueField } from "./ValueField";
 
 export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "dial"; index: number; };
 
@@ -92,7 +93,7 @@ const ControlEditor: Component<{
             control.name = value;
           })}
       />
-      <TextField
+      <ValueField
         label="Label"
         value={properties.control.default_state.text ?? ""}
         placeholder="Shown on the key"
@@ -101,7 +102,7 @@ const ControlEditor: Component<{
             control.default_state.text = value || null;
           })}
       />
-      <TextField
+      <ValueField
         label="Image"
         value={properties.control.default_state.image ?? ""}
         placeholder="$(mpris.default:art_url) or a URL"
@@ -152,7 +153,7 @@ const ControlEditor: Component<{
       <Show when={properties.control.pressed_state}>
         {pressed => (
           <div class="pressed-fields">
-            <TextField
+            <ValueField
               label="Pressed label"
               value={pressed().text ?? ""}
               placeholder="Optional"

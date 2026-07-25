@@ -67,6 +67,15 @@ button, input, select, textarea { font: inherit; }
 .check-tile { @apply flex h-8 items-center gap-2 border border-neutral-800 bg-neutral-950 px-2 text-xs font-medium normal-case tracking-normal text-neutral-300 transition hover:border-neutral-700; }
 .check-tile input { @apply h-3.5 w-3.5 accent-blue-500; }
 .color-input { @apply h-8 w-full cursor-pointer border border-neutral-700 bg-neutral-950 p-0.5; }
+
+/* Completion. The list is absolute so opening it does not push the rest of the form down. */
+.completing-field { @apply relative grid gap-1; }
+.suggestions { @apply absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto border border-neutral-700 bg-neutral-900 shadow-lg shadow-black/40; }
+.suggestion { @apply flex w-full items-center gap-2 px-2 py-1.5 text-left transition hover:bg-neutral-800; }
+.suggestion[data-active="true"] { @apply bg-neutral-800; }
+.suggestion-label { @apply min-w-0 flex-1 truncate text-xs font-medium normal-case tracking-normal text-neutral-200; }
+.suggestion-value { @apply shrink-0 truncate font-mono text-[0.7rem] text-neutral-500; }
+.suggestion-empty { @apply px-2 py-2 text-xs normal-case tracking-normal text-neutral-500; }
 .range-input { @apply h-8 w-full cursor-pointer bg-transparent accent-blue-500; }
 
 /* Navigation */

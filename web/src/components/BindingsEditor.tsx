@@ -118,6 +118,7 @@ const ActionRow: Component<{
               {field => (
                 <ConfigFieldInput
                   field={field}
+                  supportsReferences
                   integrationId={
                     properties.action.type === "invoke_integration"
                       ? properties.action.integration_id

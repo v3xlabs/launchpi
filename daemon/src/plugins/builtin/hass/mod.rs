@@ -17,6 +17,7 @@ use crate::plugins::{
         connection::{PendingCommand, Shared},
         protocol::ServiceCall,
     },
+    engine::SUGGESTION_SOURCE,
     instance::InstanceConfig,
     manifest::{ConfigField, PluginManifest, VariableDefinition, VariableKind},
     plugin::{LookupOption, Plugin, PluginContext, PluginError, PluginFactory, Subscription},
@@ -151,9 +152,10 @@ impl Plugin for HassPlugin {
         self.call(call).await
     }
 
-    async fn lookup(&self, source: &str) -> Result<Vec<LookupOption>, PluginError> {
+    async fn lookup(&self, source: &str, query: &str) -> Result<Vec<LookupOption>, PluginError> {
         match source {
-            ENTITY_LOOKUP => Ok(self.shared.entity_options()),
+            ENTITY_LOOKUP => Ok(self.shared.entity_options(query)),
+            SUGGESTION_SOURCE => Ok(self.shared.value_options(query)),
             other => Err(PluginError::Configuration(format!(
                 "unknown lookup {other}"
             ))),

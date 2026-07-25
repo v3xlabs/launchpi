@@ -72,6 +72,7 @@ const ActionRow: Component<{ action: AvailableAction; }> = (properties) => {
             {field => (
               <ConfigFieldInput
                 field={field}
+                supportsReferences
                 integrationId={properties.action.integration_id}
                 value={parameters[field.key]}
                 onChange={raw => setField(field, raw)}

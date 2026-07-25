@@ -41,6 +41,10 @@ use crate::{
 const COALESCE_WINDOW: Duration = Duration::from_millis(50);
 const SIGNAL_QUEUE_SIZE: usize = 1024;
 pub const INPUT_QUEUE_SIZE: usize = 256;
+/// The lookup a plugin answers with the references it could publish.
+pub const SUGGESTION_SOURCE: &str = "values";
+/// Enough to scroll, few enough to render. Anything longer is a sign the query needs narrowing.
+const SUGGESTION_LIMIT: usize = 50;
 
 /// A gesture that reached the daemon. Deliberately not the `ServerEvent` broadcast, which drops
 /// messages when a receiver lags: a dropped render is cosmetic, a dropped action is a light that
@@ -257,11 +261,64 @@ impl PluginEngine {
         &self,
         integration_id: &IntegrationId,
         source: &str,
+        query: &str,
     ) -> Result<Vec<LookupOption>, PluginError> {
         let plugin = self.plugin(integration_id).ok_or_else(|| {
             PluginError::Configuration(format!("{} is not running", integration_id.0))
         })?;
-        plugin.lookup(source).await
+        plugin.lookup(source, query).await
+    }
+
+    /// Everything a `$(...)` reference could name, for the editor's autocomplete: what is already
+    /// published, plus what each running instance says it could publish. The second half matters
+    /// because a plugin only publishes what something already watches, so a fresh installation
+    /// would otherwise suggest nothing at all.
+    pub async fn suggest_references(&self, query: &str) -> Vec<LookupOption> {
+        let needle = query.trim().to_lowercase();
+        let matches =
+            |haystack: &str| needle.is_empty() || haystack.to_lowercase().contains(&needle);
+
+        let mut suggestions: Vec<LookupOption> = self
+            .variables
+            .snapshot()
+            .into_iter()
+            .filter(|(reference, _)| {
+                matches(&reference.name) || matches(&reference.integration_id.0)
+            })
+            .map(|(reference, value)| LookupOption {
+                value: format!("$({}:{})", reference.integration_id.0, reference.name),
+                label: format!("{} = {}", reference.name, value),
+                group: Some(reference.integration_id.0),
+            })
+            .collect();
+
+        let instances: Vec<IntegrationId> =
+            self.instances.read().unwrap().keys().cloned().collect();
+        for integration_id in instances {
+            let Some(plugin) = self.plugin(&integration_id) else {
+                continue;
+            };
+            let Ok(offered) = plugin.lookup(SUGGESTION_SOURCE, &needle).await else {
+                continue;
+            };
+            for option in offered {
+                let reference = format!("$({}:{})", integration_id.0, option.value);
+                if suggestions
+                    .iter()
+                    .any(|existing| existing.value == reference)
+                {
+                    continue;
+                }
+                suggestions.push(LookupOption {
+                    value: reference,
+                    label: option.label,
+                    group: Some(integration_id.0.clone()),
+                });
+            }
+        }
+        suggestions.sort_by(|left, right| left.value.cmp(&right.value));
+        suggestions.truncate(SUGGESTION_LIMIT);
+        suggestions
     }
 
     pub async fn invoke(

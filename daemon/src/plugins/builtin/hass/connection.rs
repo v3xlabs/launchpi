@@ -38,6 +38,27 @@ pub struct CatalogueEntry {
     pub domain: String,
 }
 
+impl CatalogueEntry {
+    fn describe(&self, entity_id: &str) -> String {
+        match &self.friendly_name {
+            Some(name) => format!("{name} ({entity_id})"),
+            None => entity_id.to_string(),
+        }
+    }
+}
+
+/// What is worth suggesting per domain. `state` is universal; the rest only exist where Home
+/// Assistant actually reports them, and offering a colour for a doorbell helps nobody.
+fn fields_for(domain: &str) -> &'static [&'static str] {
+    match domain {
+        "light" => &["state", "on", "color", "brightness_pct"],
+        "switch" | "input_boolean" | "fan" | "automation" | "script" => &["state", "on"],
+        "binary_sensor" => &["state", "on"],
+        "cover" | "lock" | "media_player" | "climate" => &["state"],
+        _ => &["state"],
+    }
+}
+
 pub struct Shared {
     pub bindings: RwLock<Vec<ValueBinding>>,
     /// Every entity the seed reported, so the UI can offer real names instead of asking someone to
@@ -83,20 +104,52 @@ impl Shared {
 
     /// The entity list as lookup options: friendly name first because that is what a person knows,
     /// the id alongside it because that is what the binding actually stores.
-    pub fn entity_options(&self) -> Vec<LookupOption> {
-        self.catalogue
-            .read()
-            .unwrap()
-            .iter()
+    pub fn entity_options(&self, query: &str) -> Vec<LookupOption> {
+        self.matching(query)
             .map(|(entity_id, entry)| LookupOption {
                 value: entity_id.clone(),
-                label: match &entry.friendly_name {
-                    Some(name) => format!("{name} ({entity_id})"),
-                    None => entity_id.clone(),
-                },
+                label: entry.describe(&entity_id),
                 group: Some(entry.domain.clone()),
             })
             .collect()
+    }
+
+    /// The value names something could bind to: every matching entity crossed with the fields that
+    /// make sense for its domain. A light offers a colour and a brightness; a sensor does not.
+    pub fn value_options(&self, query: &str) -> Vec<LookupOption> {
+        self.matching(query)
+            .flat_map(|(entity_id, entry)| {
+                fields_for(&entry.domain)
+                    .iter()
+                    .map(|field| LookupOption {
+                        value: format!("{entity_id}.{field}"),
+                        label: format!("{} - {field}", entry.describe(&entity_id)),
+                        group: Some(entry.domain.clone()),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// Matched on the id and the friendly name together, because people search for "kitchen"
+    /// whichever of the two they happen to remember.
+    fn matching(&self, query: &str) -> std::vec::IntoIter<(String, CatalogueEntry)> {
+        let needle = query.trim().to_lowercase();
+        let catalogue = self.catalogue.read().unwrap();
+        let matched: Vec<_> = catalogue
+            .iter()
+            .filter(|(entity_id, entry)| {
+                needle.is_empty()
+                    || entity_id.to_lowercase().contains(&needle)
+                    || entry
+                        .friendly_name
+                        .as_deref()
+                        .is_some_and(|name| name.to_lowercase().contains(&needle))
+            })
+            .map(|(entity_id, entry)| (entity_id.clone(), entry.clone()))
+            .collect();
+
+        matched.into_iter()
     }
 
     /// Replaces the watched set. Names that do not read like an entity are dropped here, so the

@@ -35,10 +35,13 @@ pub trait Plugin: Send + Sync {
         Ok(())
     }
 
-    /// Options for a `ConfigFieldKind::Lookup` field, so the UI can offer real choices instead of
-    /// asking someone to remember an identifier. Answered from what the instance already knows;
-    /// like `evaluate` used to be, this must not go to the network.
-    async fn lookup(&self, _source: &str) -> Result<Vec<LookupOption>, PluginError> {
+    /// Options for a `ConfigFieldKind::Lookup` field, and the reference suggestions behind the
+    /// editor's autocomplete. Answered from what the instance already knows, so it must not go to
+    /// the network.
+    ///
+    /// `query` is what the user has typed. Filtering here rather than in the browser is what keeps
+    /// this usable against an installation with thousands of entities.
+    async fn lookup(&self, _source: &str, _query: &str) -> Result<Vec<LookupOption>, PluginError> {
         Ok(Vec::new())
     }
 

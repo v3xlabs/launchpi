@@ -1,8 +1,10 @@
-import { Component, createResource, createUniqueId, For, Match, Show, Switch } from "solid-js";
+import { Component, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 
 import { ColorBinding } from "../api/inventory";
 import { ConfigField, fetchLookup, LookupOption } from "../api/plugins";
 import { fromHex, isReference, toHex } from "../utils/rendered";
+import { suggestionKeyDown, SuggestionList } from "./SuggestionList";
+import { ValueField } from "./ValueField";
 
 export const TextField: Component<{
   label: string;
@@ -112,9 +114,10 @@ export const SelectField: Component<{
 );
 
 /**
- * A field whose options the instance supplies. Backed by a `<datalist>` rather than a `<select>`
- * so you can pick a light by its friendly name, or still type a raw entity id when the instance is
- * offline or the thing you want was never in the list.
+ * A field whose options the instance supplies, narrowed by what you type.
+ *
+ * Not a `<select>`: you can still type a raw entity id when the instance is offline, or a `$(...)`
+ * reference to choose the entity from another value.
  */
 export const LookupField: Component<{
   label: string;
@@ -123,50 +126,72 @@ export const LookupField: Component<{
   source: string;
   onChange: (value: string) => void;
 }> = (properties) => {
+  const [query, setQuery] = createSignal<string | null>(null);
+  const [activeIndex, setActiveIndex] = createSignal(-1);
+
   const [options] = createResource(
-    () => [properties.integrationId, properties.source] as const,
-    ([integrationId, source]) => fetchLookup(integrationId, source),
+    () => {
+      const term = query();
+
+      return term === null
+        ? null
+        : ([properties.integrationId, properties.source, term] as const);
+    },
+    ([integrationId, source, term]) => fetchLookup(integrationId, source, term),
   );
-  const listId = createUniqueId();
-  const grouped = () => {
-    const byGroup = new Map<string, LookupOption[]>();
 
-    const available = options() ?? [];
+  const available = () => options.latest ?? [];
 
-    for (const option of available) {
-      const group = option.group ?? "";
-
-      byGroup.set(group, [...(byGroup.get(group) ?? []), option]);
-    }
-
-    // The daemon returns entities ordered by id, so groups already cluster alphabetically.
-    return [...byGroup];
+  const close = () => {
+    setQuery(null);
+    setActiveIndex(-1);
   };
 
+  const choose = (option: LookupOption) => {
+    properties.onChange(option.value);
+    close();
+  };
+
+  const onKeyDown = suggestionKeyDown({
+    count: () => (query() === null ? 0 : available().length),
+    activeIndex,
+    setActiveIndex,
+    accept: () => {
+      const option = available()[activeIndex()];
+
+      if (option !== undefined) choose(option);
+    },
+    close,
+  });
+
   return (
-    <label class="field-label">
-      {properties.label}
-      <input
-        class="field-input"
-        value={properties.value}
-        list={listId}
-        placeholder="light.kitchen"
-        onInput={event => properties.onChange(event.currentTarget.value)}
-      />
-      <datalist id={listId}>
-        <For each={grouped()}>
-          {([group, entries]) => (
-            <For each={entries}>
-              {option => (
-                <option value={option.value}>
-                  {group === "" ? option.label : `${group} - ${option.label}`}
-                </option>
-              )}
-            </For>
-          )}
-        </For>
-      </datalist>
-    </label>
+    <div class="completing-field">
+      <label class="field-label">
+        {properties.label}
+        <input
+          class="field-input"
+          value={properties.value}
+          placeholder="light.kitchen"
+          autocomplete="off"
+          onFocus={() => setQuery(properties.value)}
+          onInput={(event) => {
+            properties.onChange(event.currentTarget.value);
+            setQuery(event.currentTarget.value);
+            setActiveIndex(-1);
+          }}
+          onKeyDown={onKeyDown}
+          onBlur={() => setTimeout(close, 150)}
+        />
+      </label>
+      <Show when={query() !== null}>
+        <SuggestionList
+          options={available()}
+          isLoading={options.loading}
+          activeIndex={activeIndex()}
+          onChoose={choose}
+        />
+      </Show>
+    </div>
   );
 };
 
@@ -179,6 +204,11 @@ export const ConfigFieldInput: Component<{
   value: unknown;
   /** Which instance answers a lookup field. Absent where no field can be a lookup. */
   integrationId?: string;
+  /**
+   * Whether a text field here is interpolated before use. True for action parameters, false for
+   * plugin configuration, where a `$(...)` would be stored and sent literally.
+   */
+  supportsReferences?: boolean;
   onChange: (value: string | boolean) => void;
 }> = (properties) => {
   const label = () => (properties.field.is_required ? `${properties.field.label} *` : properties.field.label);
@@ -190,12 +220,24 @@ export const ConfigFieldInput: Component<{
     <div class="grid gap-1">
       <Switch
         fallback={(
-          <TextField
-            label={label()}
-            value={text()}
-            placeholder={properties.field.placeholder ?? undefined}
-            onChange={properties.onChange}
-          />
+          <Show
+            when={properties.supportsReferences}
+            fallback={(
+              <TextField
+                label={label()}
+                value={text()}
+                placeholder={properties.field.placeholder ?? undefined}
+                onChange={properties.onChange}
+              />
+            )}
+          >
+            <ValueField
+              label={label()}
+              value={text()}
+              placeholder={properties.field.placeholder ?? undefined}
+              onChange={properties.onChange}
+            />
+          </Show>
         )}
       >
         <Match when={properties.field.kind.type === "number"}>

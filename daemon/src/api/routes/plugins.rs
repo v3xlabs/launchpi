@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -42,6 +42,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/devices/:surface_id/config", get(export_device))
         .route("/api/config/export", get(export_configuration))
+        .route("/api/values/suggest", get(suggest_references))
         .route("/api/values", get(list_all_values).post(upsert_user_value))
         .route(
             "/api/values/:name",
@@ -51,6 +52,20 @@ pub fn router() -> Router<AppState> {
 
 /// Everything the daemon currently knows, from every source, plus the catalogue of what can be
 /// done with it. One request backs the whole Values page.
+#[derive(Deserialize, Default)]
+struct SearchQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// Everything a `$(...)` could name, for the editor's autocomplete.
+async fn suggest_references(
+    State(state): State<AppState>,
+    Query(search): Query<SearchQuery>,
+) -> Json<Vec<LookupOption>> {
+    Json(state.plugins.suggest_references(&search.q).await)
+}
+
 #[derive(Serialize)]
 struct ValueCatalogue {
     values: Vec<VariableEntry>,
@@ -235,10 +250,11 @@ async fn export_instance(
 async fn lookup_options(
     State(state): State<AppState>,
     Path((integration_id, source)): Path<(String, String)>,
+    Query(search): Query<SearchQuery>,
 ) -> Result<Json<Vec<LookupOption>>, ApiError> {
     state
         .plugins
-        .lookup(&IntegrationId(integration_id), &source)
+        .lookup(&IntegrationId(integration_id), &source, &search.q)
         .await
         .map(Json)
         .map_err(|error| ApiError::bad_request(error.to_string()))

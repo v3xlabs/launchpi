@@ -183,21 +183,35 @@ export type LookupOption = { value: string; label: string; group: string | null;
 const isLookupOption = (value: unknown): value is LookupOption =>
   isRecord(value) && isString(value.value) && isString(value.label);
 
-/** Options for a lookup field. An instance that is down simply offers none. */
-export const fetchLookup = async (
-  integrationId: string,
-  source: string,
-): Promise<LookupOption[]> => {
-  const response = await fetch(
-    `/api/plugins/${encodeURIComponent(integrationId)}/lookup/${encodeURIComponent(source)}`,
-  );
-
+const readOptions = async (response: Response): Promise<LookupOption[]> => {
   if (!response.ok) return [];
 
   const data: unknown = await response.json();
 
   return Array.isArray(data) && data.every(isLookupOption) ? data : [];
 };
+
+/** Options for a lookup field. An instance that is down simply offers none. */
+export const fetchLookup = async (
+  integrationId: string,
+  source: string,
+  query: string,
+): Promise<LookupOption[]> =>
+  readOptions(
+    await fetch(
+      `/api/plugins/${encodeURIComponent(integrationId)}/lookup/${
+        encodeURIComponent(source)
+      }?q=${encodeURIComponent(query)}`,
+    ),
+  );
+
+/**
+ * Every reference a field could hold, narrowed by what has been typed. Live values and what the
+ * running plugins say they *could* publish are merged by the daemon, so a light that has never been
+ * read is still offered.
+ */
+export const fetchSuggestions = async (query: string): Promise<LookupOption[]> =>
+  readOptions(await fetch(`/api/values/suggest?q=${encodeURIComponent(query)}`));
 
 export type UserValue = { name: string; value: unknown; description: string | null; };
 export type AvailableAction = {
