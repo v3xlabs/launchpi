@@ -4,7 +4,7 @@ use crate::{
     identifiers::{IntegrationId, SurfaceId},
     panels::{
         control::Control,
-        rendered_state::RenderedState,
+        rendered_state::{ColorBinding, RenderedState},
         Panel,
     },
     plugins::plugin::Subscription,
@@ -79,8 +79,6 @@ impl DependencyIndex {
             .unwrap_or_default()
     }
 
-
-
     pub fn subscriptions_for(&self, integration_id: &IntegrationId) -> &[Subscription] {
         self.subscriptions
             .get(integration_id)
@@ -93,6 +91,9 @@ impl DependencyIndex {
     }
 }
 
+/// Every field a control can bind, not just the textual ones. A colour reference that is missed
+/// here is invisible twice over: its plugin is never told to watch the value, and a change to it
+/// never marks the key dirty.
 fn references_of_state(state: &RenderedState) -> Vec<VariableRef> {
     let mut found = state
         .text
@@ -102,9 +103,19 @@ fn references_of_state(state: &RenderedState) -> Vec<VariableRef> {
     if let Some(image) = &state.image {
         found.extend(template::references(&image.0));
     }
+    for binding in [
+        state.foreground_color.as_ref(),
+        state.background_color.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let ColorBinding::Reference(reference) = binding {
+            found.extend(template::references(reference));
+        }
+    }
     found
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -177,6 +188,54 @@ mod tests {
     }
 
     #[test]
+    fn a_colour_binding_registers_a_target_and_a_subscription() {
+        let mut keyed = control(0, 0, None);
+        keyed.default_state.background_color = Some(ColorBinding::Reference(
+            "$(hass.home:light.kitchen.color)".to_string(),
+        ));
+        keyed.default_state.foreground_color = Some(ColorBinding::Reference(
+            "$(hass.home:light.kitchen.text_color)".to_string(),
+        ));
+        let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
+
+        assert_eq!(
+            index
+                .targets_for_variable(&VariableRef::new("hass.home", "light.kitchen.color"))
+                .len(),
+            1,
+            "a colour binding must mark its key dirty when the colour changes"
+        );
+        assert_eq!(
+            index
+                .targets_for_variable(&VariableRef::new("hass.home", "light.kitchen.text_color"))
+                .len(),
+            1
+        );
+
+        let mut names: Vec<_> = index
+            .subscriptions_for(&IntegrationId("hass.home".to_string()))
+            .iter()
+            .map(|subscription| subscription.name.clone())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["light.kitchen.color", "light.kitchen.text_color"],
+            "the plugin must be told to watch the colours something is showing"
+        );
+    }
+
+    #[test]
+    fn a_literal_colour_subscribes_to_nothing() {
+        let mut keyed = control(0, 0, None);
+        keyed.default_state.background_color =
+            Some(crate::panels::rendered_state::RgbaColor::opaque(1, 2, 3).into());
+        let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
+
+        assert!(index.watched_integrations().is_empty());
+    }
+
+    #[test]
     fn an_unreferenced_variable_maps_to_nothing() {
         let index =
             DependencyIndex::build(&[(surface(), panel(vec![control(0, 0, Some("plain"))]))]);
@@ -197,8 +256,6 @@ mod tests {
             1
         );
     }
-
-
 
     #[test]
     fn an_empty_workspace_watches_nothing() {

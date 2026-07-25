@@ -174,6 +174,8 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
 
     const TOKEN: &str = "hunter2";
+    /// Comfortably past the connection's first retry delay.
+    const FIRST_RETRY_ALLOWANCE: Duration = Duration::from_millis(1_500);
 
     fn kitchen_state(is_on: bool) -> JsonValue {
         json!({
@@ -569,9 +571,6 @@ mod tests {
         )
         .await;
     }
-
-    /// Comfortably past the connection's first retry delay.
-    const FIRST_RETRY_ALLOWANCE: Duration = Duration::from_millis(1_500);
 
     #[tokio::test]
     async fn an_unreachable_installation_keeps_the_instance_running_and_says_why() {
