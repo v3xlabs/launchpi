@@ -69,13 +69,28 @@ button, input, select, textarea { font: inherit; }
 .color-input { @apply h-8 w-full cursor-pointer border border-neutral-700 bg-neutral-950 p-0.5; }
 
 /* Completion. The list is absolute so opening it does not push the rest of the form down. */
-.completing-field { @apply relative grid gap-1; }
-.suggestions { @apply absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto border border-neutral-700 bg-neutral-900 shadow-lg shadow-black/40; }
+/* An explicit track, not `auto`: an auto track floors at the input's content width and spills out
+   of the column the field sits in. */
+.completing-field { @apply relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1; }
+/* Anchored right and grown leftwards: a colour field is half a column wide, and a list confined to
+   that is unreadable. */
+.suggestions { @apply absolute right-0 top-full z-30 mt-1 max-h-64 w-max min-w-full max-w-[24rem] overflow-y-auto overflow-x-hidden border border-neutral-700 bg-neutral-900 shadow-lg shadow-black/40; }
 .suggestion { @apply flex w-full items-center gap-2 px-2 py-1.5 text-left transition hover:bg-neutral-800; }
 .suggestion[data-active="true"] { @apply bg-neutral-800; }
 .suggestion-label { @apply min-w-0 flex-1 truncate text-xs font-medium normal-case tracking-normal text-neutral-200; }
-.suggestion-value { @apply shrink-0 truncate font-mono text-[0.7rem] text-neutral-500; }
+.suggestion-value { @apply truncate font-mono text-[0.7rem] text-neutral-500; }
+.suggestion-preview { @apply max-w-[8rem] shrink-0 truncate font-mono text-[0.7rem] text-neutral-300; }
+.suggestion-swatch { @apply h-5 w-5 shrink-0 border border-black/40; }
 .suggestion-empty { @apply px-2 py-2 text-xs normal-case tracking-normal text-neutral-500; }
+
+/* One parametrised control: a literal and a reference are the same field, not two modes. */
+.parameter-input { @apply flex h-8 min-w-0 items-stretch border border-neutral-700 bg-neutral-950 transition focus-within:border-blue-500; }
+.parameter-input[data-bound="true"] { @apply border-blue-900; }
+.parameter-text { @apply min-w-0 flex-1 bg-transparent px-2 text-sm font-normal normal-case tracking-normal text-neutral-100 outline-none placeholder:text-neutral-600; }
+.parameter-input[data-bound="true"] .parameter-text { @apply font-mono text-[0.78rem] text-blue-200; }
+.parameter-pick { @apply shrink-0 px-1.5 font-mono text-[0.7rem] text-neutral-500 transition hover:bg-neutral-800 hover:text-neutral-200; }
+.parameter-swatch { @apply h-full w-8 shrink-0 cursor-pointer border-0 border-r border-neutral-700 bg-neutral-950 p-0.5; }
+.parameter-swatch[data-unresolved="true"] { @apply opacity-30; }
 .range-input { @apply h-8 w-full cursor-pointer bg-transparent accent-blue-500; }
 
 /* Navigation */

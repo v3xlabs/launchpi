@@ -2,13 +2,13 @@ import { ColorBinding, defaultContentLayout, RenderedState, RgbaColor } from "..
 
 export const isReference = (color: ColorBinding | null): color is string => typeof color === "string";
 
-export const toHex = (color: ColorBinding | null, fallback: string): string => {
-  if (color === null || isReference(color)) return fallback;
-
-  return `#${[color.red, color.green, color.blue]
+export const rgbHex = (color: RgbaColor): string =>
+  `#${[color.red, color.green, color.blue]
     .map(channel => channel.toString(16).padStart(2, "0"))
     .join("")}`;
-};
+
+export const toHex = (color: ColorBinding | null, fallback: string): string =>
+  (color === null || isReference(color) ? fallback : rgbHex(color));
 
 /** Mirrors the daemon: `#rgb`, `#rrggbb` and `#rrggbbaa`, hash optional. */
 export const parseHex = (value: string): RgbaColor | null => {

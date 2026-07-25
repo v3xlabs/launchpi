@@ -2,7 +2,10 @@ import { Component, createResource, createSignal, For, Match, Show, Switch } fro
 
 import { ColorBinding } from "../api/inventory";
 import { ConfigField, fetchLookup, LookupOption } from "../api/plugins";
-import { fromHex, isReference, toHex } from "../utils/rendered";
+import { useInventory } from "../context/InventoryContext";
+import { fromHex, isReference, parseHex, rgbHex, toHex } from "../utils/rendered";
+import { interpolateVariables } from "../utils/variables";
+import { ReferenceInput } from "./ReferenceInput";
 import { suggestionKeyDown, SuggestionList } from "./SuggestionList";
 import { ValueField } from "./ValueField";
 
@@ -28,7 +31,7 @@ export const TextField: Component<{
  * `$(instance:value)` reference, with no mode to switch between. Typing `$(` is the switch, and the
  * swatch beside it opens the native picker.
  *
- * The swatch shows what the field will actually paint — for a reference that means the value's
+ * The swatch shows what the field will actually paint: for a reference that means the value's
  * current colour, so "make this key the colour of that light" is visible rather than inferred.
  */
 export const ColorField: Component<{
@@ -73,7 +76,7 @@ export const ColorField: Component<{
   );
 
   return (
-    <div class="grid gap-1">
+    <div class="grid min-w-0 gap-1">
       <span class="field-label">{properties.label}</span>
       <Show when={properties.bindable !== false} fallback={picker}>
         <ReferenceInput

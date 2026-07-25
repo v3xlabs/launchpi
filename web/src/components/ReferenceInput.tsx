@@ -21,7 +21,8 @@ const openReference = (value: string, caret: number): { start: number; typed: st
   return inside.includes(")") || inside.includes("$(") ? null : { start, typed: inside };
 };
 
-export const isReference = (value: string): boolean => value.includes("$(");
+/** Distinct from the `ColorBinding` predicate in utils/rendered: this asks of raw text. */
+const hasReference = (value: string): boolean => value.includes("$(");
 
 /**
  * A text input that knows its contents may reference a value, and the picker behind it.
@@ -100,7 +101,7 @@ export const ReferenceInput: Component<{
 
   return (
     <div class="completing-field">
-      <div class="parameter-input" data-bound={isReference(properties.value)}>
+      <div class="parameter-input" data-bound={hasReference(properties.value)}>
         {properties.leading}
         <input
           ref={holdInput}
