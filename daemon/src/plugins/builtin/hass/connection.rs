@@ -37,6 +37,9 @@ const KEEPALIVE: Duration = Duration::from_secs(30);
 pub struct CatalogueEntry {
     pub friendly_name: Option<String>,
     pub domain: String,
+    /// What Home Assistant draws for this entity, where someone has said. Home Assistant names
+    /// icons from the same Material Design set, so its answer is usable as written.
+    pub icon: Option<String>,
 }
 
 impl CatalogueEntry {
@@ -52,11 +55,14 @@ impl CatalogueEntry {
 /// Assistant actually reports them, and offering a colour for a doorbell helps nobody.
 fn fields_for(domain: &str) -> &'static [&'static str] {
     match domain {
-        "light" => &["state", "on", "color", "brightness_pct"],
-        "switch" | "input_boolean" | "fan" | "automation" | "script" => &["state", "on"],
-        "binary_sensor" => &["state", "on"],
-        "cover" | "lock" | "media_player" | "climate" => &["state"],
-        _ => &["state"],
+        "light" => &["state", "on", "color", "brightness_pct", "icon"],
+        "switch" | "input_boolean" | "fan" | "automation" | "script" => &["state", "on", "icon"],
+        "binary_sensor" => &["state", "on", "icon"],
+        // `entity_picture` is album art, a camera still or a person's photograph: a URL the asset
+        // store fetches, and the only field here that is a picture rather than a reading.
+        "media_player" | "person" | "camera" => &["state", "icon", "entity_picture"],
+        "cover" | "lock" | "climate" => &["state", "icon"],
+        _ => &["state", "icon"],
     }
 }
 
@@ -133,11 +139,15 @@ impl Shared {
     /// Answers whether that changed anything, because the presets are derived from the catalogue
     /// and a light reporting its brightness again does not alter the button for it.
     pub fn record(&self, entity_id: &str, state: &JsonValue) -> bool {
-        let friendly_name = state
-            .get("attributes")
-            .and_then(|attributes| attributes.get("friendly_name"))
-            .and_then(JsonValue::as_str)
-            .map(str::to_string);
+        let attribute = |name: &str| {
+            state
+                .get("attributes")
+                .and_then(|attributes| attributes.get(name))
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+        };
+        let friendly_name = attribute("friendly_name");
+        let icon = attribute("icon");
         let domain = entity_id
             .split_once('.')
             .map(|(domain, _)| domain.to_string())
@@ -145,6 +155,7 @@ impl Shared {
         let entry = CatalogueEntry {
             friendly_name,
             domain,
+            icon,
         };
 
         let mut catalogue = self.catalogue.write().unwrap();
@@ -510,6 +521,7 @@ mod tests {
                 CatalogueEntry {
                     friendly_name: Some((*friendly_name).to_string()),
                     domain: entity_id.split('.').next().unwrap_or_default().to_string(),
+                    icon: None,
                 },
             );
         }
@@ -598,6 +610,7 @@ mod tests {
                 "light.kitchen_ceiling.on",
                 "light.kitchen_ceiling.color",
                 "light.kitchen_ceiling.brightness_pct",
+                "light.kitchen_ceiling.icon",
             ]
         );
     }

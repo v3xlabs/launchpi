@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::json;
 
 use crate::{
+    assets::icons,
     bindings::action::{Action, ActionBinding, ActionTrigger},
     identifiers::{AssetId, IntegrationId},
     panels::{
@@ -85,7 +86,7 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
         control: ControlTemplate {
             name,
             default_state: RenderedState {
-                layers: face(&entry.domain, entity_id, text, shape.icon),
+                layers: face(&entry.domain, entity_id, text, icon_for(entry, shape.icon)),
                 is_pressed: false,
             },
             pressed_state: None,
@@ -106,13 +107,25 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
 /// one that looks off. The colour goes on the outline, which reads against the fill in every state.
 ///
 /// Only a light is outlined at all, because `fields_for` publishes a colour for that domain alone.
-fn face(domain: &str, entity_id: &str, text: String, icon: &str) -> Vec<Layer> {
+/// What Home Assistant already draws for an entity wins over the domain default, so an icon
+/// someone chose there is the icon here. An icon this pack does not have falls back rather than
+/// drawing nothing, which is why the answer is checked rather than trusted.
+fn icon_for(entry: &CatalogueEntry, fallback: &'static str) -> String {
+    entry
+        .icon
+        .as_deref()
+        .filter(|icon| icons::document(icon).is_some())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn face(domain: &str, entity_id: &str, text: String, icon: String) -> Vec<Layer> {
     let mut layers = vec![
         Layer::Fill {
             color: RgbaColor::opaque(30, 41, 59).into(),
         },
         Layer::Image {
-            image: AssetId(icon.to_string()),
+            image: AssetId(icon),
             fit: Fit::Contain,
             anchor: Anchor9::TopCenter,
             scale_percent: 50,
@@ -166,6 +179,7 @@ mod tests {
                     CatalogueEntry {
                         friendly_name: friendly_name.map(str::to_string),
                         domain: entity_id.split('.').next().unwrap_or_default().to_string(),
+                        icon: None,
                     },
                 )
             })
@@ -362,6 +376,37 @@ mod tests {
                 Layer::Image { image, .. } => Some(image.0.as_str()),
                 _ => None,
             })
+    }
+
+    fn with_icon(entity_id: &str, icon: Option<&str>) -> Preset {
+        let mut catalogue = catalogue(&[(entity_id, Some("Named"))]);
+        if let Some(entry) = catalogue.get_mut(entity_id) {
+            entry.icon = icon.map(str::to_string);
+        }
+
+        from_catalogue(&catalogue).pop().expect("a key is offered")
+    }
+
+    /// Someone who has already chosen an icon in Home Assistant has said what this entity looks
+    /// like, and saying it twice is how the two drift apart.
+    #[test]
+    fn home_assistants_own_icon_wins_over_the_domain_default() {
+        assert_eq!(
+            icon_of(&with_icon("switch.desk_lamp", Some("mdi:desk-lamp"))),
+            Some("mdi:desk-lamp")
+        );
+    }
+
+    /// An installation can name an icon from a pack that was never shipped here.
+    #[test]
+    fn an_icon_this_pack_does_not_have_falls_back_rather_than_drawing_nothing() {
+        for icon in [Some("mdi:not-a-real-icon"), Some("phu:custom-pack"), None] {
+            assert_eq!(
+                icon_of(&with_icon("switch.desk_lamp", icon)),
+                Some("mdi:toggle-switch-variant"),
+                "{icon:?} is not drawable here"
+            );
+        }
     }
 
     #[test]
