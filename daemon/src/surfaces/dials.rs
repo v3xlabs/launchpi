@@ -2,15 +2,14 @@ use serde::Serialize;
 use tracing::debug;
 
 use crate::{
+    drivers::streamdeck::model::{model_by_name, DialPlacement},
     events::ServerEvent,
     identifiers::SurfaceId,
     panels::{dial::PanelDial, rendered_state::RgbaColor},
     surfaces::{logs::SurfaceLogLevel, registry::SurfaceRegistry},
 };
 
-/// Rotary dials on a Stream Deck Studio, and the LED segments making up one dial ring.
-/// A single detent of the knob is one segment.
-pub const DIAL_COUNT: u8 = 2;
+/// The LED segments making up one dial ring. A single detent of the knob is one segment.
 pub const DIAL_RING_SEGMENTS: u8 = 24;
 
 /// Where a dial currently stands, as a percentage of its ring. Runtime only - the panel keeps the
@@ -30,7 +29,22 @@ pub struct SurfaceDialPress {
 }
 
 impl SurfaceRegistry {
-    /// Every dial the active panel declares, as (index, colour, lit segments).
+    /// The knobs the surface's model says it physically has. A device recorded under a model this
+    /// build does not know has none, which leaves its dials dark rather than guessing at hardware.
+    pub fn surface_dials(&self, surface_id: &SurfaceId) -> &'static [DialPlacement] {
+        self.managed(surface_id)
+            .and_then(|device| model_by_name(&device.model))
+            .map_or(&[], |model| model.dials)
+    }
+
+    fn has_dial(&self, surface_id: &SurfaceId, dial_index: u8) -> bool {
+        self.surface_dials(surface_id)
+            .iter()
+            .any(|dial| dial.index == dial_index)
+    }
+
+    /// Every dial the active panel declares and the surface actually has, as
+    /// (index, colour, lit segments).
     pub fn active_dial_rings(&self, surface_id: &SurfaceId) -> Vec<(u8, RgbaColor, u8)> {
         let Some(device) = self.managed(surface_id) else {
             return Vec::new();
@@ -41,10 +55,11 @@ impl SurfaceRegistry {
         let Some(panel) = self.panel(&panel_id.0) else {
             return Vec::new();
         };
+        let dials = self.surface_dials(surface_id);
         panel
             .dials
             .iter()
-            .filter(|dial| dial.index < DIAL_COUNT)
+            .filter(|dial| dials.iter().any(|placement| placement.index == dial.index))
             .map(|dial| {
                 (
                     dial.index,
@@ -58,7 +73,7 @@ impl SurfaceRegistry {
     /// Turning the knob moves the ring one segment per detent, clamped at both ends. The new
     /// position is runtime state: it is pushed back to the device and broadcast, never persisted.
     pub fn record_dial_turn(&self, surface_id: &SurfaceId, dial_index: u8, detents: i8) {
-        if dial_index >= DIAL_COUNT || detents == 0 {
+        if detents == 0 || !self.has_dial(surface_id, dial_index) {
             return;
         }
         let Some((color, current)) = self.dial_ring(surface_id, dial_index) else {
@@ -116,7 +131,7 @@ impl SurfaceRegistry {
         dial_index: u8,
         is_pressed: bool,
     ) -> bool {
-        if dial_index >= DIAL_COUNT {
+        if !self.has_dial(surface_id, dial_index) {
             return false;
         }
         let previous = self
@@ -189,7 +204,10 @@ pub(super) fn percent_from_segments(lit_segments: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::surfaces::defaults::default_panel;
+    use crate::{
+        identifiers::PanelId,
+        surfaces::defaults::{default_device, default_panel},
+    };
 
     #[test]
     fn a_dial_turn_moves_one_ring_segment_per_detent_and_clamps() {
@@ -226,6 +244,22 @@ mod tests {
 
         assert_eq!(registry.active_dial_rings(&surface_id).len(), 1);
         assert_eq!(dial_level(&registry, &surface_id, 1), None);
+    }
+
+    #[test]
+    fn a_surface_whose_model_has_no_dials_ignores_the_panel_dials_and_the_knobs() {
+        let mut device = default_device(&[], Some(PanelId("studio-panel-1".to_string())));
+        device.model = "Stream Deck XL".to_string();
+        let surface_id = device.surface_id.clone();
+        let registry = SurfaceRegistry::from_configuration(vec![device], vec![default_panel()]);
+
+        assert!(registry.surface_dials(&surface_id).is_empty());
+        assert!(registry.active_dial_rings(&surface_id).is_empty());
+
+        registry.record_dial_turn(&surface_id, 0, 4);
+        assert!(!registry.record_dial_press(&surface_id, 0, true));
+        assert!(registry.inventory().dial_states.is_empty());
+        assert!(registry.inventory().dial_presses.is_empty());
     }
 
     #[test]

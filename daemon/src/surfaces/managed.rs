@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    drivers::streamdeck::model::{StreamDeckModel, STREAM_DECK_NETWORK_DOCK, STREAM_DECK_STUDIO},
     events::ServerEvent,
     identifiers::{PanelId, SurfaceId},
     surfaces::{
@@ -69,10 +70,7 @@ pub struct ManagedNetworkSurface {
 }
 
 fn default_stream_deck_layout() -> SurfaceLayout {
-    SurfaceLayout::Grid {
-        columns: 16,
-        rows: 2,
-    }
+    STREAM_DECK_STUDIO.layout
 }
 
 fn default_stream_deck_capabilities() -> SurfaceCapabilities {
@@ -94,10 +92,10 @@ pub enum SurfaceKind {
 }
 
 impl SurfaceKind {
-    pub fn model_name(self) -> &'static str {
+    pub fn model(self) -> &'static StreamDeckModel {
         match self {
-            Self::Studio => "Stream Deck Studio",
-            Self::NetworkDock => "Stream Deck Network Dock",
+            Self::Studio => &STREAM_DECK_STUDIO,
+            Self::NetworkDock => &STREAM_DECK_NETWORK_DOCK,
         }
     }
 

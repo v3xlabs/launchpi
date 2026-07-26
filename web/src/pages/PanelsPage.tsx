@@ -11,12 +11,12 @@ import { createStore, produce } from "solid-js/store";
 import {
   Control,
   Device,
+  dialsForPanel,
   displayName,
   fetchPanelConfig,
   layoutLabel,
   Panel,
   PanelDial,
-  panelDialCount,
   RgbaColor,
 } from "../api/inventory";
 import { CopyTomlButton } from "../components/CopyTomlButton";
@@ -48,6 +48,8 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const assignedDevices = createMemo(() =>
     store.inventory().devices.filter(device => device.active_panel_id === properties.panelId),
   );
+  const dials = createMemo(() =>
+    (draft.panel === null ? [] : dialsForPanel(store.inventory().devices, draft.panel.layout)));
 
   createEffect(() => {
     const panelId = properties.panelId;
@@ -264,10 +266,10 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                     {" "}
                     keys assigned
                   </span>
-                  <Show when={panelDialCount(panel()) > 0}>
+                  <Show when={panel().dials.length > 0}>
                     <span class="meta-sep">-</span>
                     <span>
-                      {panelDialCount(panel())}
+                      {panel().dials.length}
                       {" "}
                       dials
                     </span>
@@ -348,6 +350,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                   </div>
                   <PanelStage
                     panel={panel()}
+                    dials={dials()}
                     pressedKeys={pressedKeys()}
                     dialLevels={dialLevels()}
                     pressedDials={pressedDials()}
@@ -377,6 +380,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
 
               <PanelInspector
                 panel={panel()}
+                dials={dials()}
                 selection={selection()}
                 control={selectedControl()}
                 onPanelMutate={mutatePanel}
@@ -432,6 +436,7 @@ const PanelCard: Component<{ panel: Panel; }> = (properties) => {
       </div>
       <PanelThumbnail
         panel={properties.panel}
+        dials={dialsForPanel(store.inventory().devices, properties.panel.layout)}
         pressedKeys={pressedKeys()}
         dialLevels={dialLevels()}
         pressedDials={pressedDials()}

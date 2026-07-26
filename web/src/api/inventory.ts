@@ -78,6 +78,12 @@ export type Control = {
 };
 /** One rotary dial a panel declares. `level` is the percentage of the ring lit when it loads. */
 export type PanelDial = { index: number; level: number; color: RgbaColor; };
+/**
+ * Where a knob sits on a device, in that device's key-grid cell coordinates: `(0, 0)` is the
+ * top-left key, so a negative column or a column past the last one puts the knob beside the keys.
+ * The daemon's model table is the only place this is written down.
+ */
+export type DialPlacement = { index: number; column: number; row: number; row_span: number; };
 export type Panel = {
   panel_id: string;
   name: string;
@@ -95,6 +101,7 @@ export type Device = {
   model: string;
   layout: unknown;
   capabilities: Capabilities;
+  dials: DialPlacement[];
   active_panel_id: string | null;
   open_subpanels: Array<{ panel_id: string; column: number; row: number; }>;
   is_enabled: boolean;
@@ -215,6 +222,12 @@ const isControl = (value: unknown): value is Control =>
   && Array.isArray(value.action_bindings);
 const isPanelDial = (value: unknown): value is PanelDial =>
   isRecord(value) && isNumber(value.index) && isNumber(value.level) && isColor(value.color);
+const isDialPlacement = (value: unknown): value is DialPlacement =>
+  isRecord(value)
+  && isNumber(value.index)
+  && isNumber(value.column)
+  && isNumber(value.row)
+  && isNumber(value.row_span);
 const isPanel = (value: unknown): value is Panel =>
   isRecord(value)
   && isString(value.panel_id)
@@ -233,6 +246,7 @@ const isDevice = (value: unknown): value is Device =>
   && isOptionalString(value.serial_number)
   && isString(value.model)
   && isCapabilities(value.capabilities)
+  && (value.dials === undefined || (Array.isArray(value.dials) && value.dials.every(isDialPlacement)))
   && isOptionalString(value.active_panel_id)
   && (value.open_subpanels === undefined || Array.isArray(value.open_subpanels))
   && typeof value.is_enabled === "boolean"
@@ -301,14 +315,11 @@ export const deviceGridLayout = (value: unknown): GridLayout | null => {
   return null;
 };
 
-// Live dial levels arrive per surface rather than per panel, so sizing those arrays still needs the
-// most dials any supported surface has - the Studio's two.
-export const studioDialCount = 2;
-export const panelDials = (panel: Panel): PanelDial[] =>
-  [...panel.dials].sort((first, second) => first.index - second.index);
-export const panelDialCount = (panel: Panel): number => panel.dials.length;
 export const panelDial = (panel: Panel, index: number): PanelDial | null =>
   panel.dials.find(dial => dial.index === index) ?? null;
+/** Live dial levels arrive as one entry per dial index, so an array has to cover the highest one. */
+export const dialSlotCount = (dials: DialPlacement[]): number =>
+  dials.reduce((count, dial) => Math.max(count, dial.index + 1), 0);
 
 export const layoutLabel = (layout: GridLayout | null): string =>
   (layout === null ? "Freeform" : `${layout.columns}x${layout.rows}`);
@@ -324,6 +335,29 @@ export const isPanelCompatible = (device: Device, panel: Panel): boolean => {
     && layout.rows === panel.layout.rows
     && capabilityKeys.every(key => !panel.capabilities[key] || device.capabilities[key])
   );
+};
+
+/**
+ * The knobs a panel could be turned by. A panel is not bound to a device, so the dials it may
+ * declare are those of every device whose grid it fits; capabilities are left out because a
+ * capability mismatch does not remove a knob from the hardware.
+ */
+export const dialsForPanel = (devices: Device[], layout: GridLayout): DialPlacement[] => {
+  const placements: DialPlacement[] = [];
+
+  for (const device of devices) {
+    const deviceLayout = deviceGridLayout(device.layout);
+
+    if (deviceLayout === null) continue;
+
+    if (deviceLayout.columns !== layout.columns || deviceLayout.rows !== layout.rows) continue;
+
+    for (const dial of device.dials) {
+      if (placements.every(existing => existing.index !== dial.index)) placements.push(dial);
+    }
+  }
+
+  return placements;
 };
 
 export type DeviceKind = "studio" | "network_dock";
@@ -374,6 +408,7 @@ export const fetchInventory = async (): Promise<Inventory> => {
       ...device,
       parent_surface_id: device.parent_surface_id ?? null,
       open_subpanels: device.open_subpanels ?? [],
+      dials: device.dials ?? [],
     })),
     panels: data.panels.map(panel => ({ ...panel, dials: panel.dials ?? [] })),
     plugin_instances: data.plugin_instances ?? [],

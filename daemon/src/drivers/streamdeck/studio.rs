@@ -20,22 +20,23 @@ use tracing::{debug, info, info_span, trace, warn, Instrument};
 
 use crate::{
     assets::AssetStore,
+    drivers::streamdeck::model::{
+        model_for_product_id, DialPlacement, NETWORK_DOCK_PRODUCT_ID, STREAM_DECK_STUDIO,
+        STREAM_DECK_STUDIO_PRODUCT_ID,
+    },
     identifiers::SurfaceId,
     panels::rendered_state::{Anchor9, Progress, RgbaColor},
     state::AppState,
     surfaces::{
         command::{KeyIcon, KeyRendering, SurfaceCommand},
-        dials::{DIAL_COUNT, DIAL_RING_SEGMENTS},
-        layout::SurfaceLayout,
+        dials::DIAL_RING_SEGMENTS,
         logs::SurfaceLogLevel,
         managed::{DiscoveredNetworkSurface, ManagedNetworkSurface, NetworkSurfaceStatus},
     },
 };
 
 const ELGATO_VENDOR_ID: u16 = 0x0fd9;
-const STREAM_DECK_STUDIO_PRODUCT_ID: u16 = 0x00aa;
 const NETWORK_DOCK_DEVICE_TYPE: u16 = 215;
-const NETWORK_DOCK_PRODUCT_ID: u16 = 0xffff;
 const DEFAULT_STREAM_DECK_PORT: u16 = 5343;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
@@ -69,8 +70,6 @@ const KEY_TEXT_MAX_PX: f32 = 40.0;
 const KEY_TEXT_MIN_PX: f32 = 8.0;
 const DIAL_RING_COMMAND: u8 = 0x0f;
 const DIAL_KNOB_COMMAND: u8 = 0x10;
-/// Header plus one byte per dial: the last dial sits at `5 + DIAL_COUNT - 1`.
-const DIAL_REPORT_SIZE: usize = 5 + DIAL_COUNT as usize;
 const CHILD_QUERY_INTERVAL: Duration = Duration::from_secs(5);
 /// Replies the read loop owes the device - acknowledgements and probes, never renders.
 const REPLY_QUEUE_SIZE: usize = 8;
@@ -867,9 +866,10 @@ fn register_network_dock_child(state: &AppState, parent_surface_id: &SurfaceId, 
         );
         return;
     };
+    let model = model_for_product_id(product_id);
     debug!(
         product_id = format_args!("{product_id:#06x}"),
-        model = stream_deck_model_name(product_id),
+        model = model.name,
         child_port,
         serial_number = serial_number.as_deref().unwrap_or("unknown"),
         "dock reports an attached Stream Deck"
@@ -892,19 +892,20 @@ fn register_network_dock_child(state: &AppState, parent_surface_id: &SurfaceId, 
         return;
     }
 
-    let layout = stream_deck_layout(product_id);
-    let active_panel_id = state.surfaces.ensure_default_panel_for_layout(&layout);
+    let active_panel_id = state
+        .surfaces
+        .ensure_default_panel_for_layout(&model.layout);
     let child = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
         name: format!("{} child", parent.name),
         host: parent.host,
         port: child_port,
         serial_number,
-        model: stream_deck_model_name(product_id).to_string(),
+        model: model.name.to_string(),
         is_enabled: true,
         status: NetworkSurfaceStatus::Connecting,
         last_error: None,
-        layout,
+        layout: model.layout,
         capabilities: crate::surfaces::defaults::studio_capabilities(),
         active_panel_id,
         open_subpanels: Vec::new(),
@@ -961,58 +962,23 @@ fn parse_child_device_info(payload: &[u8]) -> Option<(u16, u16, Option<String>)>
 }
 
 fn apply_probed_identity(state: &AppState, surface_id: &SurfaceId, is_dock: bool, product_id: u16) {
-    if is_dock {
-        state.surfaces.set_identity(
-            surface_id,
-            "Stream Deck Network Dock".to_string(),
-            SurfaceLayout::Freeform,
-        );
+    let model = if is_dock {
+        model_for_product_id(NETWORK_DOCK_PRODUCT_ID)
     } else {
-        state.surfaces.set_identity(
-            surface_id,
-            stream_deck_model_name(product_id).to_string(),
-            stream_deck_layout(product_id),
-        );
-    }
+        model_for_product_id(product_id)
+    };
+    state
+        .surfaces
+        .set_identity(surface_id, model.name.to_string(), model.layout);
 }
 
-fn stream_deck_model_name(product_id: u16) -> &'static str {
-    match product_id {
-        0x0060 | 0x006d => "Stream Deck",
-        0x0063 | 0x0090 | 0x00b3 => "Stream Deck Mini",
-        0x006c | 0x008f => "Stream Deck XL",
-        0x0080 | 0x00a5 => "Stream Deck Mk.2",
-        0x0084 => "Stream Deck Plus",
-        0x009a => "Stream Deck Neo",
-        0x00aa => "Stream Deck Studio",
-        NETWORK_DOCK_PRODUCT_ID => "Stream Deck Network Dock",
-        _ => "Stream Deck",
-    }
-}
-
-fn stream_deck_layout(product_id: u16) -> SurfaceLayout {
-    match product_id {
-        0x006c | 0x008f => SurfaceLayout::Grid {
-            columns: 8,
-            rows: 4,
-        },
-        0x0063 | 0x0090 | 0x00b3 => SurfaceLayout::Grid {
-            columns: 3,
-            rows: 2,
-        },
-        0x0084 | 0x009a => SurfaceLayout::Grid {
-            columns: 4,
-            rows: 2,
-        },
-        0x00aa => SurfaceLayout::Grid {
-            columns: 16,
-            rows: 2,
-        },
-        _ => SurfaceLayout::Grid {
-            columns: 5,
-            rows: 3,
-        },
-    }
+/// Five header bytes, then one byte per dial, indexed by the dial's own wire index.
+fn dial_report_size(dials: &[DialPlacement]) -> usize {
+    5 + dials
+        .iter()
+        .map(|dial| usize::from(dial.index) + 1)
+        .max()
+        .unwrap_or(0)
 }
 
 fn record_key_events(
@@ -1027,6 +993,7 @@ fn record_key_events(
         return;
     }
 
+    let dials = state.surfaces.surface_dials(surface_id);
     match packet[1] {
         0 if packet.len() >= 36 => {
             for key_index in 0..32 {
@@ -1040,12 +1007,9 @@ fn record_key_events(
             }
         }
         // Like the key report, this carries the state of every dial, so releases arrive here too.
-        3 if packet.len() >= DIAL_REPORT_SIZE && packet[4] == 0 => {
-            for dial_index in 0..usize::from(DIAL_COUNT) {
-                let is_pressed = packet[5 + dial_index] != 0;
-                let Ok(dial_index) = u8::try_from(dial_index) else {
-                    continue;
-                };
+        3 if packet.len() >= dial_report_size(dials) && packet[4] == 0 => {
+            for dial_index in dials.iter().map(|dial| dial.index) {
+                let is_pressed = packet[5 + usize::from(dial_index)] != 0;
                 let did_change = state
                     .surfaces
                     .record_dial_press(surface_id, dial_index, is_pressed);
@@ -1058,15 +1022,12 @@ fn record_key_events(
                 }
             }
         }
-        3 if packet.len() >= DIAL_REPORT_SIZE && packet[4] == 1 => {
-            for dial_index in 0..usize::from(DIAL_COUNT) {
-                let detents = packet[5 + dial_index] as i8;
+        3 if packet.len() >= dial_report_size(dials) && packet[4] == 1 => {
+            for dial_index in dials.iter().map(|dial| dial.index) {
+                let detents = packet[5 + usize::from(dial_index)] as i8;
                 if detents == 0 {
                     continue;
                 }
-                let Ok(dial_index) = u8::try_from(dial_index) else {
-                    continue;
-                };
                 info!(dial_index, detents, "Stream Deck dial turned");
                 state
                     .surfaces
@@ -1217,7 +1178,7 @@ async fn send_knob_color<W: AsyncWrite + Unpin>(
     dial_index: u8,
     color: RgbaColor,
 ) -> Result<(), String> {
-    if dial_index >= DIAL_COUNT {
+    if !STREAM_DECK_STUDIO.has_dial(dial_index) {
         return Err(format!(
             "invalid Stream Deck Studio dial index {dial_index}"
         ));
@@ -1235,7 +1196,7 @@ async fn send_dial_ring<W: AsyncWrite + Unpin>(
     color: RgbaColor,
     lit_segments: u8,
 ) -> Result<(), String> {
-    if dial_index >= DIAL_COUNT {
+    if !STREAM_DECK_STUDIO.has_dial(dial_index) {
         return Err(format!(
             "invalid Stream Deck Studio dial index {dial_index}"
         ));
@@ -1560,12 +1521,13 @@ mod tests {
     use std::sync::atomic::AtomicU64;
 
     use super::{
-        anchored_origin, draw_border, draw_overlay, flip_pixels_180, parse_child_device_info,
-        parse_primary_device_info, render_key_image, stream_deck_layout, stream_deck_model_name,
-        Anchor9, KeyIcon, KeyRendering, PendingRenders, RgbaColor, RgbaImage, SurfaceCommand,
-        SurfaceLayout, TransportMode, DIAL_RING_COMMAND, ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE,
-        NETWORK_DOCK_PRODUCT_ID, OVERLAY_INSET, STUDIO_KEY_IMAGE_SIZE,
+        anchored_origin, dial_report_size, draw_border, draw_overlay, flip_pixels_180,
+        parse_child_device_info, parse_primary_device_info, render_key_image, Anchor9, KeyIcon,
+        KeyRendering, PendingRenders, RgbaColor, RgbaImage, SurfaceCommand, TransportMode,
+        DIAL_RING_COMMAND, ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE, NETWORK_DOCK_PRODUCT_ID,
+        OVERLAY_INSET, STREAM_DECK_STUDIO, STUDIO_KEY_IMAGE_SIZE,
     };
+    use crate::drivers::streamdeck::model::STREAM_DECK_XL;
 
     fn amber() -> RgbaColor {
         RgbaColor {
@@ -1675,35 +1637,9 @@ mod tests {
     }
 
     #[test]
-    fn maps_product_ids_to_the_correct_model_and_layout() {
-        assert_eq!(stream_deck_model_name(0x0084), "Stream Deck Plus");
-        assert_eq!(
-            stream_deck_layout(0x0084),
-            SurfaceLayout::Grid {
-                columns: 4,
-                rows: 2
-            }
-        );
-        assert_eq!(stream_deck_model_name(0x006c), "Stream Deck XL");
-        assert_eq!(
-            stream_deck_layout(0x006c),
-            SurfaceLayout::Grid {
-                columns: 8,
-                rows: 4
-            }
-        );
-        assert_eq!(stream_deck_model_name(0x00aa), "Stream Deck Studio");
-        assert_eq!(
-            stream_deck_layout(0x00aa),
-            SurfaceLayout::Grid {
-                columns: 16,
-                rows: 2
-            }
-        );
-        assert_eq!(
-            stream_deck_model_name(NETWORK_DOCK_PRODUCT_ID),
-            "Stream Deck Network Dock"
-        );
+    fn a_dial_report_is_sized_by_the_models_own_dials() {
+        assert_eq!(dial_report_size(STREAM_DECK_STUDIO.dials), 7);
+        assert_eq!(dial_report_size(STREAM_DECK_XL.dials), 5);
     }
 
     #[test]

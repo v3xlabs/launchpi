@@ -5,7 +5,14 @@ import {
 } from "solid-icons/tb";
 import { Component, createMemo, For, Match, Show, Switch } from "solid-js";
 
-import { Device, deviceGridLayout, displayName, layoutLabel, Panel } from "../api/inventory";
+import {
+  Device,
+  deviceGridLayout,
+  dialsForPanel,
+  displayName,
+  layoutLabel,
+  Panel,
+} from "../api/inventory";
 import { statusTone } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
 import { AddPluginDialog } from "../dialogs/AddPluginDialog";
@@ -70,6 +77,7 @@ const PanelItem: Component<{ panel: Panel; }> = (properties) => {
   const pressedKeys = createMemo(() => store.pressedKeysForPanel(properties.panel.panel_id));
   const dialLevels = createMemo(() => store.dialLevelsForPanel(properties.panel.panel_id));
   const pressedDials = createMemo(() => store.pressedDialsForPanel(properties.panel.panel_id));
+  const dials = createMemo(() => dialsForPanel(store.inventory().devices, properties.panel.layout));
 
   return (
     <Link to="/panels/$panelId" params={{ panelId: properties.panel.panel_id }} class="nav-tile">
@@ -79,6 +87,7 @@ const PanelItem: Component<{ panel: Panel; }> = (properties) => {
       </span>
       <PanelThumbnail
         panel={properties.panel}
+        dials={dials()}
         pressedKeys={pressedKeys()}
         dialLevels={dialLevels()}
         pressedDials={pressedDials()}

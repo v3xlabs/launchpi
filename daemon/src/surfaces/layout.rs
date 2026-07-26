@@ -21,7 +21,7 @@ pub enum SurfaceKind {
     Custom(String),
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SurfaceLayout {
     Grid { columns: u16, rows: u16 },
     Freeform,

@@ -130,13 +130,10 @@ button, input, select, textarea { font: inherit; }
 .stage { @apply flex items-center justify-center bg-neutral-950 p-4; }
 .stage-compact { @apply p-2.5; }
 /* Dials live in the grid itself so knob and key sizes stay in the device's real proportions. */
-.key-grid { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows), auto); gap: 0.375rem; width: 100%; max-width: calc(var(--columns) * 4.5rem); }
-.key-grid-dials { grid-template-columns: 1.3fr repeat(var(--columns), minmax(0, 1fr)) 1.3fr; max-width: calc((var(--columns) + 3) * 4.5rem); }
-.key-grid-compact { gap: 0.125rem; max-width: calc(var(--columns) * 2.25rem); }
-.key-grid-compact.key-grid-dials { gap: 0.25rem; max-width: calc((var(--columns) + 3) * 2.25rem); }
-.dial-cell { @apply grid place-items-center; grid-row: 1 / -1; }
-.dial-cell-left { grid-column: 1; }
-.dial-cell-right { grid-column: -2 / -1; }
+.key-grid { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows), auto); gap: 0.375rem; width: 100%; max-width: calc(var(--cells, var(--columns)) * 4.5rem); }
+.key-grid-compact { gap: 0.125rem; max-width: calc(var(--cells, var(--columns)) * 2.25rem); }
+.key-grid-compact.key-grid-dials { gap: 0.25rem; }
+.dial-cell { @apply grid place-items-center; }
 .key { @apply relative aspect-square overflow-hidden bg-black ring-1 ring-inset ring-white/10; }
 .key-button { @apply transition hover:ring-neutral-500 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400; }
 .key-empty { @apply grid place-items-center bg-neutral-950 text-neutral-700 ring-white/5; }

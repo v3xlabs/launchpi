@@ -8,11 +8,15 @@ import {
   capabilityLabels,
   Device,
   deviceGridLayout,
+  DialPlacement,
   displayName,
   emptyCapabilities,
   GridLayout,
   layoutLabel,
+  PanelDial,
 } from "../api/inventory";
+import { dialSide, newDialColor } from "../components/DialEditor";
+import { DialIndicator } from "../components/DialIndicator";
 import { useInventory } from "../context/InventoryContext";
 
 type DeviceLayout = { device: Device; layout: GridLayout; };
@@ -26,6 +30,7 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
   const [rows, setRows] = createSignal("3");
   const [capabilities, setCapabilities] = createSignal<Capabilities>(emptyCapabilities);
   const [sourceSurfaceId, setSourceSurfaceId] = createSignal("");
+  const [dialLevels, setDialLevels] = createSignal<Record<string, number>>({});
 
   const deviceLayouts = createMemo<DeviceLayout[]>(() =>
     store.inventory().devices.flatMap((device) => {
@@ -39,6 +44,25 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
   const layout = (): GridLayout =>
     source()?.layout ?? { columns: Number(columns()), rows: Number(rows()) };
   const required = (): Capabilities => source()?.device.capabilities ?? capabilities();
+  const placements = (): DialPlacement[] => source()?.device.dials ?? [];
+  const dialLevel = (placement: DialPlacement): number | undefined =>
+    dialLevels()[String(placement.index)];
+  const toggleDial = (placement: DialPlacement, isEnabled: boolean) => {
+    const key = String(placement.index);
+
+    setDialLevels(current =>
+      (isEnabled
+        ? { ...current, [key]: 100 }
+        : Object.fromEntries(Object.entries(current).filter(([index]) => index !== key))));
+  };
+  const setDialLevel = (placement: DialPlacement, level: number) =>
+    setDialLevels(current => ({ ...current, [String(placement.index)]: level }));
+  const dials = (): PanelDial[] =>
+    placements().flatMap((placement) => {
+      const level = dialLevel(placement);
+
+      return level === undefined ? [] : [{ index: placement.index, level, color: newDialColor }];
+    });
 
   const reset = () => {
     setName("");
@@ -46,6 +70,7 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
     setRows("3");
     setCapabilities(emptyCapabilities);
     setSourceSurfaceId("");
+    setDialLevels({});
   };
 
   const submit = async (event: SubmitEvent) => {
@@ -55,7 +80,7 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
       layout: layout(),
       capabilities: required(),
       controls: [],
-      dials: [],
+      dials: dials(),
     });
 
     if (panel) {
@@ -78,8 +103,8 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
               <div>
                 <Dialog.Title class="dialog-title">Create panel</Dialog.Title>
                 <Dialog.Description class="dialog-description">
-                  Define the grid and the capabilities a device must support. A 16 x 2 panel gets
-                  the Studio dials.
+                  Define the grid and the capabilities a device must support, or take both from a
+                  device you already have.
                 </Dialog.Description>
               </div>
               <Dialog.CloseButton class="icon-button" aria-label="Close create panel dialog">
@@ -104,7 +129,10 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                     <select
                       class="field-input"
                       value={sourceSurfaceId()}
-                      onChange={event => setSourceSurfaceId(event.currentTarget.value)}
+                      onChange={(event) => {
+                        setSourceSurfaceId(event.currentTarget.value);
+                        setDialLevels({});
+                      }}
                     >
                       <option value="">Custom</option>
                       <For each={deviceLayouts()}>
@@ -167,6 +195,47 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                     </For>
                   </div>
                 </fieldset>
+                <Show when={placements().length > 0}>
+                  <fieldset class="grid gap-1.5">
+                    <legend class="field-label">Dials</legend>
+                    <For each={placements()}>
+                      {placement => (
+                        <div class="flex items-center gap-3">
+                          <label class="check-tile min-w-0 flex-1">
+                            <input
+                              type="checkbox"
+                              checked={dialLevel(placement) !== undefined}
+                              onInput={event => toggleDial(placement, event.currentTarget.checked)}
+                            />
+                            Dial
+                            {" "}
+                            {placement.index + 1}
+                            <span class="mono ml-auto">{dialSide(placement, layout())}</span>
+                          </label>
+                          <Show when={dialLevel(placement) !== undefined}>
+                            <div class="w-8 shrink-0">
+                              <DialIndicator
+                                index={placement.index}
+                                color={newDialColor}
+                                level={dialLevel(placement) ?? 0}
+                              />
+                            </div>
+                            <input
+                              class="range-input w-24"
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={dialLevel(placement) ?? 0}
+                              aria-label={`Dial ${placement.index + 1} ring level`}
+                              onInput={event =>
+                                setDialLevel(placement, Number(event.currentTarget.value))}
+                            />
+                          </Show>
+                        </div>
+                      )}
+                    </For>
+                  </fieldset>
+                </Show>
               </div>
               <div class="dialog-actions">
                 <Dialog.CloseButton class="secondary-button" type="button">

@@ -13,7 +13,10 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::{
     api::error::ApiError,
-    drivers::streamdeck::studio,
+    drivers::streamdeck::{
+        model::{model_by_name, STREAM_DECK_NETWORK_DOCK, STREAM_DECK_STUDIO},
+        studio,
+    },
     identifiers::{PanelId, SurfaceId},
     panels::{
         control::Control, dial::PanelDial, rendered_state::RenderedState, Panel, PanelLayout,
@@ -166,36 +169,21 @@ async fn add_device(
     Json(request): Json<AddNetworkSurface>,
 ) -> Result<Json<ManagedNetworkSurface>, ApiError> {
     let is_network_dock = request.kind.is_network_dock();
+    let model = request.kind.model();
     let surface = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
         name: non_empty(request.name, "name")?,
         host: non_empty(request.host, "host")?,
         port: request.port.unwrap_or_else(studio::default_port),
         serial_number: request.serial_number,
-        model: request.kind.model_name().to_string(),
-        layout: if is_network_dock {
-            SurfaceLayout::Freeform
-        } else {
-            SurfaceLayout::Grid {
-                columns: 16,
-                rows: 2,
-            }
-        },
+        model: model.name.to_string(),
+        layout: model.layout,
         capabilities: if is_network_dock {
             SurfaceCapabilities::default()
         } else {
             studio_capabilities()
         },
-        active_panel_id: (!is_network_dock)
-            .then(|| {
-                state
-                    .surfaces
-                    .panels()
-                    .into_iter()
-                    .find(|panel| panel.layout.columns == 16 && panel.layout.rows == 2)
-                    .map(|panel| panel.panel_id)
-            })
-            .flatten(),
+        active_panel_id: panel_for_layout(&state, model.layout),
         open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
@@ -222,7 +210,10 @@ async fn add_discovered_device(
     {
         return Ok(Json(existing));
     }
-    let is_network_dock = discovered.model == "Stream Deck Network Dock";
+    // Discovery only advertises a model name. Anything it does not name is assumed to be a Studio,
+    // which is what it was before probing existed; connecting corrects the identity either way.
+    let model = model_by_name(&discovered.model).unwrap_or(&STREAM_DECK_STUDIO);
+    let is_network_dock = model.name == STREAM_DECK_NETWORK_DOCK.name;
     let surface = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
         name: discovered.name,
@@ -230,29 +221,13 @@ async fn add_discovered_device(
         port: discovered.port,
         serial_number: discovered.serial_number,
         model: discovered.model,
-        layout: if is_network_dock {
-            SurfaceLayout::Freeform
-        } else {
-            SurfaceLayout::Grid {
-                columns: 16,
-                rows: 2,
-            }
-        },
+        layout: model.layout,
         capabilities: if is_network_dock {
             SurfaceCapabilities::default()
         } else {
             studio_capabilities()
         },
-        active_panel_id: (!is_network_dock)
-            .then(|| {
-                state
-                    .surfaces
-                    .panels()
-                    .into_iter()
-                    .find(|panel| panel.layout.columns == 16 && panel.layout.rows == 2)
-                    .map(|panel| panel.panel_id)
-            })
-            .flatten(),
+        active_panel_id: panel_for_layout(&state, model.layout),
         open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
@@ -382,6 +357,19 @@ async fn export_panel_configuration(
 async fn save_configuration(State(state): State<AppState>) -> Result<StatusCode, ApiError> {
     state.persist_configuration().map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// A panel already configured for exactly this grid, without provisioning one.
+fn panel_for_layout(state: &AppState, layout: SurfaceLayout) -> Option<PanelId> {
+    let SurfaceLayout::Grid { columns, rows } = layout else {
+        return None;
+    };
+    state
+        .surfaces
+        .panels()
+        .into_iter()
+        .find(|panel| panel.layout.columns == columns && panel.layout.rows == rows)
+        .map(|panel| panel.panel_id)
 }
 
 fn non_empty(value: String, field_name: &str) -> Result<String, ApiError> {
