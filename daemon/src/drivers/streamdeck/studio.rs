@@ -6,7 +6,6 @@ use std::{
 };
 
 use ab_glyph::{point, Font, FontRef, Glyph, PxScale, ScaleFont};
-use image::RgbaImage;
 use jpeg_encoder::{ColorType, Encoder};
 use lazy_static::lazy_static;
 use mdns_sd::{ResolvedService, ServiceDaemon, ServiceEvent};
@@ -24,11 +23,11 @@ use crate::{
         model_for_product_id, DialPlacement, NETWORK_DOCK_PRODUCT_ID, STREAM_DECK_STUDIO,
         STREAM_DECK_STUDIO_PRODUCT_ID,
     },
-    identifiers::SurfaceId,
-    panels::rendered_state::{Anchor9, Progress, RgbaColor},
+    identifiers::{AssetId, SurfaceId},
+    panels::rendered_state::{Anchor9, Edge, Fit, ResolvedLayer, RgbaColor},
     state::AppState,
     surfaces::{
-        command::{KeyIcon, KeyRendering, SurfaceCommand},
+        command::{KeyRendering, SurfaceCommand},
         dials::DIAL_RING_SEGMENTS,
         logs::SurfaceLogLevel,
         managed::{DiscoveredNetworkSurface, ManagedNetworkSurface, NetworkSurfaceStatus},
@@ -62,7 +61,6 @@ const CORA_GET_REPORT: u8 = 0x02;
 const CORA_PRIMARY_INFO_MESSAGE_ID: u32 = 1;
 const CORA_CHILD_INFO_MESSAGE_ID: u32 = 4;
 /// How much of an image survives behind a label, as a percentage.
-const ART_SCRIM_NUMERATOR: u16 = 45;
 const STUDIO_KEY_IMAGE_SIZE: usize = 96;
 const IMAGE_REPORT_HEADER_SIZE: usize = 8;
 const KEY_TEXT_PADDING: f32 = 6.0;
@@ -840,9 +838,7 @@ fn child_device_request(transport: TransportMode, message_id: u32) -> OutboundRe
             packet[1] = 0x1c;
             packet
         }
-        TransportMode::Cora => {
-            frame_cora_message(0, CORA_GET_REPORT, message_id, &[0x03, 0x1c])
-        }
+        TransportMode::Cora => frame_cora_message(0, CORA_GET_REPORT, message_id, &[0x03, 0x1c]),
     };
     OutboundReport {
         what: "child device info request",
@@ -1234,54 +1230,19 @@ async fn send_report<W: AsyncWrite + Unpin>(
     }
 }
 
-pub fn render_key(rendering: &KeyRendering, assets: Option<&Arc<AssetStore>>) -> Result<Vec<u8>, String> {
+pub fn render_key(
+    rendering: &KeyRendering,
+    assets: Option<&Arc<AssetStore>>,
+) -> Result<Vec<u8>, String> {
     render_key_image(rendering, false, assets)
-}
-
-/// A progress bar along the bottom edge. Two rows of pixels: enough to read at arm's length,
-/// little enough that it never competes with the label for the key.
-fn draw_progress(pixels: &mut [u8], progress: &Progress, color: (u8, u8, u8)) {
-    const BAR_HEIGHT: usize = 6;
-
-    if progress.maximum_value == 0 {
-        return;
-    }
-    let fraction = f64::from(progress.value.min(progress.maximum_value))
-        / f64::from(progress.maximum_value);
-    let filled = (fraction * STUDIO_KEY_IMAGE_SIZE as f64).round() as usize;
-
-    for row in STUDIO_KEY_IMAGE_SIZE - BAR_HEIGHT..STUDIO_KEY_IMAGE_SIZE {
-        for column in 0..filled.min(STUDIO_KEY_IMAGE_SIZE) {
-            let at = (row * STUDIO_KEY_IMAGE_SIZE + column) * 3;
-            pixels[at] = color.0;
-            pixels[at + 1] = color.1;
-            pixels[at + 2] = color.2;
-        }
-    }
-}
-
-/// Alpha-composited, not blitted: a badge is a shape on a transparent field, and pasting its
-/// bounding box would drop a black square onto whatever it annotates.
-fn draw_overlay(pixels: &mut [u8], badge: &RgbaImage, anchor: Anchor9) {
-    let size = badge.width() as usize;
-    let (left, top) = anchored_origin(size, anchor);
-    for (x, y, pixel) in badge.enumerate_pixels() {
-        blend_pixel(
-            pixels,
-            (left + x as usize) as i32,
-            (top + y as usize) as i32,
-            (pixel[0], pixel[1], pixel[2]),
-            f32::from(pixel[3]) / 255.0,
-        );
-    }
 }
 
 /// Where a square of `size` sits for each of the nine anchors, inset from the edge so a badge never
 /// touches the bezel.
-fn anchored_origin(size: usize, anchor: Anchor9) -> (usize, usize) {
-    let far = STUDIO_KEY_IMAGE_SIZE.saturating_sub(size + OVERLAY_INSET);
-    let middle = STUDIO_KEY_IMAGE_SIZE.saturating_sub(size) / 2;
-    let (horizontal, vertical) = match anchor {
+/// An anchor as two independent axes, each 0 for the start edge, 1 for the middle and 2 for the
+/// end, so placing along one axis never has to enumerate all nine.
+fn anchor_axes(anchor: Anchor9) -> (u8, u8) {
+    match anchor {
         Anchor9::TopStart => (0, 0),
         Anchor9::TopCenter => (1, 0),
         Anchor9::TopEnd => (2, 0),
@@ -1291,13 +1252,172 @@ fn anchored_origin(size: usize, anchor: Anchor9) -> (usize, usize) {
         Anchor9::BottomStart => (0, 2),
         Anchor9::BottomCenter => (1, 2),
         Anchor9::BottomEnd => (2, 2),
-    };
+    }
+}
+
+fn anchored_origin(size: usize, anchor: Anchor9) -> (usize, usize) {
+    let far = STUDIO_KEY_IMAGE_SIZE.saturating_sub(size + OVERLAY_INSET);
+    let middle = STUDIO_KEY_IMAGE_SIZE.saturating_sub(size) / 2;
+    let (horizontal, vertical) = anchor_axes(anchor);
     let place = |side: u8| match side {
         0 => OVERLAY_INSET,
         1 => middle,
         _ => far,
     };
     (place(horizontal), place(vertical))
+}
+
+fn draw_layer(pixels: &mut [u8], layer: &ResolvedLayer, assets: Option<&Arc<AssetStore>>) {
+    match layer {
+        ResolvedLayer::Fill { color } => draw_fill(pixels, color),
+        ResolvedLayer::Image {
+            image,
+            fit,
+            anchor,
+            scale_percent,
+            tint,
+        } => draw_image(
+            pixels,
+            image,
+            *fit,
+            *anchor,
+            *scale_percent,
+            tint.as_ref(),
+            assets,
+        ),
+        ResolvedLayer::Text {
+            text,
+            color,
+            anchor,
+        } => draw_text(pixels, text, rgb(color), *anchor),
+        ResolvedLayer::Bar {
+            value,
+            maximum,
+            color,
+            edge,
+            thickness,
+        } => draw_bar(
+            pixels,
+            *value,
+            *maximum,
+            rgb(color),
+            *edge,
+            usize::from(*thickness),
+        ),
+        ResolvedLayer::Border { color, width } => {
+            draw_border(pixels, rgb(color), usize::from(*width))
+        }
+    }
+}
+
+/// Blended rather than written, so a translucent fill over a picture is a scrim.
+fn draw_fill(pixels: &mut [u8], color: &RgbaColor) {
+    let coverage = f32::from(color.alpha) / 255.0;
+    let color = (color.red, color.green, color.blue);
+    for y in 0..STUDIO_KEY_IMAGE_SIZE {
+        for x in 0..STUDIO_KEY_IMAGE_SIZE {
+            blend_pixel(pixels, x as i32, y as i32, color, coverage);
+        }
+    }
+}
+
+/// `Cover` crops to fill its square and is opaque; `Contain` keeps the whole picture and its
+/// transparency. A tint multiplies through, which turns a white-on-transparent glyph into a
+/// coloured one and leaves a photograph looking like a photograph.
+fn draw_image(
+    pixels: &mut [u8],
+    image: &AssetId,
+    fit: Fit,
+    anchor: Anchor9,
+    scale_percent: u8,
+    tint: Option<&RgbaColor>,
+    assets: Option<&Arc<AssetStore>>,
+) {
+    let Some(store) = assets else {
+        return;
+    };
+    let size = (STUDIO_KEY_IMAGE_SIZE * usize::from(scale_percent) / 100).max(1);
+    let (left, top) = anchored_origin(size, anchor);
+    let tint = tint.map(rgb);
+    let shade = |channel: u8, tint: u8| ((u16::from(channel) * u16::from(tint)) / 255) as u8;
+    let recolour = |color: (u8, u8, u8)| match tint {
+        Some(tint) => (
+            shade(color.0, tint.0),
+            shade(color.1, tint.1),
+            shade(color.2, tint.2),
+        ),
+        None => color,
+    };
+
+    match fit {
+        Fit::Cover => {
+            let Some(art) = store.decoded(image, size as u32) else {
+                return;
+            };
+            for (x, y, pixel) in art.enumerate_pixels() {
+                blend_pixel(
+                    pixels,
+                    (left + x as usize) as i32,
+                    (top + y as usize) as i32,
+                    recolour((pixel[0], pixel[1], pixel[2])),
+                    1.0,
+                );
+            }
+        }
+        Fit::Contain => {
+            let Some(art) = store.decoded_rgba(image, size as u32) else {
+                return;
+            };
+            for (x, y, pixel) in art.enumerate_pixels() {
+                blend_pixel(
+                    pixels,
+                    (left + x as usize) as i32,
+                    (top + y as usize) as i32,
+                    recolour((pixel[0], pixel[1], pixel[2])),
+                    f32::from(pixel[3]) / 255.0,
+                );
+            }
+        }
+    }
+}
+
+/// A bar along one edge. Horizontal bars grow from the start edge and vertical ones from the
+/// bottom, which is the direction each reads as "more" on a key.
+fn draw_bar(
+    pixels: &mut [u8],
+    value: u16,
+    maximum: u16,
+    color: (u8, u8, u8),
+    edge: Edge,
+    thickness: usize,
+) {
+    if maximum == 0 || thickness == 0 {
+        return;
+    }
+    let fraction = f64::from(value.min(maximum)) / f64::from(maximum);
+    let filled = (fraction * STUDIO_KEY_IMAGE_SIZE as f64).round() as usize;
+    let thickness = thickness.min(STUDIO_KEY_IMAGE_SIZE);
+
+    let (columns, rows) = match edge {
+        Edge::Top => (0..filled, 0..thickness),
+        Edge::Bottom => (
+            0..filled,
+            STUDIO_KEY_IMAGE_SIZE - thickness..STUDIO_KEY_IMAGE_SIZE,
+        ),
+        Edge::Start => (
+            0..thickness,
+            STUDIO_KEY_IMAGE_SIZE - filled..STUDIO_KEY_IMAGE_SIZE,
+        ),
+        Edge::End => (
+            STUDIO_KEY_IMAGE_SIZE - thickness..STUDIO_KEY_IMAGE_SIZE,
+            STUDIO_KEY_IMAGE_SIZE - filled..STUDIO_KEY_IMAGE_SIZE,
+        ),
+    };
+    for y in rows {
+        for x in columns.clone() {
+            set_pixel(pixels, x, y, color);
+        }
+    }
 }
 
 /// An inset frame drawn over everything else. Inset rather than outset because the key image *is*
@@ -1319,52 +1439,10 @@ fn render_key_image(
     flip_image: bool,
     assets: Option<&Arc<AssetStore>>,
 ) -> Result<Vec<u8>, String> {
-    let background = rendering.background_color.as_ref().map_or((0, 0, 0), rgb);
-    let foreground = rendering
-        .foreground_color
-        .as_ref()
-        .map_or((255, 255, 255), rgb);
     let mut pixels = vec![0_u8; STUDIO_KEY_IMAGE_SIZE * STUDIO_KEY_IMAGE_SIZE * 3];
 
-    for pixel in pixels.chunks_exact_mut(3) {
-        pixel.copy_from_slice(&[background.0, background.1, background.2]);
-    }
-
-    if let Some(art) = rendering
-        .image
-        .as_ref()
-        .and_then(|asset| assets.and_then(|store| store.decoded(asset, STUDIO_KEY_IMAGE_SIZE as u32)))
-    {
-        pixels.copy_from_slice(art.as_raw());
-        // Album art is arbitrary, so a label over it can land on anything. Darkening the picture
-        // when there is text to read is what keeps the label legible without hiding the art.
-        if rendering.text.is_some() {
-            for channel in pixels.iter_mut() {
-                *channel = (u16::from(*channel) * ART_SCRIM_NUMERATOR / 100) as u8;
-            }
-        }
-    }
-    if let Some(icon) = &rendering.icon {
-        draw_icon(&mut pixels, icon, foreground);
-    }
-    if let Some(text) = &rendering.text {
-        draw_text(&mut pixels, text, foreground, rendering.icon.is_some());
-    }
-    if let Some(progress) = &rendering.progress {
-        draw_progress(&mut pixels, progress, foreground);
-    }
-    // After the label and the scrim, so a status badge is neither buried under text nor dimmed by
-    // the presence of one.
-    if let Some(overlay) = &rendering.overlay_image {
-        let size = (STUDIO_KEY_IMAGE_SIZE * usize::from(overlay.scale_percent) / 100).max(1);
-        if let Some(badge) =
-            assets.and_then(|store| store.decoded_rgba(&overlay.image, size as u32))
-        {
-            draw_overlay(&mut pixels, &badge, overlay.anchor);
-        }
-    }
-    if let Some(border) = &rendering.border {
-        draw_border(&mut pixels, rgb(&border.color), usize::from(border.width));
+    for layer in &rendering.layers {
+        draw_layer(&mut pixels, layer, assets);
     }
 
     if flip_image {
@@ -1403,29 +1481,7 @@ fn rgb(color: &RgbaColor) -> (u8, u8, u8) {
     )
 }
 
-fn draw_icon(pixels: &mut [u8], icon: &KeyIcon, color: (u8, u8, u8)) {
-    for y in 20..62 {
-        for x in 20..76 {
-            let center_x = 48_i32;
-            let center_y = 40_i32;
-            let x = x as i32;
-            let y = y as i32;
-            let is_set = match icon {
-                KeyIcon::Circle => (x - center_x).pow(2) + (y - center_y).pow(2) <= 18_i32.pow(2),
-                KeyIcon::Diamond => (x - center_x).abs() + (y - center_y).abs() <= 22,
-                KeyIcon::Pause => (28..40).contains(&x) || (56..68).contains(&x),
-                KeyIcon::Play => x >= 30 && x <= 68 && (y - center_y).abs() <= (x - 30) / 2,
-                KeyIcon::Square => (28..68).contains(&x) && (20..60).contains(&y),
-                KeyIcon::Triangle => y >= 20 && y <= 62 && (x - center_x).abs() <= (y - 20) / 2,
-            };
-            if is_set {
-                set_pixel(pixels, x as usize, y as usize, color);
-            }
-        }
-    }
-}
-
-fn draw_text(pixels: &mut [u8], text: &str, color: (u8, u8, u8), has_icon: bool) {
+fn draw_text(pixels: &mut [u8], text: &str, color: (u8, u8, u8), anchor: Anchor9) {
     let text = text.trim();
     if text.is_empty() {
         return;
@@ -1433,14 +1489,7 @@ fn draw_text(pixels: &mut [u8], text: &str, color: (u8, u8, u8), has_icon: bool)
 
     let font = &*KEY_FONT;
     let max_width = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
-    let (band_top, band_height) = if has_icon {
-        (62.0, STUDIO_KEY_IMAGE_SIZE as f32 - 62.0 - KEY_TEXT_PADDING)
-    } else {
-        (
-            KEY_TEXT_PADDING,
-            STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0,
-        )
-    };
+    let band_height = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
 
     let px = fit_text_scale(font, text, max_width, band_height);
     let scaled = font.as_scaled(PxScale::from(px));
@@ -1449,10 +1498,19 @@ fn draw_text(pixels: &mut [u8], text: &str, color: (u8, u8, u8), has_icon: bool)
         .map(|character| scaled.h_advance(font.glyph_id(character)))
         .sum();
 
-    let start_x = (STUDIO_KEY_IMAGE_SIZE as f32 - text_width) / 2.0;
+    let (horizontal, vertical) = anchor_axes(anchor);
     let ascent = scaled.ascent();
     let descent = -scaled.descent();
-    let baseline_y = band_top + (band_height - (ascent + descent)) / 2.0 + ascent;
+    let start_x = match horizontal {
+        0 => KEY_TEXT_PADDING,
+        1 => (STUDIO_KEY_IMAGE_SIZE as f32 - text_width) / 2.0,
+        _ => STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING - text_width,
+    };
+    let baseline_y = match vertical {
+        0 => KEY_TEXT_PADDING + ascent,
+        1 => (STUDIO_KEY_IMAGE_SIZE as f32 - (ascent + descent)) / 2.0 + ascent,
+        _ => STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING - descent,
+    };
 
     let mut caret_x = start_x;
     for character in text.chars() {
@@ -1521,13 +1579,21 @@ mod tests {
     use std::sync::atomic::AtomicU64;
 
     use super::{
-        anchored_origin, dial_report_size, draw_border, draw_overlay, flip_pixels_180,
-        parse_child_device_info, parse_primary_device_info, render_key_image, Anchor9, KeyIcon,
-        KeyRendering, PendingRenders, RgbaColor, RgbaImage, SurfaceCommand, TransportMode,
+        anchored_origin, dial_report_size, draw_border, draw_fill, flip_pixels_180,
+        parse_child_device_info, parse_primary_device_info, render_key_image, Anchor9, Edge,
+        KeyRendering, PendingRenders, ResolvedLayer, RgbaColor, SurfaceCommand, TransportMode,
         DIAL_RING_COMMAND, ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE, NETWORK_DOCK_PRODUCT_ID,
         OVERLAY_INSET, STREAM_DECK_STUDIO, STUDIO_KEY_IMAGE_SIZE,
     };
     use crate::drivers::streamdeck::model::STREAM_DECK_XL;
+
+    fn label(text: &str) -> ResolvedLayer {
+        ResolvedLayer::Text {
+            text: text.to_string(),
+            color: RgbaColor::opaque(255, 255, 255),
+            anchor: Anchor9::Center,
+        }
+    }
 
     fn amber() -> RgbaColor {
         RgbaColor {
@@ -1602,7 +1668,7 @@ mod tests {
         for text in ["one", "two", "three"] {
             pending.push(SurfaceCommand::RenderKey(KeyRendering {
                 key_index: 3,
-                text: Some(text.to_string()),
+                layers: vec![label(text)],
                 ..KeyRendering::default()
             }));
         }
@@ -1612,7 +1678,7 @@ mod tests {
             let mut pending = PendingRenders::default();
             pending.push(SurfaceCommand::RenderKey(KeyRendering {
                 key_index: 3,
-                text: Some("three".to_string()),
+                layers: vec![label("three")],
                 ..KeyRendering::default()
             }));
             flush(&mut pending).await
@@ -1686,27 +1752,35 @@ mod tests {
     }
 
     #[test]
-    fn a_transparent_badge_pixel_leaves_what_is_underneath() {
+    fn a_translucent_fill_darkens_what_is_underneath_rather_than_replacing_it() {
         let mut pixels = vec![200_u8; STUDIO_KEY_IMAGE_SIZE * STUDIO_KEY_IMAGE_SIZE * 3];
-        let mut badge = RgbaImage::new(8, 8);
-        badge.put_pixel(0, 0, image::Rgba([1, 2, 3, 255]));
-        draw_overlay(&mut pixels, &badge, Anchor9::TopStart);
+        draw_fill(
+            &mut pixels,
+            &RgbaColor {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 128,
+            },
+        );
 
         let at = |x: usize, y: usize| {
             let offset = (y * STUDIO_KEY_IMAGE_SIZE + x) * 3;
             (pixels[offset], pixels[offset + 1], pixels[offset + 2])
         };
-        assert_eq!(at(OVERLAY_INSET, OVERLAY_INSET), (1, 2, 3));
         assert_eq!(
-            at(OVERLAY_INSET + 1, OVERLAY_INSET),
-            (200, 200, 200),
-            "a fully transparent badge pixel must not paint a box over the art"
+            at(10, 10),
+            (100, 100, 100),
+            "a scrim has to leave the picture visible, not replace it"
         );
     }
 
     #[test]
     fn a_badge_sits_in_the_corner_its_anchor_names() {
-        assert_eq!(anchored_origin(32, Anchor9::TopStart), (OVERLAY_INSET, OVERLAY_INSET));
+        assert_eq!(
+            anchored_origin(32, Anchor9::TopStart),
+            (OVERLAY_INSET, OVERLAY_INSET)
+        );
         assert_eq!(
             anchored_origin(32, Anchor9::BottomEnd),
             (
@@ -1718,29 +1792,27 @@ mod tests {
     }
 
     #[test]
-    fn renders_a_jpeg_for_text_icon_and_color() {
+    fn renders_a_jpeg_for_a_stack() {
         let image = render_key_image(
             &KeyRendering {
-                image: None,
-                overlay_image: None,
-                border: None,
-                progress: None,
                 key_index: 0,
-                text: Some("Hello".to_string()),
-                icon: Some(KeyIcon::Circle),
-                foreground_color: Some(RgbaColor {
-                    red: u8::MAX,
-                    green: u8::MAX,
-                    blue: u8::MAX,
-                    alpha: u8::MAX,
-                }),
-                background_color: Some(RgbaColor {
-                    red: 10,
-                    green: 20,
-                    blue: 30,
-                    alpha: u8::MAX,
-                }),
-                content_layout: Default::default(),
+                layers: vec![
+                    ResolvedLayer::Fill {
+                        color: RgbaColor::opaque(10, 20, 30),
+                    },
+                    label("Hello"),
+                    ResolvedLayer::Bar {
+                        value: 1,
+                        maximum: 2,
+                        color: RgbaColor::opaque(255, 255, 255),
+                        edge: Edge::Bottom,
+                        thickness: 6,
+                    },
+                    ResolvedLayer::Border {
+                        color: RgbaColor::opaque(255, 0, 0),
+                        width: 2,
+                    },
+                ],
                 is_dimmed: false,
             },
             false,
@@ -1762,12 +1834,7 @@ mod tests {
     }
 }
 
-fn frame_cora_message(
-    flags: u16,
-    hid_operation: u8,
-    message_id: u32,
-    payload: &[u8],
-) -> Vec<u8> {
+fn frame_cora_message(flags: u16, hid_operation: u8, message_id: u32, payload: &[u8]) -> Vec<u8> {
     let mut packet = Vec::with_capacity(CORA_HEADER_SIZE + payload.len());
     packet.extend_from_slice(&CORA_MAGIC);
     packet.extend_from_slice(&flags.to_le_bytes());

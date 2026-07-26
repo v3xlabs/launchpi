@@ -545,7 +545,15 @@ mod tests {
         let kitchen = &offered[0];
         assert_eq!(kitchen.name, "Kitchen");
         assert_eq!(
-            kitchen.control.default_state.text.as_deref(),
+            kitchen
+                .control
+                .default_state
+                .layers
+                .iter()
+                .find_map(|layer| match layer {
+                    crate::panels::rendered_state::Layer::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                }),
             Some("Kitchen\n$(hass.home:light.kitchen.state)"),
             "the self sigil is rewritten to the publishing instance on the way in"
         );

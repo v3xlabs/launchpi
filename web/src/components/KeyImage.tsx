@@ -3,7 +3,7 @@ import { Component, createResource, Show } from "solid-js";
 import { Control } from "../api/inventory";
 import { renderedKeyImageUrl } from "../api/render";
 import { useInventory } from "../context/InventoryContext";
-import { referencesIn } from "../utils/variables";
+import { referencesInLayer } from "../utils/variables";
 
 /**
  * Draws a control by asking the daemon to resolve and render it.
@@ -26,14 +26,7 @@ export const KeyImage: Component<{ control: Control; isPressed: boolean; }> = (p
     const state = properties.isPressed
       ? properties.control.pressed_state ?? properties.control.default_state
       : properties.control.default_state;
-    const names = [
-      ...referencesIn(state.text),
-      ...referencesIn(state.image),
-      ...referencesIn(state.overlay_image?.image ?? null),
-      ...referencesIn(typeof state.foreground_color === "string" ? state.foreground_color : null),
-      ...referencesIn(typeof state.background_color === "string" ? state.background_color : null),
-      ...referencesIn(typeof state.border?.color === "string" ? state.border.color : null),
-    ];
+    const names = state.layers.flatMap(referencesInLayer);
 
     return names.map(name => [store.variables[name], store.assetArrivals[store.variables[name] ?? ""]]);
   };

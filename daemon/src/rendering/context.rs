@@ -3,8 +3,7 @@ use crate::{
     panels::{
         control::Control,
         rendered_state::{
-            Border, ColorBinding, ContentLayout, OverlayImage, Progress, RenderedState,
-            ResolvedBorder, ResolvedOverlay, RgbaColor,
+            ColorBinding, Layer, RenderedState, ResolvedLayer, RgbaColor, ValueBinding,
         },
     },
     variables::{template, VariableStore},
@@ -14,15 +13,19 @@ use crate::{
 /// renderer draws, and what the de-duplication ledger hashes.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ResolvedState {
-    pub text: Option<String>,
-    pub image: Option<AssetId>,
-    pub overlay_image: Option<ResolvedOverlay>,
-    pub foreground_color: Option<RgbaColor>,
-    pub background_color: Option<RgbaColor>,
-    pub border: Option<ResolvedBorder>,
-    pub progress: Option<Progress>,
-    pub content_layout: ContentLayout,
+    pub layers: Vec<ResolvedLayer>,
 }
+
+/// What a layer whose only content is a colour falls back to when nothing has published one yet.
+/// A [`Layer::Fill`] or [`Layer::Border`] in that state is dropped instead: an unanswered plugin
+/// should leave a key unstyled rather than paint it black, and that is how a plugin spells
+/// "nothing to report". A layer that carries content keeps the content and loses only the colour.
+const UNRESOLVED_CONTENT_COLOR: RgbaColor = RgbaColor {
+    red: 255,
+    green: 255,
+    blue: 255,
+    alpha: 255,
+};
 
 /// The live state a control resolves against. Cheap to build: it borrows the store and takes a
 /// read lock per lookup, so a full panel repaint costs one uncontended lock per key.
@@ -62,21 +65,76 @@ impl<'a> RenderContext<'a> {
         };
 
         ResolvedState {
-            text: state
-                .text
-                .as_deref()
-                .map(|text| self.interpolate(text))
-                .filter(|text| !text.is_empty()),
-            image: state
-                .image
-                .as_ref()
-                .and_then(|asset| self.resolve_asset(asset)),
-            overlay_image: self.resolve_overlay(state.overlay_image.as_ref()),
-            foreground_color: self.resolve_color(state.foreground_color.as_ref()),
-            background_color: self.resolve_color(state.background_color.as_ref()),
-            border: self.resolve_border(state.border.as_ref()),
-            progress: state.progress.clone(),
-            content_layout: state.content_layout,
+            layers: state
+                .layers
+                .iter()
+                .filter_map(|layer| self.resolve_layer(layer))
+                .collect(),
+        }
+    }
+
+    /// A layer that resolves to nothing drawable is dropped rather than drawn as a default, so a
+    /// plugin that has not answered yet leaves the key as if the layer were not there.
+    fn resolve_layer(&self, layer: &Layer) -> Option<ResolvedLayer> {
+        match layer {
+            Layer::Fill { color } => Some(ResolvedLayer::Fill {
+                color: self.resolve_color(Some(color))?,
+            }),
+            Layer::Image {
+                image,
+                fit,
+                anchor,
+                scale_percent,
+                tint,
+            } => (*scale_percent > 0).then_some(()).and_then(|()| {
+                Some(ResolvedLayer::Image {
+                    image: self.resolve_asset(image)?,
+                    fit: *fit,
+                    anchor: *anchor,
+                    scale_percent: *scale_percent,
+                    tint: self.resolve_color(tint.as_ref()),
+                })
+            }),
+            Layer::Text {
+                text,
+                color,
+                anchor,
+            } => {
+                let text = self.interpolate(text);
+
+                (!text.is_empty()).then(|| ResolvedLayer::Text {
+                    text,
+                    color: self
+                        .resolve_color(Some(color))
+                        .unwrap_or(UNRESOLVED_CONTENT_COLOR),
+                    anchor: *anchor,
+                })
+            }
+            Layer::Bar {
+                value,
+                maximum,
+                color,
+                edge,
+                thickness,
+            } => {
+                let maximum = self.resolve_value(maximum)?;
+
+                (maximum > 0 && *thickness > 0).then(|| ResolvedLayer::Bar {
+                    value: self.resolve_value(value).unwrap_or(0),
+                    maximum,
+                    color: self
+                        .resolve_color(Some(color))
+                        .unwrap_or(UNRESOLVED_CONTENT_COLOR),
+                    edge: *edge,
+                    thickness: *thickness,
+                })
+            }
+            Layer::Border { color, width } => (*width > 0).then_some(()).and_then(|()| {
+                Some(ResolvedLayer::Border {
+                    color: self.resolve_color(Some(color))?,
+                    width: *width,
+                })
+            }),
         }
     }
 
@@ -93,28 +151,20 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    /// A border whose colour does not resolve is not drawn, for the same reason an unresolved
-    /// background leaves the key unstyled rather than black. That is how a plugin spells "nothing
-    /// to report": publish an empty colour and the outline disappears.
-    fn resolve_border(&self, border: Option<&Border>) -> Option<ResolvedBorder> {
-        let border = border?;
-        let color = self.resolve_color(Some(&border.color))?;
-
-        (border.width > 0).then_some(ResolvedBorder {
-            color,
-            width: border.width,
-        })
-    }
-
-    fn resolve_overlay(&self, overlay: Option<&OverlayImage>) -> Option<ResolvedOverlay> {
-        let overlay = overlay?;
-        let image = self.resolve_asset(&overlay.image)?;
-
-        (overlay.scale_percent > 0).then_some(ResolvedOverlay {
-            image,
-            anchor: overlay.anchor,
-            scale_percent: overlay.scale_percent,
-        })
+    /// A reference that resolves to something unparseable leaves the number unset, for the same
+    /// reason an unresolved colour does: a plugin that has not answered yet should not be read as
+    /// having answered zero.
+    fn resolve_value(&self, binding: &ValueBinding) -> Option<u16> {
+        match binding {
+            ValueBinding::Literal(value) => Some(*value),
+            ValueBinding::Reference(reference) => self
+                .interpolate(reference)
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|number| number.is_finite())
+                .map(|number| number.round().clamp(0.0, f64::from(u16::MAX)) as u16),
+        }
     }
 
     /// An image slot may hold a literal asset id or a reference that yields one. A reference that
@@ -134,20 +184,39 @@ mod tests {
     use super::*;
     use crate::{
         identifiers::ControlId,
-        panels::rendered_state::Anchor9,
+        panels::rendered_state::{Anchor9, Edge, Fit},
         surfaces::layout::SurfacePosition,
         variables::{VariableRef, VariableValue},
     };
 
-    fn control(default_state: RenderedState) -> Control {
+    fn control(layers: Vec<Layer>) -> Control {
         Control {
             control_id: ControlId("key".to_string()),
             name: "Key".to_string(),
             position: SurfacePosition { column: 0, row: 0 },
-            default_state,
+            default_state: RenderedState {
+                layers,
+                is_pressed: false,
+            },
             pressed_state: None,
             action_bindings: Vec::new(),
         }
+    }
+
+    fn text(text: &str, color: ColorBinding) -> Layer {
+        Layer::Text {
+            text: text.to_string(),
+            color,
+            anchor: Anchor9::Center,
+        }
+    }
+
+    fn white() -> ColorBinding {
+        RgbaColor::opaque(255, 255, 255).into()
+    }
+
+    fn only(resolved: ResolvedState) -> Option<ResolvedLayer> {
+        resolved.layers.into_iter().next()
     }
 
     #[test]
@@ -160,13 +229,17 @@ mod tests {
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                text: Some("$(mpris.default:title)".to_string()),
-                ..RenderedState::default()
-            }),
+            &control(vec![text("$(mpris.default:title)", white())]),
             false,
         );
-        assert_eq!(resolved.text, Some("Blue Monday".to_string()));
+        assert_eq!(
+            only(resolved),
+            Some(ResolvedLayer::Text {
+                text: "Blue Monday".to_string(),
+                color: RgbaColor::opaque(255, 255, 255),
+                anchor: Anchor9::Center,
+            })
+        );
     }
 
     #[test]
@@ -176,13 +249,12 @@ mod tests {
         let color = RgbaColor::opaque(10, 20, 30);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                background_color: Some(color.clone().into()),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Fill {
+                color: color.clone().into(),
+            }]),
             false,
         );
-        assert_eq!(resolved.background_color, Some(color));
+        assert_eq!(only(resolved), Some(ResolvedLayer::Fill { color }));
     }
 
     #[test]
@@ -195,17 +267,16 @@ mod tests {
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                background_color: Some(ColorBinding::Reference(
-                    "$(hass.home:light.kitchen.color)".to_string(),
-                )),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Fill {
+                color: ColorBinding::Reference("$(hass.home:light.kitchen.color)".to_string()),
+            }]),
             false,
         );
         assert_eq!(
-            resolved.background_color,
-            Some(RgbaColor::opaque(232, 185, 35))
+            only(resolved),
+            Some(ResolvedLayer::Fill {
+                color: RgbaColor::opaque(232, 185, 35)
+            })
         );
     }
 
@@ -219,33 +290,54 @@ mod tests {
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                background_color: Some(ColorBinding::Reference(
-                    "$(hass.home:light.kitchen.color)".to_string(),
-                )),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Fill {
+                color: ColorBinding::Reference("$(hass.home:light.kitchen.color)".to_string()),
+            }]),
             false,
         );
         assert_eq!(
-            resolved.background_color,
-            Some(RgbaColor::opaque(0, 255, 127))
+            only(resolved),
+            Some(ResolvedLayer::Fill {
+                color: RgbaColor::opaque(0, 255, 127)
+            })
         );
     }
 
     #[test]
-    fn an_unresolved_colour_reference_leaves_the_key_unstyled() {
+    fn an_unresolved_fill_leaves_the_key_unstyled() {
         let variables = VariableStore::default();
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                background_color: Some(ColorBinding::Reference("$(hass.home:missing)".to_string())),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Fill {
+                color: ColorBinding::Reference("$(hass.home:missing)".to_string()),
+            }]),
             false,
         );
-        assert_eq!(resolved.background_color, None);
+        assert_eq!(only(resolved), None);
+    }
+
+    /// A label is the content of its layer, so losing the colour must not lose the label.
+    #[test]
+    fn an_unresolved_text_colour_still_draws_the_text() {
+        let variables = VariableStore::default();
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(vec![text(
+                "Play",
+                ColorBinding::Reference("$(hass.home:missing)".to_string()),
+            )]),
+            false,
+        );
+        assert_eq!(
+            only(resolved),
+            Some(ResolvedLayer::Text {
+                text: "Play".to_string(),
+                color: UNRESOLVED_CONTENT_COLOR,
+                anchor: Anchor9::Center,
+            })
+        );
     }
 
     #[test]
@@ -258,13 +350,43 @@ mod tests {
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                image: Some(AssetId("$(mpris.default:art)".to_string())),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Image {
+                image: AssetId("$(mpris.default:art)".to_string()),
+                fit: Fit::Cover,
+                anchor: Anchor9::Center,
+                scale_percent: 100,
+                tint: None,
+            }]),
             false,
         );
-        assert_eq!(resolved.image, Some(AssetId("hash:abc123".to_string())));
+        assert_eq!(
+            only(resolved),
+            Some(ResolvedLayer::Image {
+                image: AssetId("hash:abc123".to_string()),
+                fit: Fit::Cover,
+                anchor: Anchor9::Center,
+                scale_percent: 100,
+                tint: None,
+            })
+        );
+    }
+
+    #[test]
+    fn an_image_that_resolves_to_nothing_is_not_drawn() {
+        let variables = VariableStore::default();
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(vec![Layer::Image {
+                image: AssetId("$(discord.home:missing)".to_string()),
+                fit: Fit::Contain,
+                anchor: Anchor9::BottomEnd,
+                scale_percent: 32,
+                tint: None,
+            }]),
+            false,
+        );
+        assert_eq!(only(resolved), None);
     }
 
     #[test]
@@ -277,20 +399,17 @@ mod tests {
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                border: Some(Border {
-                    color: ColorBinding::Reference(
-                        "$(discord.home:channel_members_0_status_color)".to_string(),
-                    ),
-                    width: 6,
-                }),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Border {
+                color: ColorBinding::Reference(
+                    "$(discord.home:channel_members_0_status_color)".to_string(),
+                ),
+                width: 6,
+            }]),
             false,
         );
         assert_eq!(
-            resolved.border,
-            Some(ResolvedBorder {
+            only(resolved),
+            Some(ResolvedLayer::Border {
                 color: RgbaColor::opaque(237, 66, 69),
                 width: 6,
             })
@@ -308,18 +427,15 @@ mod tests {
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                border: Some(Border {
-                    color: ColorBinding::Reference(
-                        "$(discord.home:channel_members_0_status_color)".to_string(),
-                    ),
-                    width: 6,
-                }),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Border {
+                color: ColorBinding::Reference(
+                    "$(discord.home:channel_members_0_status_color)".to_string(),
+                ),
+                width: 6,
+            }]),
             false,
         );
-        assert_eq!(resolved.border, None);
+        assert_eq!(only(resolved), None);
     }
 
     #[test]
@@ -328,75 +444,111 @@ mod tests {
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                border: Some(Border {
-                    color: RgbaColor::opaque(1, 2, 3).into(),
-                    width: 0,
-                }),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Border {
+                color: RgbaColor::opaque(1, 2, 3).into(),
+                width: 0,
+            }]),
             false,
         );
-        assert_eq!(resolved.border, None);
+        assert_eq!(only(resolved), None);
     }
 
+    /// The improvement layers buy for free: a progress bar could only ever be written out, and now
+    /// follows whatever a plugin publishes.
     #[test]
-    fn an_overlay_image_reference_resolves_to_the_published_asset() {
+    fn a_bar_follows_the_values_it_binds() {
         let variables = VariableStore::default();
         variables.set(
-            VariableRef::new("discord.home", "channel_members_0_status_icon"),
-            VariableValue::Image(AssetId("hash:badge".to_string())),
+            VariableRef::new("mpris.default", "position"),
+            VariableValue::Number(37.4),
+        );
+        variables.set(
+            VariableRef::new("mpris.default", "length"),
+            VariableValue::Number(180.0),
         );
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                overlay_image: Some(OverlayImage {
-                    image: AssetId("$(discord.home:channel_members_0_status_icon)".to_string()),
-                    anchor: Anchor9::BottomEnd,
-                    scale_percent: 32,
-                }),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Bar {
+                value: ValueBinding::Reference("$(mpris.default:position)".to_string()),
+                maximum: ValueBinding::Reference("$(mpris.default:length)".to_string()),
+                color: white(),
+                edge: Edge::Bottom,
+                thickness: 6,
+            }]),
             false,
         );
         assert_eq!(
-            resolved.overlay_image.map(|overlay| overlay.image),
-            Some(AssetId("hash:badge".to_string()))
+            only(resolved),
+            Some(ResolvedLayer::Bar {
+                value: 37,
+                maximum: 180,
+                color: RgbaColor::opaque(255, 255, 255),
+                edge: Edge::Bottom,
+                thickness: 6,
+            })
         );
     }
 
     #[test]
-    fn an_overlay_that_resolves_to_nothing_draws_no_badge() {
+    fn a_bar_with_no_maximum_yet_is_not_drawn() {
         let variables = VariableStore::default();
         let context = RenderContext::new(&variables);
 
         let resolved = context.resolve(
-            &control(RenderedState {
-                overlay_image: Some(OverlayImage {
-                    image: AssetId("$(discord.home:missing)".to_string()),
-                    anchor: Anchor9::BottomEnd,
-                    scale_percent: 32,
-                }),
-                ..RenderedState::default()
-            }),
+            &control(vec![Layer::Bar {
+                value: 1.into(),
+                maximum: ValueBinding::Reference("$(mpris.default:length)".to_string()),
+                color: white(),
+                edge: Edge::Bottom,
+                thickness: 6,
+            }]),
             false,
         );
-        assert_eq!(resolved.overlay_image, None);
+        assert_eq!(only(resolved), None);
+    }
+
+    #[test]
+    fn the_stack_keeps_the_order_it_was_written_in() {
+        let variables = VariableStore::default();
+        let context = RenderContext::new(&variables);
+
+        let resolved = context.resolve(
+            &control(vec![
+                Layer::Fill {
+                    color: RgbaColor::opaque(1, 1, 1).into(),
+                },
+                text("over", white()),
+                Layer::Border {
+                    color: RgbaColor::opaque(2, 2, 2).into(),
+                    width: 5,
+                },
+            ]),
+            false,
+        );
+        assert!(matches!(
+            resolved.layers.as_slice(),
+            [
+                ResolvedLayer::Fill { .. },
+                ResolvedLayer::Text { .. },
+                ResolvedLayer::Border { .. }
+            ]
+        ));
     }
 
     #[test]
     fn the_pressed_state_falls_back_to_the_default_state() {
         let variables = VariableStore::default();
         let context = RenderContext::new(&variables);
-        let subject = control(RenderedState {
-            text: Some("Play".to_string()),
-            ..RenderedState::default()
-        });
+        let subject = control(vec![text("Play", white())]);
 
         assert_eq!(
-            context.resolve(&subject, true).text,
-            Some("Play".to_string())
+            only(context.resolve(&subject, true)),
+            Some(ResolvedLayer::Text {
+                text: "Play".to_string(),
+                color: RgbaColor::opaque(255, 255, 255),
+                anchor: Anchor9::Center,
+            })
         );
     }
 }

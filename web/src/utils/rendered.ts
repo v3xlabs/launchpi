@@ -1,4 +1,4 @@
-import { ColorBinding, defaultContentLayout, RenderedState, RgbaColor } from "../api/inventory";
+import { ColorBinding, Layer, LayerKind, RenderedState, RgbaColor } from "../api/inventory";
 
 export const isReference = (color: ColorBinding | null): color is string => typeof color === "string";
 
@@ -43,14 +43,39 @@ export const fromHex = (value: string): RgbaColor => ({
   alpha: 255,
 });
 
+/** Two layers, so the simplest key stays as simple as it was before it had a stack. */
 export const newState = (isPressed: boolean): RenderedState => ({
-  text: null,
-  image: null,
-  overlay_image: null,
-  foreground_color: { red: 255, green: 255, blue: 255, alpha: 255 },
-  background_color: { red: 30, green: 41, blue: 59, alpha: 255 },
-  border: null,
-  progress: null,
-  content_layout: defaultContentLayout,
+  layers: [
+    { kind: "fill", color: { red: 30, green: 41, blue: 59, alpha: 255 } },
+    {
+      kind: "text",
+      text: "",
+      color: { red: 255, green: 255, blue: 255, alpha: 255 },
+      anchor: "center",
+    },
+  ],
   is_pressed: isPressed,
 });
+
+/** A blank layer of each kind, for the inspector's add-layer menu. */
+export const newLayer = (kind: LayerKind): Layer => {
+  const white: RgbaColor = { red: 255, green: 255, blue: 255, alpha: 255 };
+
+  switch (kind) {
+    case "fill": {
+      return { kind: "fill", color: { red: 30, green: 41, blue: 59, alpha: 255 } };
+    }
+    case "image": {
+      return { kind: "image", image: "", fit: "cover", anchor: "center", scale_percent: 100, tint: null };
+    }
+    case "text": {
+      return { kind: "text", text: "", color: white, anchor: "center" };
+    }
+    case "bar": {
+      return { kind: "bar", value: 0, maximum: 100, color: white, edge: "bottom", thickness: 6 };
+    }
+    default: {
+      return { kind: "border", color: white, width: 5 };
+    }
+  }
+};

@@ -16,6 +16,8 @@ use tracing::debug;
 
 use crate::identifiers::AssetId;
 
+mod icons;
+
 /// A URL that failed is not retried until this passes. Without it a broken link would be re-fetched
 /// on every repaint of the key showing it.
 const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(60);
@@ -88,7 +90,10 @@ impl AssetStore {
         if let Some(hit) = self.decoded.lock().unwrap().get(&key) {
             return Some(hit);
         }
-        let covered = Arc::new(cover(&self.decode_stored(asset, &key.0)?.to_rgb8(), size));
+        let covered = Arc::new(cover(
+            &self.decode_stored(asset, &key.0, size)?.to_rgb8(),
+            size,
+        ));
         self.decoded.lock().unwrap().insert(key, covered.clone());
         Some(covered)
     }
@@ -101,7 +106,10 @@ impl AssetStore {
         if let Some(hit) = self.decoded_rgba.lock().unwrap().get(&key) {
             return Some(hit);
         }
-        let fitted = Arc::new(fit(&self.decode_stored(asset, &key.0)?.to_rgba8(), size));
+        let fitted = Arc::new(fit(
+            &self.decode_stored(asset, &key.0, size)?.to_rgba8(),
+            size,
+        ));
         self.decoded_rgba
             .lock()
             .unwrap()
@@ -109,7 +117,17 @@ impl AssetStore {
         Some(fitted)
     }
 
-    fn decode_stored(self: &Arc<Self>, asset: &AssetId, digest: &str) -> Option<DynamicImage> {
+    /// `size` is passed down because an SVG has no pixels of its own: it is drawn for the square it
+    /// is wanted at, rather than drawn once and resampled like a photograph.
+    fn decode_stored(
+        self: &Arc<Self>,
+        asset: &AssetId,
+        digest: &str,
+        size: u32,
+    ) -> Option<DynamicImage> {
+        if icons::is_icon(&asset.0) {
+            return icons::rasterise(&asset.0, size).map(DynamicImage::ImageRgba8);
+        }
         let bytes = match fs::read(self.path_for(digest)) {
             Ok(bytes) => bytes,
             Err(_) => {
@@ -119,6 +137,9 @@ impl AssetStore {
                 return None;
             }
         };
+        if icons::looks_like_svg(&bytes) {
+            return icons::rasterise_document(&bytes, size).map(DynamicImage::ImageRgba8);
+        }
         match image::load_from_memory(&bytes) {
             Ok(decoded) => Some(decoded),
             Err(error) => {
@@ -128,13 +149,15 @@ impl AssetStore {
         }
     }
 
-    /// Where an id's bytes live. A `hash:` id names its own digest; a URL is keyed by the digest of
-    /// the URL itself, so the same picture referenced twice is stored and decoded once.
+    /// Where an id's bytes live. A `hash:` id names its own digest; a URL and an icon are both keyed
+    /// by the digest of the id itself, so the same picture referenced twice is stored and decoded
+    /// once.
     fn digest_of(&self, asset: &AssetId) -> Option<String> {
         if let Some(digest) = asset.0.strip_prefix("hash:") {
             return Some(digest.to_string());
         }
-        is_fetchable(&asset.0).then(|| format!("{:x}", Sha256::digest(asset.0.as_bytes())))
+        (is_fetchable(&asset.0) || icons::is_icon(&asset.0))
+            .then(|| format!("{:x}", Sha256::digest(asset.0.as_bytes())))
     }
 
     /// Downloads a URL once and stores it under the digest of the URL. Anything already in flight,
@@ -460,7 +483,71 @@ mod tests {
         assert!(is_fetchable("file:///home/luc/cover.jpg"));
         assert!(!is_fetchable("builtin:play"));
         assert!(!is_fetchable("hash:abc123"));
+        assert!(!is_fetchable("mdi:lightbulb-on"));
         assert!(!is_fetchable("just some text"));
+    }
+
+    #[test]
+    fn an_icon_decodes_at_each_size_it_is_asked_for() {
+        let (store, _guard) = store();
+        let icon = AssetId("mdi:lightbulb-on".to_string());
+
+        let small = store.decoded_rgba(&icon, 32).expect("rasterises");
+        let large = store.decoded_rgba(&icon, 96).expect("rasterises");
+
+        assert_eq!(small.dimensions(), (32, 32));
+        assert_eq!(large.dimensions(), (96, 96));
+        assert!(small.pixels().any(|pixel| pixel.0[3] > 0));
+        assert!(Arc::ptr_eq(
+            &large,
+            &store.decoded_rgba(&icon, 96).expect("rasterises")
+        ));
+        assert!(!Arc::ptr_eq(
+            &large,
+            &store.decoded_rgba(&icon, 32).unwrap()
+        ));
+    }
+
+    #[test]
+    fn an_unknown_icon_draws_nothing_and_is_never_fetched() {
+        let (store, _guard) = store();
+        let icon = AssetId("mdi:no-such-icon".to_string());
+
+        assert!(store.decoded_rgba(&icon, 96).is_none());
+        assert!(store.decoded(&icon, 96).is_none());
+        assert!(store.in_flight.lock().unwrap().is_empty());
+        assert!(store.failed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_icon_is_not_mistaken_for_a_url() {
+        let (store, _guard) = store();
+        let icon = AssetId("mdi:lightbulb-on".to_string());
+
+        let digest = store.digest_of(&icon).expect("an icon has a digest");
+        assert_eq!(store.digest_of(&icon), Some(digest.clone()));
+        assert_ne!(
+            store.digest_of(&AssetId("mdi:lightbulb".to_string())),
+            Some(digest.clone())
+        );
+
+        store.decoded_rgba(&icon, 96).expect("rasterises");
+        assert!(!store.path_for(&digest).exists(), "nothing is fetched");
+    }
+
+    #[test]
+    fn a_stored_svg_is_rasterised_rather_than_refused() {
+        let (store, _guard) = store();
+        let asset = store
+            .insert_bytes(
+                br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#0f0"/></svg>"##,
+            )
+            .expect("stores");
+
+        let decoded = store.decoded(&asset, 48).expect("rasterises");
+
+        assert_eq!(decoded.dimensions(), (48, 48));
+        assert_eq!(decoded.get_pixel(24, 24).0, [0, 255, 0]);
     }
 
     #[test]

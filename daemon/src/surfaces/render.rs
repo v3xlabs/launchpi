@@ -1,6 +1,9 @@
 use crate::{
     identifiers::SurfaceId,
-    panels::{control::Control, rendered_state::RgbaColor},
+    panels::{
+        control::Control,
+        rendered_state::{ResolvedLayer, RgbaColor},
+    },
     rendering::context::RenderContext,
     surfaces::{
         command::{KeyRendering, SurfaceCommand},
@@ -25,18 +28,21 @@ impl SurfaceRegistry {
             return Vec::new();
         };
         if self.has_open_subpanel(surface_id) {
-            let crate::surfaces::layout::SurfaceLayout::Grid { columns, rows } = device.layout else {
+            let crate::surfaces::layout::SurfaceLayout::Grid { columns, rows } = device.layout
+            else {
                 return Vec::new();
             };
             return (0..u32::from(columns) * u32::from(rows))
                 .filter_map(|index| {
                     let key_index = u8::try_from(index).ok()?;
-                    self.rendering_for_key(surface_id, key_index, false).or(Some(KeyRendering {
-                        key_index,
-                        background_color: Some(RgbaColor::opaque(0, 0, 0)),
-                        is_dimmed: true,
-                        ..KeyRendering::default()
-                    }))
+                    self.rendering_for_key(surface_id, key_index, false)
+                        .or(Some(KeyRendering {
+                            key_index,
+                            layers: vec![ResolvedLayer::Fill {
+                                color: RgbaColor::opaque(0, 0, 0),
+                            }],
+                            is_dimmed: true,
+                        }))
                 })
                 .collect();
         }
@@ -65,11 +71,23 @@ impl SurfaceRegistry {
                     crate::surfaces::layout::SurfaceLayout::Grid { columns, .. } => columns,
                     crate::surfaces::layout::SurfaceLayout::Freeform => return None,
                 };
-                return rendering_for_control(&control, is_pressed, columns, false, &self.render_context());
+                return rendering_for_control(
+                    &control,
+                    is_pressed,
+                    columns,
+                    false,
+                    &self.render_context(),
+                );
             }
             return panel.controls.iter().find_map(|control| {
                 (key_index_for(control, panel.layout.columns) == Some(key_index)).then(|| {
-                    rendering_for_control(control, is_pressed, panel.layout.columns, true, &self.render_context())
+                    rendering_for_control(
+                        control,
+                        is_pressed,
+                        panel.layout.columns,
+                        true,
+                        &self.render_context(),
+                    )
                 })?
             });
         }
@@ -145,15 +163,7 @@ fn rendering_for_control(
     let state = context.resolve(control, is_pressed);
     Some(KeyRendering {
         key_index: key_index_for(control, columns)?,
-        text: state.text,
-        icon: None,
-        image: state.image,
-        overlay_image: state.overlay_image,
-        progress: state.progress,
-        foreground_color: state.foreground_color,
-        background_color: state.background_color,
-        border: state.border,
-        content_layout: state.content_layout,
+        layers: state.layers,
         is_dimmed,
     })
 }
@@ -162,7 +172,7 @@ fn rendering_for_control(
 mod tests {
     use super::*;
     use crate::{
-        panels::rendered_state::ColorBinding,
+        panels::rendered_state::{ColorBinding, Layer, RenderedState},
         surfaces::defaults::default_panel,
         variables::{VariableRef, VariableValue},
     };
@@ -174,6 +184,17 @@ mod tests {
             blue: 35,
             alpha: 255,
         }
+    }
+
+    fn text_of(rendering: &KeyRendering) -> Option<String> {
+        rendering.layers.iter().find_map(|layer| match layer {
+            ResolvedLayer::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+    }
+
+    fn fill_of(rendering: &KeyRendering) -> Option<RgbaColor> {
+        rendering.palette_color()
     }
 
     fn next_rendering(
@@ -188,7 +209,12 @@ mod tests {
     #[test]
     fn a_live_variable_reaches_the_device_as_interpolated_text() {
         let mut panel = default_panel();
-        panel.controls[0].default_state.text = Some("$(http.local:value)".to_string());
+        panel.controls[0].default_state = RenderedState::labelled(
+            "$(http.local:value)",
+            RgbaColor::opaque(255, 255, 255),
+            RgbaColor::opaque(30, 41, 59),
+            false,
+        );
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
         let surface_id = SurfaceId("stream-deck-studio-1".to_string());
         let (_is_active, mut commands) = registry.activate(&surface_id);
@@ -201,13 +227,18 @@ mod tests {
 
         let rendering = next_rendering(&mut commands).expect("a repaint should have been queued");
         assert_eq!(rendering.key_index, 0);
-        assert_eq!(rendering.text, Some("21".to_string()));
+        assert_eq!(text_of(&rendering), Some("21".to_string()));
     }
 
     #[test]
     fn a_repaint_that_resolves_to_the_same_image_is_not_sent_again() {
         let mut panel = default_panel();
-        panel.controls[0].default_state.text = Some("$(http.local:value)".to_string());
+        panel.controls[0].default_state = RenderedState::labelled(
+            "$(http.local:value)",
+            RgbaColor::opaque(255, 255, 255),
+            RgbaColor::opaque(30, 41, 59),
+            false,
+        );
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
         let surface_id = SurfaceId("stream-deck-studio-1".to_string());
         let (_is_active, mut commands) = registry.activate(&surface_id);
@@ -230,7 +261,7 @@ mod tests {
             .set(reference, VariableValue::Number(22.0));
         registry.refresh_key(&surface_id, 0);
         assert_eq!(
-            next_rendering(&mut commands).and_then(|rendering| rendering.text),
+            next_rendering(&mut commands).and_then(|rendering| text_of(&rendering)),
             Some("22".to_string())
         );
     }
@@ -239,9 +270,9 @@ mod tests {
     fn a_colour_bound_to_a_value_repaints_when_that_value_changes() {
         let mut panel = default_panel();
         panel.controls[0].pressed_state = None;
-        panel.controls[0].default_state.background_color = Some(ColorBinding::Reference(
-            "$(hass.home:light.kitchen.color)".to_string(),
-        ));
+        panel.controls[0].default_state.layers = vec![Layer::Fill {
+            color: ColorBinding::Reference("$(hass.home:light.kitchen.color)".to_string()),
+        }];
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
         let surface_id = SurfaceId("stream-deck-studio-1".to_string());
         let (_is_active, mut commands) = registry.activate(&surface_id);
@@ -250,7 +281,8 @@ mod tests {
         registry.refresh_key(&surface_id, 0);
         let before = next_rendering(&mut commands).expect("a baseline repaint");
         assert_eq!(
-            before.background_color, None,
+            fill_of(&before),
+            None,
             "an unresolved colour should leave the key unstyled, not black"
         );
 
@@ -260,6 +292,6 @@ mod tests {
         registry.refresh_key(&surface_id, 0);
 
         let after = next_rendering(&mut commands).expect("the new colour should repaint the key");
-        assert_eq!(after.background_color, Some(amber()));
+        assert_eq!(fill_of(&after), Some(amber()));
     }
 }

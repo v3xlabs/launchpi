@@ -4,7 +4,7 @@ use crate::{
     identifiers::{IntegrationId, SurfaceId},
     panels::{
         control::Control,
-        rendered_state::{ColorBinding, RenderedState},
+        rendered_state::{ColorBinding, Layer, RenderedState, ValueBinding},
         Panel,
     },
     plugins::plugin::Subscription,
@@ -100,37 +100,62 @@ impl DependencyIndex {
     }
 }
 
-/// Every field a control can bind, not just the textual ones. A colour reference that is missed
-/// here is invisible twice over: its plugin is never told to watch the value, and a change to it
-/// never marks the key dirty.
+/// Every field a layer can bind, not just the textual ones. A reference that is missed here is
+/// invisible twice over: its plugin is never told to watch the value, and a change to it never
+/// marks the key dirty.
+///
+/// Every layer is destructured down to its last field, with the ones that cannot bind named and
+/// discarded, so that adding a field to a layer fails to compile here until someone has decided
+/// whether it binds.
 fn references_of_state(state: &RenderedState) -> Vec<VariableRef> {
-    let mut found = state
-        .text
-        .as_deref()
-        .map(template::references)
-        .unwrap_or_default();
-    for asset in [
-        state.image.as_ref(),
-        state.overlay_image.as_ref().map(|overlay| &overlay.image),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        found.extend(template::references(&asset.0));
-    }
-    for binding in [
-        state.foreground_color.as_ref(),
-        state.background_color.as_ref(),
-        state.border.as_ref().map(|border| &border.color),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if let ColorBinding::Reference(reference) = binding {
-            found.extend(template::references(reference));
+    let mut found = Vec::new();
+    for layer in &state.layers {
+        match layer {
+            Layer::Fill { color } => extend_from_color(&mut found, color),
+            Layer::Image {
+                image,
+                fit: _,
+                anchor: _,
+                scale_percent: _,
+                tint,
+            } => {
+                found.extend(template::references(&image.0));
+                if let Some(tint) = tint {
+                    extend_from_color(&mut found, tint);
+                }
+            }
+            Layer::Text {
+                text,
+                color,
+                anchor: _,
+            } => {
+                found.extend(template::references(text));
+                extend_from_color(&mut found, color);
+            }
+            Layer::Bar {
+                value,
+                maximum,
+                color,
+                edge: _,
+                thickness: _,
+            } => {
+                for binding in [value, maximum] {
+                    if let ValueBinding::Reference(reference) = binding {
+                        found.extend(template::references(reference));
+                    }
+                }
+                extend_from_color(&mut found, color);
+            }
+            Layer::Border { color, width: _ } => extend_from_color(&mut found, color),
         }
     }
     found
+}
+
+fn extend_from_color(found: &mut Vec<VariableRef>, binding: &ColorBinding) {
+    if let ColorBinding::Reference(reference) = binding {
+        found.extend(template::references(reference));
+    }
 }
 
 #[cfg(test)]
@@ -139,7 +164,7 @@ mod tests {
     use crate::{
         identifiers::{AssetId, ControlId, PanelId},
         panels::{
-            rendered_state::{Anchor9, Border, OverlayImage},
+            rendered_state::{Anchor9, Fit, RgbaColor},
             PanelLayout,
         },
         surfaces::layout::{SurfaceCapabilities, SurfacePosition},
@@ -151,8 +176,16 @@ mod tests {
             name: "Key".to_string(),
             position: SurfacePosition { column, row },
             default_state: RenderedState {
-                text: text.map(str::to_string),
-                ..RenderedState::default()
+                layers: text
+                    .map(|text| {
+                        vec![Layer::Text {
+                            text: text.to_string(),
+                            color: RgbaColor::opaque(255, 255, 255).into(),
+                            anchor: Anchor9::Center,
+                        }]
+                    })
+                    .unwrap_or_default(),
+                is_pressed: false,
             },
             pressed_state: None,
             action_bindings: Vec::new(),
@@ -208,15 +241,19 @@ mod tests {
     #[test]
     fn a_border_and_an_overlay_register_targets_and_subscriptions() {
         let mut keyed = control(0, 0, None);
-        keyed.default_state.border = Some(Border {
-            color: ColorBinding::Reference("$(discord.home:status_color)".to_string()),
-            width: 5,
-        });
-        keyed.default_state.overlay_image = Some(OverlayImage {
-            image: AssetId("$(discord.home:status_icon)".to_string()),
-            anchor: Anchor9::BottomEnd,
-            scale_percent: 32,
-        });
+        keyed.default_state.layers = vec![
+            Layer::Border {
+                color: ColorBinding::Reference("$(discord.home:status_color)".to_string()),
+                width: 5,
+            },
+            Layer::Image {
+                image: AssetId("$(discord.home:status_icon)".to_string()),
+                fit: Fit::Contain,
+                anchor: Anchor9::BottomEnd,
+                scale_percent: 32,
+                tint: Some(ColorBinding::Reference("$(discord.home:tint)".to_string())),
+            },
+        ];
         let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
 
         assert_eq!(
@@ -240,18 +277,22 @@ mod tests {
             .map(|subscription| subscription.name.clone())
             .collect();
         names.sort();
-        assert_eq!(names, vec!["status_color", "status_icon"]);
+        assert_eq!(names, vec!["status_color", "status_icon", "tint"]);
     }
 
     #[test]
     fn a_colour_binding_registers_a_target_and_a_subscription() {
         let mut keyed = control(0, 0, None);
-        keyed.default_state.background_color = Some(ColorBinding::Reference(
-            "$(hass.home:light.kitchen.color)".to_string(),
-        ));
-        keyed.default_state.foreground_color = Some(ColorBinding::Reference(
-            "$(hass.home:light.kitchen.text_color)".to_string(),
-        ));
+        keyed.default_state.layers = vec![
+            Layer::Fill {
+                color: ColorBinding::Reference("$(hass.home:light.kitchen.color)".to_string()),
+            },
+            Layer::Text {
+                text: "Kitchen".to_string(),
+                color: ColorBinding::Reference("$(hass.home:light.kitchen.text_color)".to_string()),
+                anchor: Anchor9::Center,
+            },
+        ];
         let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
 
         assert_eq!(
@@ -284,8 +325,9 @@ mod tests {
     #[test]
     fn a_literal_colour_subscribes_to_nothing() {
         let mut keyed = control(0, 0, None);
-        keyed.default_state.background_color =
-            Some(crate::panels::rendered_state::RgbaColor::opaque(1, 2, 3).into());
+        keyed.default_state.layers = vec![Layer::Fill {
+            color: RgbaColor::opaque(1, 2, 3).into(),
+        }];
         let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
 
         assert!(index.watched_integrations().is_empty());
@@ -303,7 +345,13 @@ mod tests {
     #[test]
     fn an_image_reference_is_tracked_like_a_text_reference() {
         let mut keyed = control(0, 0, None);
-        keyed.default_state.image = Some(AssetId("$(mpris.default:art)".to_string()));
+        keyed.default_state.layers = vec![Layer::Image {
+            image: AssetId("$(mpris.default:art)".to_string()),
+            fit: Fit::Cover,
+            anchor: Anchor9::Center,
+            scale_percent: 100,
+            tint: None,
+        }];
         let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);
         assert_eq!(
             index

@@ -19,9 +19,7 @@ use crate::{
     identifiers::{AssetId, IntegrationId},
     panels::{
         control::ControlTemplate,
-        rendered_state::{
-            Anchor9, Border, ColorBinding, ContentLayout, OverlayImage, RenderedState, RgbaColor,
-        },
+        rendered_state::{Anchor9, ColorBinding, Fit, Layer, RenderedState, RgbaColor},
     },
     plugins::{
         instance::InstanceConfig,
@@ -307,25 +305,47 @@ fn presets(settings: &DiscordConfig) -> Vec<Preset> {
             control: ControlTemplate {
                 name: format!("Member {slot}"),
                 default_state: RenderedState {
-                    text: Some(format!("$(self:channel_members_{index})")),
-                    image: Some(AssetId(format!("$(self:channel_members_{index}_avatar)"))),
-                    overlay_image: Some(OverlayImage {
-                        image: AssetId(format!("$(self:channel_members_{index}_status_icon)")),
-                        anchor: Anchor9::BottomEnd,
-                        scale_percent: 32,
-                    }),
-                    foreground_color: Some(RgbaColor::opaque(255, 255, 255).into()),
-                    background_color: Some(RgbaColor::opaque(30, 41, 59).into()),
-                    border: Some(Border {
-                        color: ColorBinding::Reference(format!(
-                            "$(self:channel_members_{index}_status_color)"
-                        )),
-                        width: 5,
-                    }),
-                    content_layout: ContentLayout {
-                        text_anchor: Anchor9::BottomStart,
-                    },
-                    ..RenderedState::default()
+                    layers: vec![
+                        Layer::Fill {
+                            color: RgbaColor::opaque(30, 41, 59).into(),
+                        },
+                        Layer::Image {
+                            image: AssetId(format!("$(self:channel_members_{index}_avatar)")),
+                            fit: Fit::Cover,
+                            anchor: Anchor9::Center,
+                            scale_percent: 100,
+                            tint: None,
+                        },
+                        // An avatar is arbitrary, so a name over it can land on anything.
+                        Layer::Fill {
+                            color: RgbaColor {
+                                red: 0,
+                                green: 0,
+                                blue: 0,
+                                alpha: 140,
+                            }
+                            .into(),
+                        },
+                        Layer::Text {
+                            text: format!("$(self:channel_members_{index})"),
+                            color: RgbaColor::opaque(255, 255, 255).into(),
+                            anchor: Anchor9::BottomStart,
+                        },
+                        Layer::Image {
+                            image: AssetId(format!("$(self:channel_members_{index}_status_icon)")),
+                            fit: Fit::Contain,
+                            anchor: Anchor9::BottomEnd,
+                            scale_percent: 32,
+                            tint: None,
+                        },
+                        Layer::Border {
+                            color: ColorBinding::Reference(format!(
+                                "$(self:channel_members_{index}_status_color)"
+                            )),
+                            width: 5,
+                        },
+                    ],
+                    is_pressed: false,
                 },
                 pressed_state: None,
                 action_bindings: Vec::new(),
@@ -338,12 +358,12 @@ fn presets(settings: &DiscordConfig) -> Vec<Preset> {
             description: None,
             control: ControlTemplate {
                 name: format!("Mute member {slot}"),
-                default_state: RenderedState {
-                    text: Some(format!("Mute\n$(self:channel_members_{index})")),
-                    foreground_color: Some(RgbaColor::opaque(255, 255, 255).into()),
-                    background_color: Some(RgbaColor::opaque(30, 41, 59).into()),
-                    ..RenderedState::default()
-                },
+                default_state: RenderedState::labelled(
+                    format!("Mute\n$(self:channel_members_{index})"),
+                    RgbaColor::opaque(255, 255, 255),
+                    RgbaColor::opaque(30, 41, 59),
+                    false,
+                ),
                 pressed_state: None,
                 action_bindings: vec![ActionBinding {
                     gesture: ActionTrigger::Press,
@@ -370,12 +390,12 @@ fn channel_preset(preset_id: &str, name: &str, text: &str) -> Preset {
         description: None,
         control: ControlTemplate {
             name: name.to_string(),
-            default_state: RenderedState {
-                text: Some(text.to_string()),
-                foreground_color: Some(RgbaColor::opaque(255, 255, 255).into()),
-                background_color: Some(RgbaColor::opaque(30, 41, 59).into()),
-                ..RenderedState::default()
-            },
+            default_state: RenderedState::labelled(
+                text,
+                RgbaColor::opaque(255, 255, 255),
+                RgbaColor::opaque(30, 41, 59),
+                false,
+            ),
             pressed_state: None,
             action_bindings: Vec::new(),
         },
@@ -1072,25 +1092,25 @@ mod tests {
             .iter()
             .find(|preset| preset.preset_id == "member-1")
             .expect("the second slot is offered");
-        let state = &second.control.default_state;
-        assert_eq!(
-            state.text.as_deref(),
-            Some("$(self:channel_members_1)"),
-            "a preset names its own slot, and is rewritten to the instance when published"
-        );
-        assert_eq!(
-            state.border.as_ref().map(|border| &border.color),
-            Some(&ColorBinding::Reference(
-                "$(self:channel_members_1_status_color)".to_string()
-            ))
-        );
-        assert_eq!(
-            state
-                .overlay_image
-                .as_ref()
-                .map(|overlay| overlay.image.0.as_str()),
-            Some("$(self:channel_members_1_status_icon)")
-        );
+        // Every reference in the stack names slot 1 and nothing else; the sigil is rewritten to
+        // the publishing instance on the way into the store.
+        let layers = &second.control.default_state.layers;
+        assert!(layers.contains(&Layer::Text {
+            text: "$(self:channel_members_1)".to_string(),
+            color: RgbaColor::opaque(255, 255, 255).into(),
+            anchor: Anchor9::BottomStart,
+        }));
+        assert!(layers.contains(&Layer::Border {
+            color: ColorBinding::Reference("$(self:channel_members_1_status_color)".to_string()),
+            width: 5,
+        }));
+        assert!(layers.contains(&Layer::Image {
+            image: AssetId("$(self:channel_members_1_status_icon)".to_string()),
+            fit: Fit::Contain,
+            anchor: Anchor9::BottomEnd,
+            scale_percent: 32,
+            tint: None,
+        }));
     }
 
     #[test]

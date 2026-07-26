@@ -95,6 +95,15 @@ button, input, select, textarea { font: inherit; }
 .parameter-swatch[data-unresolved="true"] { @apply opacity-30; }
 .range-input { @apply h-8 w-full cursor-pointer bg-transparent accent-blue-500; }
 
+/* A key's face as an ordered stack, listed the way it is drawn. */
+.layer-card { @apply border border-neutral-800 bg-neutral-950; }
+.layer-head { @apply flex items-center justify-between gap-2 border-b border-neutral-800 px-2 py-1.5; }
+.layer-kind { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }
+.layer-head .icon-button, .layer-head .danger-button { @apply h-6 w-6; }
+.layer-body { @apply grid gap-2 p-2; }
+.layer-add { @apply flex flex-wrap gap-1.5; }
+.layer-add .secondary-button { @apply h-7 px-2 text-[0.7rem]; }
+
 /* Presets: one grid per plugin, so a button is recognised by its picture rather than its name. */
 .preset-section { @apply grid gap-1.5 border-t border-neutral-800 py-2 first:border-t-0 first:pt-0; }
 .preset-heading { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }

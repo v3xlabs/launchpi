@@ -1,3 +1,5 @@
+import { Layer } from "../api/inventory";
+
 /**
  * Mirrors the daemon's `$(instance:name)` parser so the browser preview shows what the hardware
  * shows. `$$` is a literal dollar; anything that is not a well-formed reference is left as written,
@@ -76,4 +78,29 @@ export const referencesIn = (template: string | null): string[] => {
   });
 
   return found;
+};
+
+/**
+ * Every value a layer mentions. Mirrors the daemon's own walk over a stack: a reference missed here
+ * is a key that never redraws when the value behind it moves.
+ */
+export const referencesInLayer = (layer: Layer): string[] => {
+  const bound = (value: unknown): string[] =>
+    (typeof value === "string" ? referencesIn(value) : []);
+
+  switch (layer.kind) {
+    case "fill":
+    case "border": {
+      return bound(layer.color);
+    }
+    case "image": {
+      return [...referencesIn(layer.image), ...bound(layer.tint)];
+    }
+    case "text": {
+      return [...referencesIn(layer.text), ...bound(layer.color)];
+    }
+    default: {
+      return [...bound(layer.value), ...bound(layer.maximum), ...bound(layer.color)];
+    }
+  }
 };

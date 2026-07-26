@@ -7,7 +7,7 @@ use crate::{
     identifiers::IntegrationId,
     panels::{
         control::ControlTemplate,
-        rendered_state::{Border, ColorBinding, RenderedState, RgbaColor},
+        rendered_state::{Anchor9, ColorBinding, Layer, RenderedState, RgbaColor},
     },
     plugins::{
         builtin::hass::{
@@ -83,11 +83,8 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
         control: ControlTemplate {
             name,
             default_state: RenderedState {
-                text: Some(text),
-                foreground_color: Some(RgbaColor::opaque(255, 255, 255).into()),
-                background_color: Some(RgbaColor::opaque(30, 41, 59).into()),
-                border: outline(&entry.domain, entity_id),
-                ..RenderedState::default()
+                layers: face(&entry.domain, entity_id, text),
+                is_pressed: false,
             },
             pressed_state: None,
             action_bindings: vec![ActionBinding {
@@ -102,11 +99,27 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
 /// the face because `values.rs` answers black for an entity that is off and white for one that is
 /// on without a colour of its own, and a key whose whole face is that colour has no legible label
 /// left at either end of the range.
-fn outline(domain: &str, entity_id: &str) -> Option<Border> {
-    (domain == "light").then(|| Border {
-        color: ColorBinding::Reference(format!("$(self:{entity_id}.color)")),
-        width: 5,
-    })
+/// Only a light is outlined: `fields_for` publishes a colour for that domain alone. The outline
+/// rather than the fill is what keeps the label readable, because an entity that is on but has no
+/// colour of its own reports white.
+fn face(domain: &str, entity_id: &str, text: String) -> Vec<Layer> {
+    let mut layers = vec![
+        Layer::Fill {
+            color: RgbaColor::opaque(30, 41, 59).into(),
+        },
+        Layer::Text {
+            text,
+            color: RgbaColor::opaque(255, 255, 255).into(),
+            anchor: Anchor9::Center,
+        },
+    ];
+    if domain == "light" {
+        layers.push(Layer::Border {
+            color: ColorBinding::Reference(format!("$(self:{entity_id}.color)")),
+            width: 5,
+        });
+    }
+    layers
 }
 
 fn press(entity_id: &str, domain: &str, service: &str) -> Action {
@@ -190,17 +203,40 @@ mod tests {
         assert_eq!(ids, ["light.kitchen"]);
     }
 
+    fn label_of(preset: &Preset) -> Option<&str> {
+        preset
+            .control
+            .default_state
+            .layers
+            .iter()
+            .find_map(|layer| match layer {
+                Layer::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+    }
+
+    fn outline_of(preset: &Preset) -> Option<&ColorBinding> {
+        preset
+            .control
+            .default_state
+            .layers
+            .iter()
+            .find_map(|layer| match layer {
+                Layer::Border { color, .. } => Some(color),
+                _ => None,
+            })
+    }
+
     #[test]
     fn a_light_toggles_and_outlines_itself_in_its_own_colour() {
         let preset = only("light.kitchen", "Kitchen");
-        let state = &preset.control.default_state;
 
         assert_eq!(
-            state.text.as_deref(),
+            label_of(&preset),
             Some("Kitchen\n$(self:light.kitchen.state)")
         );
         assert_eq!(
-            state.border.as_ref().map(|border| &border.color),
+            outline_of(&preset),
             Some(&ColorBinding::Reference(
                 "$(self:light.kitchen.color)".to_string()
             ))
@@ -217,7 +253,7 @@ mod tests {
     fn only_a_light_is_outlined_in_a_colour_it_actually_reports() {
         for entity_id in ["switch.desk_lamp", "fan.purifier", "scene.movie"] {
             assert_eq!(
-                only(entity_id, "Anything").control.default_state.border,
+                outline_of(&only(entity_id, "Anything")),
                 None,
                 "{entity_id} does not report a colour"
             );
@@ -244,7 +280,7 @@ mod tests {
     fn a_scene_and_a_script_run_rather_than_reporting_a_state() {
         for (entity_id, service) in [("scene.movie", "turn_on"), ("script.arm_home", "turn_on")] {
             let preset = only(entity_id, "Named");
-            assert_eq!(preset.control.default_state.text.as_deref(), Some("Named"));
+            assert_eq!(label_of(&preset), Some("Named"));
 
             let (_, parameters) = pressed(&preset);
             assert_eq!(parameters["service"], json!(service));
@@ -255,7 +291,7 @@ mod tests {
     fn a_media_player_key_plays_and_pauses_and_shows_what_it_is_doing() {
         let preset = only("media_player.study", "Study");
         assert_eq!(
-            preset.control.default_state.text.as_deref(),
+            label_of(&preset),
             Some("Study\n$(self:media_player.study.state)")
         );
 
@@ -270,7 +306,7 @@ mod tests {
             .expect("a light is offered whether or not it is named");
         assert_eq!(preset.name, "light.kitchen");
         assert_eq!(
-            preset.control.default_state.text.as_deref(),
+            label_of(&preset),
             Some("light.kitchen\n$(self:light.kitchen.state)")
         );
     }

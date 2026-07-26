@@ -2,71 +2,142 @@ use serde::{Deserialize, Serialize};
 
 use crate::identifiers::AssetId;
 
+/// A key's face as a stack. Layers draw in array order, index 0 first, so later entries sit on top.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RenderedState {
-    pub text: Option<String>,
-    pub image: Option<AssetId>,
-    /// A badge drawn small in a corner. Kept apart from `image` because it is never scrimmed: a
-    /// status marker that dims as soon as the key gains a label is not a status marker.
-    pub overlay_image: Option<OverlayImage>,
-    pub foreground_color: Option<ColorBinding>,
-    pub background_color: Option<ColorBinding>,
-    pub border: Option<Border>,
-    pub progress: Option<Progress>,
     #[serde(default)]
-    pub content_layout: ContentLayout,
+    pub layers: Vec<Layer>,
     pub is_pressed: bool,
 }
 
-/// An inset outline. The colour binds like any other colour, so a plugin can drive it; the width
-/// does not, because nothing publishes a width.
+impl RenderedState {
+    /// The stack a plain key starts from, and what the editor offers for a new one: a colour with a
+    /// label on it. Two layers, so the simplest key stays as simple as it was before it had a stack.
+    pub fn labelled(
+        text: impl Into<String>,
+        foreground: RgbaColor,
+        background: RgbaColor,
+        is_pressed: bool,
+    ) -> Self {
+        Self {
+            layers: vec![
+                Layer::Fill {
+                    color: background.into(),
+                },
+                Layer::Text {
+                    text: text.into(),
+                    color: foreground.into(),
+                    anchor: Anchor9::Center,
+                },
+            ],
+            is_pressed,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Border {
-    pub color: ColorBinding,
-    #[serde(default = "default_border_width")]
-    pub width: u8,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Layer {
+    Fill {
+        color: ColorBinding,
+    },
+    Image {
+        image: AssetId,
+        #[serde(default)]
+        fit: Fit,
+        #[serde(default)]
+        anchor: Anchor9,
+        #[serde(default = "full_scale")]
+        scale_percent: u8,
+        /// Recolours a monochrome source. Absent leaves the picture as it is.
+        #[serde(default)]
+        tint: Option<ColorBinding>,
+    },
+    Text {
+        text: String,
+        color: ColorBinding,
+        #[serde(default)]
+        anchor: Anchor9,
+    },
+    Bar {
+        value: ValueBinding,
+        maximum: ValueBinding,
+        color: ColorBinding,
+        #[serde(default)]
+        edge: Edge,
+        #[serde(default = "default_bar_thickness")]
+        thickness: u8,
+    },
+    Border {
+        color: ColorBinding,
+        #[serde(default = "default_border_width")]
+        width: u8,
+    },
+}
+
+/// `Cover` crops the picture to fill its square; `Contain` fits the whole picture inside it.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Fit {
+    #[default]
+    Cover,
+    Contain,
+}
+
+/// Which edge a [`Layer::Bar`] runs along and grows from.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Edge {
+    Top,
+    #[default]
+    Bottom,
+    Start,
+    End,
+}
+
+fn full_scale() -> u8 {
+    100
+}
+
+fn default_bar_thickness() -> u8 {
+    6
 }
 
 fn default_border_width() -> u8 {
     5
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OverlayImage {
-    pub image: AssetId,
-    #[serde(default = "default_overlay_anchor")]
-    pub anchor: Anchor9,
-    #[serde(default = "default_overlay_scale")]
-    pub scale_percent: u8,
-}
-
-fn default_overlay_anchor() -> Anchor9 {
-    Anchor9::BottomEnd
-}
-
-fn default_overlay_scale() -> u8 {
-    32
-}
-
-/// A [`Border`] and an [`OverlayImage`] with their bindings resolved, so the renderer never has to
-/// know what a binding is.
+/// A [`Layer`] with every binding replaced by the value it names, so the renderer never has to know
+/// what a binding is.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ResolvedBorder {
-    pub color: RgbaColor,
-    pub width: u8,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ResolvedOverlay {
-    pub image: AssetId,
-    pub anchor: Anchor9,
-    pub scale_percent: u8,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ContentLayout {
-    #[serde(default)]
-    pub text_anchor: Anchor9,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ResolvedLayer {
+    Fill {
+        color: RgbaColor,
+    },
+    Image {
+        image: AssetId,
+        fit: Fit,
+        anchor: Anchor9,
+        scale_percent: u8,
+        tint: Option<RgbaColor>,
+    },
+    Text {
+        text: String,
+        color: RgbaColor,
+        anchor: Anchor9,
+    },
+    Bar {
+        value: u16,
+        maximum: u16,
+        color: RgbaColor,
+        edge: Edge,
+        thickness: u8,
+    },
+    Border {
+        color: RgbaColor,
+        width: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -96,6 +167,20 @@ pub enum ColorBinding {
 impl From<RgbaColor> for ColorBinding {
     fn from(color: RgbaColor) -> Self {
         Self::Literal(color)
+    }
+}
+
+/// A number the same way: an integer is written out, a string reads one from a value.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ValueBinding {
+    Literal(u16),
+    Reference(String),
+}
+
+impl From<u16> for ValueBinding {
+    fn from(value: u16) -> Self {
+        Self::Literal(value)
     }
 }
 
@@ -149,12 +234,6 @@ impl RgbaColor {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct Progress {
-    pub value: u16,
-    pub maximum_value: u16,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,36 +266,74 @@ mod tests {
     }
 
     #[test]
-    fn a_border_binds_its_colour_and_defaults_its_width() {
-        #[derive(Deserialize)]
-        struct Holder {
-            border: Border,
-        }
+    fn a_layer_names_its_kind_and_defaults_the_rest() {
+        let state: RenderedState = toml::from_str(
+            r#"
+is_pressed = false
 
-        let holder: Holder =
-            toml::from_str("border = { color = \"$(discord.home:status)\" }").expect("valid toml");
+[[layers]]
+kind = "border"
+color = "$(discord.home:status)"
+
+[[layers]]
+kind = "image"
+image = "$(mpris.default:art)"
+"#,
+        )
+        .expect("valid toml");
+
         assert_eq!(
-            holder.border.color,
-            ColorBinding::Reference("$(discord.home:status)".to_string())
+            state.layers,
+            vec![
+                Layer::Border {
+                    color: ColorBinding::Reference("$(discord.home:status)".to_string()),
+                    width: default_border_width(),
+                },
+                Layer::Image {
+                    image: AssetId("$(mpris.default:art)".to_string()),
+                    fit: Fit::Cover,
+                    anchor: Anchor9::Center,
+                    scale_percent: full_scale(),
+                    tint: None,
+                },
+            ]
         );
-        assert_eq!(holder.border.width, default_border_width());
-    }
-
-    /// The fields are additive, so nothing forces a `PANEL_DOCUMENT_VERSION` bump.
-    #[test]
-    fn a_control_written_before_borders_existed_still_parses() {
-        let state: RenderedState =
-            toml::from_str("text = \"Hello\"\nis_pressed = false").expect("valid toml");
-        assert_eq!(state.border, None);
-        assert_eq!(state.overlay_image, None);
     }
 
     #[test]
-    fn an_overlay_takes_a_corner_and_a_size_unless_told_otherwise() {
-        let overlay: OverlayImage =
-            toml::from_str("image = \"$(discord.home:badge)\"").expect("valid toml");
-        assert_eq!(overlay.anchor, default_overlay_anchor());
-        assert_eq!(overlay.scale_percent, default_overlay_scale());
+    fn a_stack_survives_a_round_trip_through_toml() {
+        let state = RenderedState {
+            layers: vec![
+                Layer::Fill {
+                    color: RgbaColor::opaque(30, 41, 59).into(),
+                },
+                Layer::Text {
+                    text: "$(mpris.default:title)".to_string(),
+                    color: ColorBinding::Reference("$(mpris.default:accent)".to_string()),
+                    anchor: Anchor9::BottomCenter,
+                },
+                Layer::Bar {
+                    value: ValueBinding::Reference("$(mpris.default:position)".to_string()),
+                    maximum: 100.into(),
+                    color: RgbaColor::opaque(255, 255, 255).into(),
+                    edge: Edge::Bottom,
+                    thickness: 6,
+                },
+            ],
+            is_pressed: false,
+        };
+
+        let rendered = toml::to_string_pretty(&state).expect("a stack serialises");
+        assert_eq!(
+            toml::from_str::<RenderedState>(&rendered).expect("and reads back"),
+            state
+        );
+    }
+
+    #[test]
+    fn a_state_with_no_stack_is_an_empty_stack_rather_than_an_error() {
+        let state: RenderedState = toml::from_str("is_pressed = false").expect("valid toml");
+        assert!(state.layers.is_empty());
     }
 
     #[test]

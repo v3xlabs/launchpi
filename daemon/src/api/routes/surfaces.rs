@@ -146,15 +146,7 @@ async fn render_key(
     );
     let rendering = KeyRendering {
         key_index: 0,
-        text: resolved.text,
-        icon: None,
-        image: resolved.image,
-        overlay_image: resolved.overlay_image,
-        progress: resolved.progress,
-        foreground_color: resolved.foreground_color,
-        background_color: resolved.background_color,
-        border: resolved.border,
-        content_layout: resolved.content_layout,
+        layers: resolved.layers,
         is_dimmed: false,
     };
     let image = studio::render_key(&rendering, Some(&state.assets)).map_err(|error| ApiError {

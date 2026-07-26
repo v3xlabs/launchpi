@@ -1,40 +1,25 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    identifiers::AssetId,
-    panels::rendered_state::{ContentLayout, Progress, ResolvedBorder, ResolvedOverlay, RgbaColor},
-};
+use crate::panels::rendered_state::{ResolvedLayer, RgbaColor};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct KeyRendering {
     pub key_index: u8,
-    pub text: Option<String>,
-    pub icon: Option<KeyIcon>,
     #[serde(default)]
-    pub image: Option<AssetId>,
-    #[serde(default)]
-    pub overlay_image: Option<ResolvedOverlay>,
-    #[serde(default)]
-    pub progress: Option<Progress>,
-    pub foreground_color: Option<RgbaColor>,
-    pub background_color: Option<RgbaColor>,
-    #[serde(default)]
-    pub border: Option<ResolvedBorder>,
-    #[serde(default)]
-    pub content_layout: ContentLayout,
+    pub layers: Vec<ResolvedLayer>,
     #[serde(default)]
     pub is_dimmed: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum KeyIcon {
-    Circle,
-    Diamond,
-    Pause,
-    Play,
-    Square,
-    Triangle,
+impl KeyRendering {
+    /// The one colour a palette-only surface can show. The bottom-most fill is the key's own
+    /// background; anything above it is detail those surfaces cannot express.
+    pub fn palette_color(&self) -> Option<RgbaColor> {
+        self.layers.iter().find_map(|layer| match layer {
+            ResolvedLayer::Fill { color } => Some(color.clone()),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]

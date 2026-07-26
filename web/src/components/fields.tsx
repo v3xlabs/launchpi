@@ -71,7 +71,13 @@ export const ColorField: Component<{
       aria-label={`${properties.label} colour`}
       value={swatch()}
       data-unresolved={painted() === null}
-      onInput={event => properties.onChange(fromHex(event.currentTarget.value))}
+      // The picker only speaks RGB, so the alpha already on the field is carried across rather
+      // than reset: adjusting a scrim's colour must not make it opaque.
+      onInput={event =>
+        properties.onChange({
+          ...fromHex(event.currentTarget.value),
+          alpha: isReference(properties.value) ? 255 : properties.value?.alpha ?? 255,
+        })}
     />
   );
 

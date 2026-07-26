@@ -6,7 +6,10 @@ use serde_json::Value as JsonValue;
 use crate::{
     bindings::action::Action,
     identifiers::IntegrationId,
-    panels::{control::ControlTemplate, rendered_state::ColorBinding},
+    panels::{
+        control::ControlTemplate,
+        rendered_state::{ColorBinding, Layer, RenderedState, ValueBinding},
+    },
 };
 
 /// `self` in a preset means "whichever instance published this".
@@ -89,29 +92,54 @@ pub fn substitute_self(preset: &mut Preset, integration_id: &IntegrationId) {
     }
 }
 
-fn substitute_in_state(
-    state: &mut crate::panels::rendered_state::RenderedState,
-    integration_id: &IntegrationId,
-) {
-    if let Some(text) = state.text.as_mut() {
-        *text = rewritten(text, integration_id);
-    }
-    if let Some(image) = state.image.as_mut() {
-        image.0 = rewritten(&image.0, integration_id);
-    }
-    if let Some(overlay) = state.overlay_image.as_mut() {
-        overlay.image.0 = rewritten(&overlay.image.0, integration_id);
-    }
-    for color in [
-        state.foreground_color.as_mut(),
-        state.background_color.as_mut(),
-        state.border.as_mut().map(|border| &mut border.color),
-    ]
-    .into_iter()
-    .flatten()
-    {
+/// Every layer is destructured down to its last field for the same reason `references_of_state` is:
+/// a binding missed here keeps the `self` sigil, and a `$(self:...)` that reaches a saved panel
+/// interpolates to nothing and reads as a button that simply does not work.
+fn substitute_in_state(state: &mut RenderedState, integration_id: &IntegrationId) {
+    let rewrite_color = |color: &mut ColorBinding| {
         if let ColorBinding::Reference(reference) = color {
             *reference = rewritten(reference, integration_id);
+        }
+    };
+
+    for layer in &mut state.layers {
+        match layer {
+            Layer::Fill { color } => rewrite_color(color),
+            Layer::Image {
+                image,
+                fit: _,
+                anchor: _,
+                scale_percent: _,
+                tint,
+            } => {
+                image.0 = rewritten(&image.0, integration_id);
+                if let Some(tint) = tint {
+                    rewrite_color(tint);
+                }
+            }
+            Layer::Text {
+                text,
+                color,
+                anchor: _,
+            } => {
+                *text = rewritten(text, integration_id);
+                rewrite_color(color);
+            }
+            Layer::Bar {
+                value,
+                maximum,
+                color,
+                edge: _,
+                thickness: _,
+            } => {
+                for binding in [value, maximum] {
+                    if let ValueBinding::Reference(reference) = binding {
+                        *reference = rewritten(reference, integration_id);
+                    }
+                }
+                rewrite_color(color);
+            }
+            Layer::Border { color, width: _ } => rewrite_color(color),
         }
     }
 }
@@ -165,7 +193,7 @@ mod tests {
     use crate::{
         bindings::action::{ActionBinding, ActionTrigger},
         identifiers::AssetId,
-        panels::rendered_state::{Anchor9, Border, OverlayImage, RenderedState},
+        panels::rendered_state::{Anchor9, Fit, RgbaColor},
     };
     use serde_json::json;
 
@@ -178,22 +206,37 @@ mod tests {
             control: ControlTemplate {
                 name: "Member 1".to_string(),
                 default_state: RenderedState {
-                    text: Some("$(self:channel_members_0)".to_string()),
-                    image: Some(AssetId("$(self:channel_members_0_image)".to_string())),
-                    overlay_image: Some(OverlayImage {
-                        image: AssetId("$(self:channel_members_0_status_icon)".to_string()),
-                        anchor: Anchor9::BottomEnd,
-                        scale_percent: 32,
-                    }),
-                    foreground_color: Some(ColorBinding::Reference("$(self:text)".to_string())),
-                    background_color: Some(ColorBinding::Reference("$(self:fill)".to_string())),
-                    border: Some(Border {
-                        color: ColorBinding::Reference(
-                            "$(self:channel_members_0_status_color)".to_string(),
-                        ),
-                        width: 5,
-                    }),
-                    ..RenderedState::default()
+                    layers: vec![
+                        Layer::Fill {
+                            color: ColorBinding::Reference("$(self:fill)".to_string()),
+                        },
+                        Layer::Image {
+                            image: AssetId("$(self:channel_members_0_image)".to_string()),
+                            fit: Fit::Cover,
+                            anchor: Anchor9::Center,
+                            scale_percent: 100,
+                            tint: Some(ColorBinding::Reference("$(self:tint)".to_string())),
+                        },
+                        Layer::Text {
+                            text: "$(self:channel_members_0)".to_string(),
+                            color: ColorBinding::Reference("$(self:text)".to_string()),
+                            anchor: Anchor9::Center,
+                        },
+                        Layer::Bar {
+                            value: ValueBinding::Reference("$(self:position)".to_string()),
+                            maximum: 100.into(),
+                            color: RgbaColor::opaque(255, 255, 255).into(),
+                            edge: Default::default(),
+                            thickness: 6,
+                        },
+                        Layer::Border {
+                            color: ColorBinding::Reference(
+                                "$(self:channel_members_0_status_color)".to_string(),
+                            ),
+                            width: 5,
+                        },
+                    ],
+                    is_pressed: false,
                 },
                 pressed_state: None,
                 action_bindings: vec![ActionBinding {
@@ -213,31 +256,39 @@ mod tests {
         let mut subject = preset();
         substitute_self(&mut subject, &IntegrationId("discord.home".to_string()));
 
-        let state = &subject.control.default_state;
+        // Every layer, and every bindable field of every layer, or the sigil escapes into a panel.
         assert_eq!(
-            state.text.as_deref(),
-            Some("$(discord.home:channel_members_0)")
-        );
-        assert_eq!(
-            state.image.as_ref().map(|image| image.0.as_str()),
-            Some("$(discord.home:channel_members_0_image)")
-        );
-        assert_eq!(
-            state
-                .overlay_image
-                .as_ref()
-                .map(|overlay| overlay.image.0.as_str()),
-            Some("$(discord.home:channel_members_0_status_icon)")
-        );
-        assert_eq!(
-            state.border.as_ref().map(|border| &border.color),
-            Some(&ColorBinding::Reference(
-                "$(discord.home:channel_members_0_status_color)".to_string()
-            ))
-        );
-        assert_eq!(
-            state.foreground_color,
-            Some(ColorBinding::Reference("$(discord.home:text)".to_string()))
+            subject.control.default_state.layers,
+            vec![
+                Layer::Fill {
+                    color: ColorBinding::Reference("$(discord.home:fill)".to_string()),
+                },
+                Layer::Image {
+                    image: AssetId("$(discord.home:channel_members_0_image)".to_string()),
+                    fit: Fit::Cover,
+                    anchor: Anchor9::Center,
+                    scale_percent: 100,
+                    tint: Some(ColorBinding::Reference("$(discord.home:tint)".to_string())),
+                },
+                Layer::Text {
+                    text: "$(discord.home:channel_members_0)".to_string(),
+                    color: ColorBinding::Reference("$(discord.home:text)".to_string()),
+                    anchor: Anchor9::Center,
+                },
+                Layer::Bar {
+                    value: ValueBinding::Reference("$(discord.home:position)".to_string()),
+                    maximum: 100.into(),
+                    color: RgbaColor::opaque(255, 255, 255).into(),
+                    edge: Default::default(),
+                    thickness: 6,
+                },
+                Layer::Border {
+                    color: ColorBinding::Reference(
+                        "$(discord.home:channel_members_0_status_color)".to_string()
+                    ),
+                    width: 5,
+                },
+            ]
         );
 
         let Action::InvokeIntegration {
@@ -259,12 +310,20 @@ mod tests {
     #[test]
     fn a_preset_that_already_names_an_instance_is_left_alone() {
         let mut subject = preset();
-        subject.control.default_state.text = Some("$(hass.home:light.kitchen.state)".to_string());
+        subject.control.default_state.layers = vec![Layer::Text {
+            text: "$(hass.home:light.kitchen.state)".to_string(),
+            color: RgbaColor::opaque(255, 255, 255).into(),
+            anchor: Anchor9::Center,
+        }];
         substitute_self(&mut subject, &IntegrationId("discord.home".to_string()));
 
         assert_eq!(
-            subject.control.default_state.text.as_deref(),
-            Some("$(hass.home:light.kitchen.state)")
+            subject.control.default_state.layers,
+            vec![Layer::Text {
+                text: "$(hass.home:light.kitchen.state)".to_string(),
+                color: RgbaColor::opaque(255, 255, 255).into(),
+                anchor: Anchor9::Center,
+            }]
         );
     }
 

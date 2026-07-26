@@ -53,17 +53,12 @@ impl SurfaceRegistry {
                         control_id: ControlId(format!("auto-{row}-{column}")),
                         name: format!("Key {index}"),
                         position: SurfacePosition { column, row },
-                        default_state: RenderedState {
-                            text: Some(format!("{index}")),
-                            foreground_color: Some(white().into()),
-                            background_color: Some(color(30, 41, 59).into()),
-                            image: None,
-                            overlay_image: None,
-                            border: None,
-                            progress: None,
-                            content_layout: Default::default(),
-                            is_pressed: false,
-                        },
+                        default_state: RenderedState::labelled(
+                            format!("{index}"),
+                            white(),
+                            color(30, 41, 59),
+                            false,
+                        ),
                         pressed_state: None,
                         action_bindings: Vec::new(),
                     }

@@ -2,10 +2,10 @@ import { TbFillClipboard as TbCopy, TbFillTrash as TbTrash } from "solid-icons/t
 import { Component, For, Match, Show, Switch } from "solid-js";
 
 import {
-  Anchor9,
   capabilityLabels,
   Control,
   DialPlacement,
+  Layer,
   Panel,
   panelDial,
   RgbaColor,
@@ -14,28 +14,10 @@ import { PresetPickerDialog } from "../dialogs/PresetPickerDialog";
 import { newState } from "../utils/rendered";
 import { BindingsEditor } from "./BindingsEditor";
 import { DialEditor, DialsField } from "./DialEditor";
-import { ColorField, NumberField, SelectField, TextField } from "./fields";
-import { ValueField } from "./ValueField";
+import { TextField } from "./fields";
+import { LayersField } from "./LayerEditor";
 
 export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "dial"; index: number; };
-
-const textAnchors: Anchor9[] = [
-  "top_start", "top_center", "top_end", "center_start", "center", "center_end", "bottom_start", "bottom_center", "bottom_end",
-];
-
-const anchorOptions = [
-  { value: "top_start", label: "Left top" }, { value: "top_center", label: "Middle top" }, { value: "top_end", label: "Right top" },
-  { value: "center_start", label: "Left middle" }, { value: "center", label: "Middle middle" }, { value: "center_end", label: "Right middle" },
-  { value: "bottom_start", label: "Left bottom" }, { value: "bottom_center", label: "Middle bottom" }, { value: "bottom_end", label: "Right bottom" },
-];
-
-const toAnchor = (value: string): Anchor9 | undefined => textAnchors.find(anchor => anchor === value);
-
-const toCount = (value: string): number | undefined => {
-  const parsed = Number(value);
-
-  return value.trim() === "" || Number.isNaN(parsed) ? undefined : parsed;
-};
 
 const PanelSettings: Component<{
   panel: Panel;
@@ -140,165 +122,11 @@ const ControlEditor: Component<{
             control.name = value;
           })}
       />
-      <ValueField
-        label="Label"
-        value={properties.control.default_state.text ?? ""}
-        placeholder="Shown on the key"
-        onChange={value =>
-          properties.onMutate((control) => {
-            control.default_state.text = value || null;
-          })}
+      <LayersField
+        layers={properties.control.default_state.layers}
+        onMutate={(mutate: (layers: Layer[]) => void) =>
+          properties.onMutate(control => mutate(control.default_state.layers))}
       />
-      <SelectField
-        label="Label position"
-        value={properties.control.default_state.content_layout.text_anchor}
-        options={anchorOptions}
-        onChange={value => properties.onMutate((control) => {
-          const anchor = toAnchor(value);
-
-          if (anchor !== undefined) control.default_state.content_layout.text_anchor = anchor;
-        })}
-      />
-      <ValueField
-        label="Image"
-        value={properties.control.default_state.image ?? ""}
-        placeholder="$(mpris.default:art_url) or a URL"
-        onChange={value =>
-          properties.onMutate((control) => {
-            control.default_state.image = value || null;
-          })}
-      />
-      <p class="hint">
-        A value reference, an image URL, or
-        {" "}
-        <span class="mono">builtin:play</span>
-        . Downloaded once and cached.
-      </p>
-      <div class="grid grid-cols-2 gap-2">
-        <ColorField
-          label="Text"
-          value={properties.control.default_state.foreground_color}
-          fallback="#ffffff"
-          onChange={color =>
-            properties.onMutate((control) => {
-              control.default_state.foreground_color = color;
-            })}
-        />
-        <ColorField
-          label="Fill"
-          value={properties.control.default_state.background_color}
-          fallback="#1e293b"
-          onChange={color =>
-            properties.onMutate((control) => {
-              control.default_state.background_color = color;
-            })}
-        />
-      </div>
-
-      <label class="check-tile">
-        <input
-          type="checkbox"
-          checked={properties.control.default_state.border !== null}
-          onInput={(event) => {
-            const { checked } = event.currentTarget;
-
-            properties.onMutate((control) => {
-              control.default_state.border = checked
-                ? { color: { red: 255, green: 255, blue: 255, alpha: 255 }, width: 5 }
-                : null;
-            });
-          }}
-        />
-        Border
-      </label>
-
-      <Show when={properties.control.default_state.border}>
-        {border => (
-          <div class="grid grid-cols-2 gap-2">
-            <ColorField
-              label="Colour"
-              value={border().color}
-              fallback="#ffffff"
-              onChange={color =>
-                properties.onMutate((control) => {
-                  if (control.default_state.border) control.default_state.border.color = color;
-                })}
-            />
-            <NumberField
-              label="Width"
-              value={border().width}
-              onChange={value =>
-                properties.onMutate((control) => {
-                  const width = toCount(value);
-
-                  if (width !== undefined && control.default_state.border) {
-                    control.default_state.border.width = width;
-                  }
-                })}
-            />
-          </div>
-        )}
-      </Show>
-
-      <label class="check-tile">
-        <input
-          type="checkbox"
-          checked={properties.control.default_state.overlay_image !== null}
-          onInput={(event) => {
-            const { checked } = event.currentTarget;
-
-            properties.onMutate((control) => {
-              control.default_state.overlay_image = checked
-                ? { image: "", anchor: "bottom_end", scale_percent: 32 }
-                : null;
-            });
-          }}
-        />
-        Badge
-      </label>
-
-      <Show when={properties.control.default_state.overlay_image}>
-        {overlay => (
-          <div class="pressed-fields">
-            <ValueField
-              label="Badge image"
-              value={overlay().image}
-              placeholder="$(discord.default:channel_members_0_status_icon)"
-              onChange={value =>
-                properties.onMutate((control) => {
-                  if (control.default_state.overlay_image) control.default_state.overlay_image.image = value;
-                })}
-            />
-            <div class="grid grid-cols-2 gap-2">
-              <SelectField
-                label="Corner"
-                value={overlay().anchor}
-                options={anchorOptions}
-                onChange={value =>
-                  properties.onMutate((control) => {
-                    const anchor = toAnchor(value);
-
-                    if (anchor !== undefined && control.default_state.overlay_image) {
-                      control.default_state.overlay_image.anchor = anchor;
-                    }
-                  })}
-              />
-              <NumberField
-                label="Size %"
-                value={overlay().scale_percent}
-                onChange={value =>
-                  properties.onMutate((control) => {
-                    const scale = toCount(value);
-
-                    if (scale !== undefined && control.default_state.overlay_image) {
-                      control.default_state.overlay_image.scale_percent = scale;
-                    }
-                  })}
-              />
-            </div>
-          </div>
-        )}
-      </Show>
 
       <label class="check-tile">
         <input
@@ -315,35 +143,13 @@ const ControlEditor: Component<{
       <Show when={properties.control.pressed_state}>
         {pressed => (
           <div class="pressed-fields">
-            <ValueField
-              label="Pressed label"
-              value={pressed().text ?? ""}
-              placeholder="Optional"
-              onChange={value =>
+            <LayersField
+              layers={pressed().layers}
+              onMutate={(mutate: (layers: Layer[]) => void) =>
                 properties.onMutate((control) => {
-                  if (control.pressed_state) control.pressed_state.text = value || null;
+                  if (control.pressed_state) mutate(control.pressed_state.layers);
                 })}
             />
-            <div class="grid grid-cols-2 gap-2">
-              <ColorField
-                label="Text"
-                value={pressed().foreground_color}
-                fallback="#ffffff"
-                onChange={color =>
-                  properties.onMutate((control) => {
-                    if (control.pressed_state) control.pressed_state.foreground_color = color;
-                  })}
-              />
-              <ColorField
-                label="Fill"
-                value={pressed().background_color}
-                fallback="#0f172a"
-                onChange={color =>
-                  properties.onMutate((control) => {
-                    if (control.pressed_state) control.pressed_state.background_color = color;
-                  })}
-              />
-            </div>
           </div>
         )}
       </Show>

@@ -166,8 +166,13 @@ mod tests {
         );
         assert_eq!(
             registry.active_key_renderings(&device.surface_id)[0]
-                .text
-                .as_deref(),
+                .layers
+                .iter()
+                .find_map(|layer| match layer {
+                    crate::panels::rendered_state::ResolvedLayer::Text { text, .. } =>
+                        Some(text.as_str()),
+                    _ => None,
+                }),
             Some("Hello")
         );
     }

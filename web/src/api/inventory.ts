@@ -29,17 +29,35 @@ export type ContentLayout = { text_anchor: Anchor9; };
 export type SubpanelPlacement
   = | "top_start" | "top_center" | "top_end" | "start_center"
     | "bottom_start" | "bottom_center" | "bottom_end" | "end_center";
-export type Border = { color: ColorBinding; width: number; };
-export type OverlayImage = { image: string; anchor: Anchor9; scale_percent: number; };
+/** `cover` crops a picture to fill its square; `contain` fits the whole picture inside it. */
+export type Fit = "cover" | "contain";
+export type Edge = "top" | "bottom" | "start" | "end";
+/** A number written out, or a `$(...)` string that reads one from a value. */
+export type ValueBinding = number | string;
+/** A key's face, drawn in array order: index 0 first, later entries on top. */
+export type Layer
+  = | { kind: "fill"; color: ColorBinding; }
+    | {
+      kind: "image";
+      image: string;
+      fit: Fit;
+      anchor: Anchor9;
+      scale_percent: number;
+      tint: ColorBinding | null;
+    }
+    | { kind: "text"; text: string; color: ColorBinding; anchor: Anchor9; }
+    | {
+      kind: "bar";
+      value: ValueBinding;
+      maximum: ValueBinding;
+      color: ColorBinding;
+      edge: Edge;
+      thickness: number;
+    }
+    | { kind: "border"; color: ColorBinding; width: number; };
+export type LayerKind = Layer["kind"];
 export type RenderedState = {
-  text: string | null;
-  image: string | null;
-  overlay_image: OverlayImage | null;
-  foreground_color: ColorBinding | null;
-  background_color: ColorBinding | null;
-  border: Border | null;
-  progress: unknown | null;
-  content_layout: ContentLayout;
+  layers: Layer[];
   is_pressed: boolean;
 };
 export type ActionTrigger
@@ -192,23 +210,35 @@ const isColor = (value: unknown): value is RgbaColor =>
   && isNumber(value.green)
   && isNumber(value.blue)
   && isNumber(value.alpha);
-const isColorBinding = (value: unknown): value is ColorBinding | null =>
-  value === null || isString(value) || isColor(value);
 const isGridLayout = (value: unknown): value is GridLayout =>
   isRecord(value) && isNumber(value.columns) && isNumber(value.rows);
-const isBorder = (value: unknown): value is Border =>
-  isRecord(value) && (isString(value.color) || isColor(value.color)) && isNumber(value.width);
-const isOverlayImage = (value: unknown): value is OverlayImage =>
-  isRecord(value) && isString(value.image) && isString(value.anchor) && isNumber(value.scale_percent);
+const isBoundColor = (value: unknown): boolean => isString(value) || isColor(value);
+const isLayer = (value: unknown): value is Layer => {
+  if (!isRecord(value)) return false;
+
+  switch (value.kind) {
+    case "fill":
+    case "border": {
+      return isBoundColor(value.color);
+    }
+    case "image": {
+      return isString(value.image) && isString(value.anchor) && isNumber(value.scale_percent);
+    }
+    case "text": {
+      return isString(value.text) && isBoundColor(value.color) && isString(value.anchor);
+    }
+    case "bar": {
+      return isBoundColor(value.color) && isNumber(value.thickness);
+    }
+    default: {
+      return false;
+    }
+  }
+};
 const isRenderedState = (value: unknown): value is RenderedState =>
   isRecord(value)
-  && isOptionalString(value.text)
-  && isOptionalString(value.image)
-  && (value.overlay_image === undefined || value.overlay_image === null || isOverlayImage(value.overlay_image))
-  && isColorBinding(value.foreground_color)
-  && isColorBinding(value.background_color)
-  && (value.border === undefined || value.border === null || isBorder(value.border))
-  && "progress" in value
+  && Array.isArray(value.layers)
+  && value.layers.every(isLayer)
   && typeof value.is_pressed === "boolean";
 const isControl = (value: unknown): value is Control =>
   isRecord(value)

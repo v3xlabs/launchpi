@@ -33,6 +33,7 @@ pub struct ControlTemplate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::panels::rendered_state::RgbaColor;
 
     /// The portability claim, checked rather than asserted in a comment: a template plus the two
     /// placement keys is a panel-file control.
@@ -40,10 +41,12 @@ mod tests {
     fn a_template_plus_a_placement_is_a_panel_control() {
         let template = ControlTemplate {
             name: "Member 1".to_string(),
-            default_state: RenderedState {
-                text: Some("$(discord.home:channel_members_0)".to_string()),
-                ..RenderedState::default()
-            },
+            default_state: RenderedState::labelled(
+                "$(discord.home:channel_members_0)",
+                RgbaColor::opaque(255, 255, 255),
+                RgbaColor::opaque(30, 41, 59),
+                false,
+            ),
             pressed_state: None,
             action_bindings: Vec::new(),
         };
