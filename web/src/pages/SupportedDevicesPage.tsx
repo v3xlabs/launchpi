@@ -18,8 +18,8 @@ const connectionLabels: Record<Connection, string> = {
   "usb-midi": "USB MIDI",
 };
 
-// Models the daemon knows how to talk to, plus the ones on the way. Grid sizes match
-// stream_deck_layout() in daemon/src/streamdeck/studio.rs.
+// Models the daemon knows how to talk to, plus the ones on the way. Grids and dials match the model
+// table in daemon/src/drivers/streamdeck/model.rs, which also covers the ones missing here.
 const supportedDevices: SupportedDevice[] = [
   {
     model: "Stream Deck Studio",
