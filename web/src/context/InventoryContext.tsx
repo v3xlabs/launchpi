@@ -296,6 +296,9 @@ export const InventoryProvider: ParentComponent = (properties) => {
       socket.addEventListener("open", () => {
         setIsConnected(true);
         void refresh();
+        // A daemon that restarted republishes its presets to nobody: the browser missed the
+        // event while the socket was down, so they are refetched alongside the inventory.
+        void pluginStore.refreshPresets();
       });
       socket.addEventListener("message", (event) => {
         if (typeof event.data === "string") handleMessage(event.data);

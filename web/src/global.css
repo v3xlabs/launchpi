@@ -103,6 +103,15 @@ button, input, select, textarea { font: inherit; }
 .layer-body { @apply grid gap-2 p-2; }
 .layer-add { @apply flex flex-wrap gap-1.5; }
 .layer-add .secondary-button { @apply h-7 px-2 text-[0.7rem]; }
+.icon-picker { @apply grid gap-2 border border-neutral-800 bg-neutral-900 p-2; }
+.icon-grid { @apply grid max-h-48 grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-1 overflow-y-auto overflow-x-hidden; }
+.icon-tile { @apply grid h-8 place-items-center border border-transparent text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100; }
+.icon-tile img { @apply h-5 w-5; }
+
+/* The nine anchors drawn where they mean, rather than listed by name. */
+.anchor-grid { @apply grid w-max grid-cols-3 gap-0.5 border border-neutral-700 bg-neutral-950 p-0.5; }
+.anchor-cell { @apply h-5 w-6 border border-transparent bg-neutral-800 transition hover:bg-neutral-700; }
+.anchor-cell[data-selected="true"] { @apply bg-blue-500; }
 
 /* Presets: one grid per plugin, so a button is recognised by its picture rather than its name. */
 .preset-section { @apply grid gap-1.5 border-t border-neutral-800 py-2 first:border-t-0 first:pt-0; }
@@ -177,8 +186,9 @@ button, input, select, textarea { font: inherit; }
 
 /* Dialogs */
 .dialog-overlay { @apply fixed inset-0 z-40 bg-neutral-950/70; }
-.dialog-positioner { @apply fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[10vh]; }
+.dialog-positioner { @apply fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[6vh]; }
 .dialog-content { @apply w-full max-w-md border border-neutral-700 bg-neutral-900 shadow-xl shadow-black/60; }
+.dialog-content[data-size="wide"] { @apply max-w-4xl; }
 .dialog-head { @apply flex items-start justify-between gap-3 border-b border-neutral-800 px-4 py-3; }
 .dialog-title { @apply text-sm font-semibold text-neutral-50; }
 .dialog-description { @apply mt-1 text-xs leading-5 text-neutral-500; }

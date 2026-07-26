@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
@@ -9,6 +10,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     api::error::ApiError,
+    assets::icons,
     config::values::UserValue,
     identifiers::IntegrationId,
     plugins::{
@@ -25,6 +27,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/plugins", get(list_plugins).post(create_instance))
         .route("/api/presets", get(list_presets))
+        .route("/api/icons", get(list_icons))
+        .route("/api/icons/:icon_id", get(icon_document))
         .route(
             "/api/plugins/:integration_id",
             axum::routing::patch(update_instance).delete(delete_instance),
@@ -222,6 +226,24 @@ async fn list_presets(State(state): State<AppState>) -> Json<Vec<InstancePresets
             })
             .collect(),
     )
+}
+
+/// Enough to scroll without shipping the whole pack to the browser on every keystroke.
+const ICON_LIMIT: usize = 120;
+
+async fn list_icons(Query(search): Query<SearchQuery>) -> Json<Vec<String>> {
+    Json(icons::search(&search.q, ICON_LIMIT))
+}
+
+/// The glyph itself, so a picker shows the same drawing the key will get. `currentColor` means a
+/// tint can be previewed in CSS without asking the daemon to render anything.
+async fn icon_document(Path(icon_id): Path<String>) -> Result<impl IntoResponse, ApiError> {
+    let svg = icons::document(&icon_id).ok_or_else(|| ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: format!("no icon named {icon_id}"),
+    })?;
+
+    Ok(([(axum::http::header::CONTENT_TYPE, "image/svg+xml")], svg))
 }
 
 async fn create_instance(

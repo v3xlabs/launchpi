@@ -3,22 +3,58 @@ import {
   TbFillArrowBigUp as TbUp,
   TbFillTrash as TbTrash,
 } from "solid-icons/tb";
-import { Component, For, Match, Show, Switch } from "solid-js";
+import { Component, createSignal, For, Match, Show, Switch } from "solid-js";
 
 import { Anchor9, ColorBinding, Edge, Fit, Layer, LayerKind, ValueBinding } from "../api/inventory";
 import { isReference, newLayer } from "../utils/rendered";
 import { ColorField, NumberField, SelectField } from "./fields";
+import { IconPicker } from "./IconPicker";
 import { ValueField } from "./ValueField";
 
 const anchors: Anchor9[] = [
   "top_start", "top_center", "top_end", "center_start", "center", "center_end", "bottom_start", "bottom_center", "bottom_end",
 ];
 
-const anchorOptions = [
-  { value: "top_start", label: "Left top" }, { value: "top_center", label: "Middle top" }, { value: "top_end", label: "Right top" },
-  { value: "center_start", label: "Left middle" }, { value: "center", label: "Middle middle" }, { value: "center_end", label: "Right middle" },
-  { value: "bottom_start", label: "Left bottom" }, { value: "bottom_center", label: "Middle bottom" }, { value: "bottom_end", label: "Right bottom" },
-];
+const anchorLabels: Record<Anchor9, string> = {
+  top_start: "Left top",
+  top_center: "Middle top",
+  top_end: "Right top",
+  center_start: "Left middle",
+  center: "Middle middle",
+  center_end: "Right middle",
+  bottom_start: "Left bottom",
+  bottom_center: "Middle bottom",
+  bottom_end: "Right bottom",
+};
+
+/**
+ * The nine anchors as the nine places they mean, rather than as a list of names. A grid says where
+ * a thing will sit without the reader translating "bottom_end" into a corner first.
+ */
+const AnchorField: Component<{
+  label: string;
+  value: Anchor9;
+  onChange: (anchor: Anchor9) => void;
+}> = properties => (
+  <div class="grid gap-1">
+    <span class="field-label">{properties.label}</span>
+    <div class="anchor-grid">
+      <For each={anchors}>
+        {anchor => (
+          <button
+            type="button"
+            class="anchor-cell"
+            title={anchorLabels[anchor]}
+            aria-label={anchorLabels[anchor]}
+            aria-pressed={properties.value === anchor}
+            data-selected={properties.value === anchor}
+            onClick={() => properties.onChange(anchor)}
+          />
+        )}
+      </For>
+    </div>
+  </div>
+);
 
 const fitOptions = [
   { value: "cover", label: "Cover the key" },
@@ -41,8 +77,6 @@ const kinds: Array<{ kind: LayerKind; label: string; }> = [
 const labelFor = (kind: LayerKind): string =>
   kinds.find(entry => entry.kind === kind)?.label ?? kind;
 
-const toAnchor = (value: string): Anchor9 | undefined => anchors.find(anchor => anchor === value);
-
 const toCount = (value: string): number | undefined => {
   const parsed = Number(value);
 
@@ -63,210 +97,225 @@ const opacityOf = (color: ColorBinding): number | null =>
 const LayerFields: Component<{
   layer: Layer;
   onMutate: (mutate: (layer: Layer) => void) => void;
-}> = properties => (
-  <Switch>
-    <Match when={properties.layer.kind === "fill" ? properties.layer : null}>
-      {fill => (
-        <div class="grid grid-cols-2 gap-2">
-          <ColorField
-            label="Colour"
-            value={fill().color}
-            fallback="#1e293b"
-            onChange={color =>
-              properties.onMutate((layer) => {
-                if (layer.kind === "fill") layer.color = color;
-              })}
-          />
-          <NumberField
-            label="Opacity %"
-            value={opacityOf(fill().color)}
-            onChange={value =>
-              properties.onMutate((layer) => {
-                const percent = toCount(value);
+}> = (properties) => {
+  const [isBrowsing, setIsBrowsing] = createSignal(false);
 
-                if (percent === undefined || layer.kind !== "fill") return;
-
-                if (isReference(layer.color)) return;
-
-                layer.color = {
-                  ...layer.color,
-                  alpha: Math.round((Math.min(Math.max(percent, 0), 100) * 255) / 100),
-                };
-              })}
-          />
-        </div>
-      )}
-    </Match>
-
-    <Match when={properties.layer.kind === "border" ? properties.layer : null}>
-      {border => (
-        <div class="grid grid-cols-2 gap-2">
-          <ColorField
-            label="Colour"
-            value={border().color}
-            fallback="#ffffff"
-            onChange={color =>
-              properties.onMutate((layer) => {
-                if (layer.kind === "border") layer.color = color;
-              })}
-          />
-          <NumberField
-            label="Width"
-            value={border().width}
-            onChange={value =>
-              properties.onMutate((layer) => {
-                const width = toCount(value);
-
-                if (width !== undefined && layer.kind === "border") layer.width = width;
-              })}
-          />
-        </div>
-      )}
-    </Match>
-
-    <Match when={properties.layer.kind === "text" ? properties.layer : null}>
-      {text => (
-        <>
-          <ValueField
-            label="Text"
-            value={text().text}
-            placeholder="Shown on the key"
-            onChange={value =>
-              properties.onMutate((layer) => {
-                if (layer.kind === "text") layer.text = value;
-              })}
-          />
+  return (
+    <Switch>
+      <Match when={properties.layer.kind === "fill" ? properties.layer : null}>
+        {fill => (
           <div class="grid grid-cols-2 gap-2">
             <ColorField
               label="Colour"
-              value={text().color}
-              fallback="#ffffff"
+              value={fill().color}
+              fallback="#1e293b"
               onChange={color =>
                 properties.onMutate((layer) => {
-                  if (layer.kind === "text") layer.color = color;
-                })}
-            />
-            <SelectField
-              label="Position"
-              value={text().anchor}
-              options={anchorOptions}
-              onChange={value =>
-                properties.onMutate((layer) => {
-                  const anchor = toAnchor(value);
-
-                  if (anchor !== undefined && layer.kind === "text") layer.anchor = anchor;
-                })}
-            />
-          </div>
-        </>
-      )}
-    </Match>
-
-    <Match when={properties.layer.kind === "image" ? properties.layer : null}>
-      {image => (
-        <>
-          <ValueField
-            label="Image"
-            value={image().image}
-            placeholder="mdi:lightbulb, a URL, or $(mpris.default:art_url)"
-            onChange={value =>
-              properties.onMutate((layer) => {
-                if (layer.kind === "image") layer.image = value;
-              })}
-          />
-          <div class="grid grid-cols-2 gap-2">
-            <SelectField
-              label="Fit"
-              value={image().fit}
-              options={fitOptions}
-              onChange={value =>
-                properties.onMutate((layer) => {
-                  if (layer.kind === "image") layer.fit = value as Fit;
+                  if (layer.kind === "fill") layer.color = color;
                 })}
             />
             <NumberField
-              label="Size %"
-              value={image().scale_percent}
+              label="Opacity %"
+              value={opacityOf(fill().color)}
               onChange={value =>
                 properties.onMutate((layer) => {
-                  const scale = toCount(value);
+                  const percent = toCount(value);
 
-                  if (scale !== undefined && layer.kind === "image") layer.scale_percent = scale;
+                  if (percent === undefined || layer.kind !== "fill") return;
+
+                  if (isReference(layer.color)) return;
+
+                  layer.color = {
+                    ...layer.color,
+                    alpha: Math.round((Math.min(Math.max(percent, 0), 100) * 255) / 100),
+                  };
                 })}
             />
           </div>
-          <div class="grid grid-cols-2 gap-2">
-            <SelectField
-              label="Position"
-              value={image().anchor}
-              options={anchorOptions}
-              onChange={value =>
-                properties.onMutate((layer) => {
-                  const anchor = toAnchor(value);
+        )}
+      </Match>
 
-                  if (anchor !== undefined && layer.kind === "image") layer.anchor = anchor;
-                })}
-            />
-            <ColorField
-              label="Tint"
-              value={image().tint}
-              fallback="#ffffff"
-              onChange={color =>
-                properties.onMutate((layer) => {
-                  if (layer.kind === "image") layer.tint = color;
-                })}
-            />
-          </div>
-        </>
-      )}
-    </Match>
-
-    <Match when={properties.layer.kind === "bar" ? properties.layer : null}>
-      {bar => (
-        <>
-          <div class="grid grid-cols-2 gap-2">
-            <ValueField
-              label="Value"
-              value={String(bar().value)}
-              onChange={value =>
-                properties.onMutate((layer) => {
-                  if (layer.kind === "bar") layer.value = toValueBinding(value);
-                })}
-            />
-            <ValueField
-              label="Maximum"
-              value={String(bar().maximum)}
-              onChange={value =>
-                properties.onMutate((layer) => {
-                  if (layer.kind === "bar") layer.maximum = toValueBinding(value);
-                })}
-            />
-          </div>
+      <Match when={properties.layer.kind === "border" ? properties.layer : null}>
+        {border => (
           <div class="grid grid-cols-2 gap-2">
             <ColorField
               label="Colour"
-              value={bar().color}
+              value={border().color}
               fallback="#ffffff"
               onChange={color =>
                 properties.onMutate((layer) => {
-                  if (layer.kind === "bar") layer.color = color;
+                  if (layer.kind === "border") layer.color = color;
                 })}
             />
-            <SelectField
-              label="Edge"
-              value={bar().edge}
-              options={edgeOptions}
+            <NumberField
+              label="Width"
+              value={border().width}
               onChange={value =>
                 properties.onMutate((layer) => {
-                  if (layer.kind === "bar") layer.edge = value as Edge;
+                  const width = toCount(value);
+
+                  if (width !== undefined && layer.kind === "border") layer.width = width;
                 })}
             />
           </div>
-        </>
-      )}
-    </Match>
-  </Switch>
-);
+        )}
+      </Match>
+
+      <Match when={properties.layer.kind === "text" ? properties.layer : null}>
+        {text => (
+          <>
+            <ValueField
+              label="Text"
+              value={text().text}
+              placeholder="Shown on the key"
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "text") layer.text = value;
+                })}
+            />
+            <div class="grid grid-cols-2 gap-2">
+              <ColorField
+                label="Colour"
+                value={text().color}
+                fallback="#ffffff"
+                onChange={color =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "text") layer.color = color;
+                  })}
+              />
+              <AnchorField
+                label="Position"
+                value={text().anchor}
+                onChange={anchor =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "text") layer.anchor = anchor;
+                  })}
+              />
+            </div>
+          </>
+        )}
+      </Match>
+
+      <Match when={properties.layer.kind === "image" ? properties.layer : null}>
+        {image => (
+          <>
+            <ValueField
+              label="Image"
+              value={image().image}
+              placeholder="mdi:lightbulb, a URL, or $(mpris.default:art_url)"
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "image") layer.image = value;
+                })}
+            />
+            <Show
+              when={isBrowsing()}
+              fallback={(
+                <button type="button" class="link-button justify-self-start" onClick={() => setIsBrowsing(true)}>
+                  browse icons
+                </button>
+              )}
+            >
+              <IconPicker
+                onChoose={(icon) => {
+                  setIsBrowsing(false);
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "image") layer.image = icon;
+                  });
+                }}
+              />
+            </Show>
+            <div class="grid grid-cols-2 gap-2">
+              <SelectField
+                label="Fit"
+                value={image().fit}
+                options={fitOptions}
+                onChange={value =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "image") layer.fit = value as Fit;
+                  })}
+              />
+              <NumberField
+                label="Size %"
+                value={image().scale_percent}
+                onChange={value =>
+                  properties.onMutate((layer) => {
+                    const scale = toCount(value);
+
+                    if (scale !== undefined && layer.kind === "image") layer.scale_percent = scale;
+                  })}
+              />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <AnchorField
+                label="Position"
+                value={image().anchor}
+                onChange={anchor =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "image") layer.anchor = anchor;
+                  })}
+              />
+              <ColorField
+                label="Tint"
+                value={image().tint}
+                fallback="#ffffff"
+                onChange={color =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "image") layer.tint = color;
+                  })}
+              />
+            </div>
+          </>
+        )}
+      </Match>
+
+      <Match when={properties.layer.kind === "bar" ? properties.layer : null}>
+        {bar => (
+          <>
+            <div class="grid grid-cols-2 gap-2">
+              <ValueField
+                label="Value"
+                value={String(bar().value)}
+                onChange={value =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "bar") layer.value = toValueBinding(value);
+                  })}
+              />
+              <ValueField
+                label="Maximum"
+                value={String(bar().maximum)}
+                onChange={value =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "bar") layer.maximum = toValueBinding(value);
+                  })}
+              />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <ColorField
+                label="Colour"
+                value={bar().color}
+                fallback="#ffffff"
+                onChange={color =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "bar") layer.color = color;
+                  })}
+              />
+              <SelectField
+                label="Edge"
+                value={bar().edge}
+                options={edgeOptions}
+                onChange={value =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "bar") layer.edge = value as Edge;
+                  })}
+              />
+            </div>
+          </>
+        )}
+      </Match>
+    </Switch>
+  );
+};
 
 /**
  * A key's face as an ordered stack. The list reads bottom-up the way the key is drawn, so moving a

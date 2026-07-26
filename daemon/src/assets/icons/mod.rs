@@ -23,15 +23,46 @@ pub fn is_icon(id: &str) -> bool {
         .is_some_and(|name| !name.is_empty())
 }
 
-/// An icon drawn at exactly `size`, white on transparent. `None` for a name no pack has.
-pub fn rasterise(id: &str, size: u32) -> Option<RgbaImage> {
+/// The icon as an SVG document, so a browser can show the same glyph the key will be drawn with
+/// rather than a second copy of the pack.
+pub fn document(id: &str) -> Option<String> {
     let name = id.strip_prefix(MDI_PREFIX)?;
     let paths = &*MDI_PATHS;
     let at = paths.binary_search_by_key(&name, |(icon, _)| *icon).ok()?;
-    let svg = format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#fff" d="{}"/></svg>"##,
+
+    Some(format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="{}"/></svg>"##,
         paths[at].1
-    );
+    ))
+}
+
+/// Names matching a query, best first. A name that starts with the query beats one that merely
+/// contains it, so "bulb" offers `lightbulb` before `lightbulb-multiple-off-outline`.
+pub fn search(query: &str, limit: usize) -> Vec<String> {
+    let needle = query.trim().to_lowercase();
+    let mut found: Vec<(usize, usize, &str)> = MDI_PATHS
+        .iter()
+        .filter_map(|(name, _)| {
+            let at = if needle.is_empty() {
+                0
+            } else {
+                name.find(&needle)?
+            };
+
+            Some((at, name.len(), *name))
+        })
+        .collect();
+    found.sort_unstable();
+    found
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, name)| format!("{MDI_PREFIX}{name}"))
+        .collect()
+}
+
+/// An icon drawn at exactly `size`, white on transparent. `None` for a name no pack has.
+pub fn rasterise(id: &str, size: u32) -> Option<RgbaImage> {
+    let svg = document(id)?.replace("currentColor", "#fff");
 
     let pixmap = render(svg.as_bytes(), size)?;
     // A later layer tints an icon by multiplying a colour through it, which only works on coverage:
@@ -150,5 +181,34 @@ mod tests {
         ));
         assert!(!looks_like_svg(b"\x89PNG\r\n\x1a\n"));
         assert!(!looks_like_svg(b""));
+    }
+
+    #[test]
+    fn a_search_offers_the_shortest_earliest_match_first() {
+        let found = search("lightbulb", 5);
+
+        assert_eq!(found.first().map(String::as_str), Some("mdi:lightbulb"));
+        assert!(found.iter().all(|name| name.contains("lightbulb")));
+    }
+
+    #[test]
+    fn an_empty_search_offers_the_pack_from_the_start() {
+        assert_eq!(search("", 3).len(), 3);
+    }
+
+    #[test]
+    fn a_search_that_matches_nothing_offers_nothing() {
+        assert!(search("definitelynotanicon", 5).is_empty());
+    }
+
+    #[test]
+    fn the_document_is_tintable_by_the_caller() {
+        let svg = document("mdi:lightbulb").expect("a known icon");
+
+        assert!(
+            svg.contains("currentColor"),
+            "a fixed fill could not be tinted"
+        );
+        assert!(document("mdi:not-an-icon").is_none());
     }
 }

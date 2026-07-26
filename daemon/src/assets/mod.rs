@@ -16,7 +16,7 @@ use tracing::debug;
 
 use crate::identifiers::AssetId;
 
-mod icons;
+pub mod icons;
 
 /// A URL that failed is not retried until this passes. Without it a broken link would be re-fetched
 /// on every repaint of the key showing it.

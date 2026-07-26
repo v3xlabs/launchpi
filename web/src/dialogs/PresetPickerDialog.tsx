@@ -92,7 +92,7 @@ export const PresetPickerDialog: Component<{
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
-          <Dialog.Content class="dialog-content">
+          <Dialog.Content class="dialog-content" data-size="wide">
             <div class="dialog-head">
               <Dialog.Title class="dialog-title">Presets</Dialog.Title>
               <Dialog.CloseButton class="icon-button" aria-label="Close">
@@ -109,7 +109,7 @@ export const PresetPickerDialog: Component<{
                 placeholder="member, lights, channel..."
                 onChange={setSearch}
               />
-              <div class="max-h-96 overflow-y-auto overflow-x-hidden">
+              <div class="max-h-[62vh] overflow-y-auto overflow-x-hidden">
                 <Show
                   when={sections().length > 0}
                   fallback={<p class="empty">No plugin is offering a preset.</p>}

@@ -4,10 +4,10 @@ use serde_json::json;
 
 use crate::{
     bindings::action::{Action, ActionBinding, ActionTrigger},
-    identifiers::IntegrationId,
+    identifiers::{AssetId, IntegrationId},
     panels::{
         control::ControlTemplate,
-        rendered_state::{Anchor9, ColorBinding, Layer, RenderedState, RgbaColor},
+        rendered_state::{Anchor9, ColorBinding, Fit, Layer, RenderedState, RgbaColor},
     },
     plugins::{
         builtin::hass::{
@@ -25,23 +25,24 @@ struct Recommended {
     category: &'static str,
     service: &'static str,
     reports_state: bool,
+    icon: &'static str,
 }
 
 /// Only the domains a single press can act on. A sensor is left out deliberately: it has nothing to
 /// press, the value picker already offers every one of its readings, and an installation carries
 /// enough of them to bury every light behind them.
 fn recommended(domain: &str) -> Option<Recommended> {
-    let (category, service, reports_state) = match domain {
-        "light" => ("Lights", "toggle", true),
-        "switch" => ("Switches", "toggle", true),
-        "fan" => ("Fans", "toggle", true),
-        "input_boolean" => ("Toggles", "toggle", true),
-        "cover" => ("Covers", "toggle", true),
-        "automation" => ("Automations", "toggle", true),
-        "media_player" => ("Media players", "media_play_pause", true),
-        "scene" => ("Scenes", "turn_on", false),
-        "script" => ("Scripts", "turn_on", false),
-        "input_button" => ("Buttons", "press", false),
+    let (category, service, reports_state, icon) = match domain {
+        "light" => ("Lights", "toggle", true, "mdi:lightbulb"),
+        "switch" => ("Switches", "toggle", true, "mdi:toggle-switch-variant"),
+        "fan" => ("Fans", "toggle", true, "mdi:fan"),
+        "input_boolean" => ("Toggles", "toggle", true, "mdi:toggle-switch"),
+        "cover" => ("Covers", "toggle", true, "mdi:window-shutter"),
+        "automation" => ("Automations", "toggle", true, "mdi:robot"),
+        "media_player" => ("Media players", "media_play_pause", true, "mdi:play-circle"),
+        "scene" => ("Scenes", "turn_on", false, "mdi:palette"),
+        "script" => ("Scripts", "turn_on", false, "mdi:script-text"),
+        "input_button" => ("Buttons", "press", false, "mdi:gesture-tap-button"),
         _ => return None,
     };
 
@@ -49,6 +50,7 @@ fn recommended(domain: &str) -> Option<Recommended> {
         category,
         service,
         reports_state,
+        icon,
     })
 }
 
@@ -83,7 +85,7 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
         control: ControlTemplate {
             name,
             default_state: RenderedState {
-                layers: face(&entry.domain, entity_id, text),
+                layers: face(&entry.domain, entity_id, text, shape.icon),
                 is_pressed: false,
             },
             pressed_state: None,
@@ -99,18 +101,27 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
 /// the face because `values.rs` answers black for an entity that is off and white for one that is
 /// on without a colour of its own, and a key whose whole face is that colour has no legible label
 /// left at either end of the range.
-/// Only a light is outlined: `fields_for` publishes a colour for that domain alone. The outline
-/// rather than the fill is what keeps the label readable, because an entity that is on but has no
-/// colour of its own reports white.
-fn face(domain: &str, entity_id: &str, text: String) -> Vec<Layer> {
+/// The icon is left white rather than tinted with the entity's colour: `color_of` answers black
+/// for anything that is off, and a black glyph on a dark key is a key that looks broken rather than
+/// one that looks off. The colour goes on the outline, which reads against the fill in every state.
+///
+/// Only a light is outlined at all, because `fields_for` publishes a colour for that domain alone.
+fn face(domain: &str, entity_id: &str, text: String, icon: &str) -> Vec<Layer> {
     let mut layers = vec![
         Layer::Fill {
             color: RgbaColor::opaque(30, 41, 59).into(),
         },
+        Layer::Image {
+            image: AssetId(icon.to_string()),
+            fit: Fit::Contain,
+            anchor: Anchor9::TopCenter,
+            scale_percent: 50,
+            tint: None,
+        },
         Layer::Text {
             text,
             color: RgbaColor::opaque(255, 255, 255).into(),
-            anchor: Anchor9::Center,
+            anchor: Anchor9::BottomCenter,
         },
     ];
     if domain == "light" {
@@ -339,5 +350,48 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["light.hall", "light.kitchen", "switch.desk_lamp"]
         );
+    }
+
+    fn icon_of(preset: &Preset) -> Option<&str> {
+        preset
+            .control
+            .default_state
+            .layers
+            .iter()
+            .find_map(|layer| match layer {
+                Layer::Image { image, .. } => Some(image.0.as_str()),
+                _ => None,
+            })
+    }
+
+    #[test]
+    fn a_key_carries_the_icon_of_the_thing_it_presses() {
+        for (entity_id, icon) in [
+            ("light.kitchen", "mdi:lightbulb"),
+            ("switch.desk_lamp", "mdi:toggle-switch-variant"),
+            ("scene.movie", "mdi:palette"),
+            ("media_player.study", "mdi:play-circle"),
+        ] {
+            assert_eq!(
+                icon_of(&only(entity_id, "Anything")),
+                Some(icon),
+                "{entity_id} should be recognisable before its label is read"
+            );
+        }
+    }
+
+    /// `color_of` answers black for anything that is off, so a tinted glyph would vanish on a dark
+    /// key exactly when someone is looking to see whether the light is on.
+    #[test]
+    fn an_icon_is_never_tinted_with_a_colour_that_can_be_black() {
+        let preset = only("light.kitchen", "Kitchen");
+        let tinted = preset
+            .control
+            .default_state
+            .layers
+            .iter()
+            .any(|layer| matches!(layer, Layer::Image { tint: Some(_), .. }));
+
+        assert!(!tinted);
     }
 }
