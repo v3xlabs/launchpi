@@ -1,5 +1,5 @@
 {
-  description = "devshell";
+  description = "Open-source multi-functional MIDI controller platform for Novation Launchpads";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -16,42 +16,37 @@
     flake-utils,
     rust-overlay,
   }:
-    flake-utils.lib.eachDefaultSystem (system: let
+    flake-utils.lib.eachSystem [
+      "aarch64-linux"
+      "x86_64-linux"
+    ] (system: let
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [rust-overlay.overlays.default];
       };
 
-      rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-        extensions = [
-          "rust-src"
-          "llvm-tools"
-        ];
-      };
-
-      rustfmtNightly = pkgs.rust-bin.nightly.latest.rustfmt;
+      launchpi = pkgs.callPackage ./nix/package.nix {};
     in {
-      devShells = {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            rustfmtNightly
-            rustToolchain
-            rust-analyzer
-            bacon
-            just
+      packages = {
+        inherit launchpi;
+        default = launchpi;
+      };
 
-            nodejs_24
-            pnpm_11
-            python3
-            alsa-lib
-            jack2
-            pkg-config
-          ];
-
-          shellHook = ''
-            just
-          '';
+      apps = {
+        launchpi = {
+          type = "app";
+          program = "${launchpi}/bin/launchpi";
+        };
+        default = {
+          type = "app";
+          program = "${launchpi}/bin/launchpi";
         };
       };
-    });
+
+      devShells.default = import ./nix/devshell.nix {
+        inherit nixpkgs rust-overlay system;
+      };
+    })
+    // {
+      nixosModules.default = import ./nix/module.nix {inherit self;};
+    };
 }

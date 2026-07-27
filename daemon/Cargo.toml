@@ -1,6 +1,6 @@
 [package]
 name = "launchpi"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -30,6 +30,8 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync",
 tracing = "0.1"
 tracing-subscriber = { version = "0.3" }
 lazy_static = "1.4.0"
+mime_guess = "2.0"
+rust-embed = "8.5"
 async-trait = "0.1.75"
 rand = "0.8.5"
 cpal = { version = "0.15.2" }

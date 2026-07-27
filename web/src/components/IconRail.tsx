@@ -35,12 +35,20 @@ const DaemonStatus: Component = () => {
 export const IconRail: Component = () => (
   <nav class="rail" aria-label="Sections">
     <Link
+      to="/"
+      // class="rail-item"
+      aria-label="Launchpi"
+      title="Launchpi"
+    >
+      <img src="icon.svg" class="size-8" />
+    </Link>
+    <Link
       to="/devices"
       class="rail-item"
       aria-label="Devices"
       title="Devices"
     >
-      <TbDeviceRemote class="h-5 w-5" />
+      <TbDeviceRemote class="size-6" />
     </Link>
     <Link
       to="/panels"
@@ -48,7 +56,7 @@ export const IconRail: Component = () => (
       aria-label="Panels"
       title="Panels"
     >
-      <TbLayoutGrid class="h-5 w-5" />
+      <TbLayoutGrid class="size-5" />
     </Link>
     <Link
       to="/plugins"
@@ -56,7 +64,7 @@ export const IconRail: Component = () => (
       aria-label="Plugins"
       title="Plugins"
     >
-      <TbPuzzle class="h-5 w-5" />
+      <TbPuzzle class="size-5" />
     </Link>
     <Link
       to="/values"
@@ -64,7 +72,7 @@ export const IconRail: Component = () => (
       aria-label="Values"
       title="Values"
     >
-      <TbTag class="h-5 w-5" />
+      <TbTag class="size-5" />
     </Link>
     <DaemonStatus />
   </nav>

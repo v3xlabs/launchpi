@@ -9,14 +9,14 @@ body { @apply bg-neutral-950 text-sm text-neutral-200 antialiased; }
 button, input, select, textarea { font: inherit; }
 
 /* Shell */
-.app-shell { @apply grid min-h-screen grid-cols-[2.75rem_minmax(0,1fr)] md:grid-cols-[2.75rem_15rem_minmax(0,1fr)]; }
+.app-shell { @apply grid min-h-screen grid-cols-[3rem_minmax(0,1fr)] md:grid-cols-[3rem_15rem_minmax(0,1fr)]; }
 .brand { @apply min-w-0 flex-1 truncate text-[0.78rem] font-bold uppercase tracking-[0.22em] text-neutral-100 no-underline; }
 
 /* Icon rail */
 .rail { @apply sticky top-0 flex h-screen flex-col items-center gap-0.5 border-r border-neutral-800 bg-neutral-950 py-1.5; }
-.rail-item { @apply grid h-9 w-9 place-items-center text-neutral-500 no-underline transition hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400; }
+.rail-item { @apply grid size-10 place-items-center text-neutral-500 no-underline transition hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400; }
 .rail-item[data-status="active"] { @apply bg-neutral-800 text-neutral-50; box-shadow: inset 0.125rem 0 0 theme(colors.blue.500); }
-.rail-status { @apply mt-auto grid h-9 w-9 place-items-center; }
+.rail-status { @apply mt-auto grid size-10 place-items-center; }
 
 /* Contextual sidebar */
 .sidebar { @apply sticky top-0 hidden h-screen min-h-0 flex-col border-r border-neutral-800 bg-neutral-900 md:flex; }
