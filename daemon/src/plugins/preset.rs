@@ -121,6 +121,7 @@ fn substitute_in_state(state: &mut RenderedState, integration_id: &IntegrationId
                 text,
                 color,
                 anchor: _,
+                font_family: _,
             } => {
                 *text = rewritten(text, integration_id);
                 rewrite_color(color);
@@ -221,6 +222,7 @@ mod tests {
                             text: "$(self:channel_members_0)".to_string(),
                             color: ColorBinding::Reference("$(self:text)".to_string()),
                             anchor: Anchor9::Center,
+                            font_family: None,
                         },
                         Layer::Bar {
                             value: ValueBinding::Reference("$(self:position)".to_string()),
@@ -274,6 +276,7 @@ mod tests {
                     text: "$(discord.home:channel_members_0)".to_string(),
                     color: ColorBinding::Reference("$(discord.home:text)".to_string()),
                     anchor: Anchor9::Center,
+                    font_family: None,
                 },
                 Layer::Bar {
                     value: ValueBinding::Reference("$(discord.home:position)".to_string()),
@@ -314,6 +317,7 @@ mod tests {
             text: "$(hass.home:light.kitchen.state)".to_string(),
             color: RgbaColor::opaque(255, 255, 255).into(),
             anchor: Anchor9::Center,
+            font_family: None,
         }];
         substitute_self(&mut subject, &IntegrationId("discord.home".to_string()));
 
@@ -323,6 +327,7 @@ mod tests {
                 text: "$(hass.home:light.kitchen.state)".to_string(),
                 color: RgbaColor::opaque(255, 255, 255).into(),
                 anchor: Anchor9::Center,
+                font_family: None,
             }]
         );
     }

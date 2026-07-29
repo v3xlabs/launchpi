@@ -147,6 +147,7 @@ impl LegacyState {
                 text,
                 color: content_color(),
                 anchor: self.content_layout.text_anchor,
+                font_family: None,
             });
         }
         if let Some(progress) = self.progress {
@@ -420,6 +421,7 @@ scale_percent = 32
                     text: "Playing".to_string(),
                     color: RgbaColor::opaque(255, 255, 255).into(),
                     anchor: Anchor9::BottomCenter,
+                    font_family: None,
                 },
                 Layer::Bar {
                     value: 3.into(),

@@ -1,13 +1,16 @@
-use std::sync::Arc;
 use std::{
     collections::BTreeMap,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    fs,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, LazyLock, Mutex,
+    },
     time::{Duration, Instant},
 };
 
-use ab_glyph::{point, Font, FontRef, Glyph, PxScale, ScaleFont};
+use ab_glyph::{point, Font, FontArc, Glyph, PxScale, ScaleFont};
+use fontconfig::Fontconfig;
 use jpeg_encoder::{ColorType, Encoder};
-use lazy_static::lazy_static;
 use mdns_sd::{ResolvedService, ServiceDaemon, ServiceEvent};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -75,12 +78,8 @@ const REPLY_QUEUE_SIZE: usize = 8;
 /// Keeps a badge off the bezel at every anchor.
 const OVERLAY_INSET: usize = 4;
 
-const KEY_FONT_BYTES: &[u8] = include_bytes!("../../../assets/DejaVuSans.ttf");
-
-lazy_static! {
-    static ref KEY_FONT: FontRef<'static> =
-        FontRef::try_from_slice(KEY_FONT_BYTES).expect("embedded key font is valid");
-}
+static FONTS: LazyLock<Mutex<BTreeMap<String, FontArc>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TransportMode {
@@ -1289,7 +1288,8 @@ fn draw_layer(pixels: &mut [u8], layer: &ResolvedLayer, assets: Option<&Arc<Asse
             text,
             color,
             anchor,
-        } => draw_text(pixels, text, rgb(color), *anchor),
+            font_family,
+        } => draw_text(pixels, text, rgb(color), *anchor, font_family),
         ResolvedLayer::Bar {
             value,
             maximum,
@@ -1481,17 +1481,26 @@ fn rgb(color: &RgbaColor) -> (u8, u8, u8) {
     )
 }
 
-fn draw_text(pixels: &mut [u8], text: &str, color: (u8, u8, u8), anchor: Anchor9) {
+fn draw_text(
+    pixels: &mut [u8],
+    text: &str,
+    color: (u8, u8, u8),
+    anchor: Anchor9,
+    font_family: &str,
+) {
     let text = text.trim();
     if text.is_empty() {
         return;
     }
 
-    let font = &*KEY_FONT;
+    let Some(font) = font_for(font_family) else {
+        warn!(font_family, "unable to resolve system font");
+        return;
+    };
     let max_width = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
     let band_height = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
 
-    let px = fit_text_scale(font, text, max_width, band_height);
+    let px = fit_text_scale(&font, text, max_width, band_height);
     let scaled = font.as_scaled(PxScale::from(px));
     let text_width: f32 = text
         .chars()
@@ -1536,7 +1545,23 @@ fn draw_text(pixels: &mut [u8], text: &str, color: (u8, u8, u8), anchor: Anchor9
     }
 }
 
-fn fit_text_scale(font: &FontRef<'static>, text: &str, max_width: f32, max_height: f32) -> f32 {
+fn font_for(font_family: &str) -> Option<FontArc> {
+    if let Some(font) = FONTS.lock().unwrap().get(font_family).cloned() {
+        return Some(font);
+    }
+
+    let fontconfig = Fontconfig::new()?;
+    let matched = fontconfig.find(font_family, None)?;
+    let font = FontArc::try_from_vec(fs::read(matched.path).ok()?).ok()?;
+
+    FONTS
+        .lock()
+        .unwrap()
+        .insert(font_family.to_string(), font.clone());
+    Some(font)
+}
+
+fn fit_text_scale(font: &impl Font, text: &str, max_width: f32, max_height: f32) -> f32 {
     let width_at = |px: f32| -> f32 {
         let scaled = font.as_scaled(PxScale::from(px));
         text.chars()
@@ -1592,6 +1617,7 @@ mod tests {
             text: text.to_string(),
             color: RgbaColor::opaque(255, 255, 255),
             anchor: Anchor9::Center,
+            font_family: "sans-serif".to_string(),
         }
     }
 

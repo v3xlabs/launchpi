@@ -52,6 +52,7 @@ export const newState = (isPressed: boolean): RenderedState => ({
       text: "",
       color: { red: 255, green: 255, blue: 255, alpha: 255 },
       anchor: "center",
+      font_family: undefined,
     },
   ],
   is_pressed: isPressed,
@@ -69,7 +70,7 @@ export const newLayer = (kind: LayerKind): Layer => {
       return { kind: "image", image: "", fit: "cover", anchor: "center", scale_percent: 100, tint: null };
     }
     case "text": {
-      return { kind: "text", text: "", color: white, anchor: "center" };
+      return { kind: "text", text: "", color: white, anchor: "center", font_family: undefined };
     }
     case "bar": {
       return { kind: "bar", value: 0, maximum: 100, color: white, edge: "bottom", thickness: 6 };

@@ -14,6 +14,7 @@ nanorand = "0.7.0"
 rodio = "0.17.3"
 
 ab_glyph = "0.2"
+fontconfig = "0.10"
 axum = { version = "0.7", features = ["ws"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 jpeg-encoder = "0.6"
@@ -29,7 +30,6 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time", "io-util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3" }
-lazy_static = "1.4.0"
 mime_guess = "2.0"
 rust-embed = "8.5"
 async-trait = "0.1.75"

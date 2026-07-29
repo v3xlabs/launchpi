@@ -15,6 +15,8 @@ pub struct Panel {
     pub panel_id: PanelId,
     pub name: String,
     pub layout: PanelLayout,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
     #[serde(default)]
     pub capabilities: SurfaceCapabilities,
     pub controls: Vec<Control>,

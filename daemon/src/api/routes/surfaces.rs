@@ -43,6 +43,8 @@ struct PanelRequest {
     controls: Vec<Control>,
     #[serde(default)]
     dials: Vec<PanelDial>,
+    #[serde(default)]
+    font_family: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -143,6 +145,7 @@ async fn render_key(
         &request.default_state,
         request.pressed_state.as_ref(),
         request.is_pressed,
+        None,
     );
     let rendering = KeyRendering {
         key_index: 0,
@@ -290,6 +293,7 @@ async fn create_panel(
         panel_id: state.surfaces.create_panel_id(),
         name: non_empty(request.name, "name")?,
         layout: request.layout,
+        font_family: request.font_family,
         capabilities: request.capabilities,
         controls: request.controls,
         dials: request.dials,
@@ -313,6 +317,7 @@ async fn update_panel(
         panel_id: PanelId(panel_id),
         name: non_empty(request.name, "name")?,
         layout: request.layout,
+        font_family: request.font_family,
         capabilities: request.capabilities,
         controls: request.controls,
         dials: request.dials,

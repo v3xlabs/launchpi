@@ -7,7 +7,7 @@ import { Component, createSignal, For, Match, Show, Switch } from "solid-js";
 
 import { Anchor9, ColorBinding, Edge, Fit, Layer, LayerKind, ValueBinding } from "../api/inventory";
 import { isReference, newLayer } from "../utils/rendered";
-import { ColorField, NumberField, SelectField } from "./fields";
+import { ColorField, FontFamilyField, NumberField, SelectField } from "./fields";
 import { IconPicker } from "./IconPicker";
 import { ValueField } from "./ValueField";
 
@@ -171,6 +171,15 @@ const LayerFields: Component<{
               onChange={value =>
                 properties.onMutate((layer) => {
                   if (layer.kind === "text") layer.text = value;
+                })}
+            />
+            <FontFamilyField
+              label="Font family"
+              value={text().font_family ?? ""}
+              placeholder="Panel default"
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "text") layer.font_family = value.trim() || undefined;
                 })}
             />
             <div class="grid grid-cols-2 gap-2">

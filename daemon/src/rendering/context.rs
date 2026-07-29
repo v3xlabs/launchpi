@@ -42,10 +42,20 @@ impl<'a> RenderContext<'a> {
     /// Every field goes through the same resolution: a literal passes through, a reference is
     /// looked up. There is no overlay pass, because there are no boolean feedbacks to overlay.
     pub fn resolve(&self, control: &Control, is_pressed: bool) -> ResolvedState {
+        self.resolve_with_font(control, is_pressed, None)
+    }
+
+    pub fn resolve_with_font(
+        &self,
+        control: &Control,
+        is_pressed: bool,
+        panel_font_family: Option<&str>,
+    ) -> ResolvedState {
         self.resolve_states(
             &control.default_state,
             control.pressed_state.as_ref(),
             is_pressed,
+            panel_font_family,
         )
     }
 
@@ -57,6 +67,7 @@ impl<'a> RenderContext<'a> {
         default_state: &RenderedState,
         pressed_state: Option<&RenderedState>,
         is_pressed: bool,
+        panel_font_family: Option<&str>,
     ) -> ResolvedState {
         let state = if is_pressed {
             pressed_state.unwrap_or(default_state)
@@ -68,14 +79,14 @@ impl<'a> RenderContext<'a> {
             layers: state
                 .layers
                 .iter()
-                .filter_map(|layer| self.resolve_layer(layer))
+                .filter_map(|layer| self.resolve_layer(layer, panel_font_family))
                 .collect(),
         }
     }
 
     /// A layer that resolves to nothing drawable is dropped rather than drawn as a default, so a
     /// plugin that has not answered yet leaves the key as if the layer were not there.
-    fn resolve_layer(&self, layer: &Layer) -> Option<ResolvedLayer> {
+    fn resolve_layer(&self, layer: &Layer, panel_font_family: Option<&str>) -> Option<ResolvedLayer> {
         match layer {
             Layer::Fill { color } => Some(ResolvedLayer::Fill {
                 color: self.resolve_color(Some(color))?,
@@ -99,6 +110,7 @@ impl<'a> RenderContext<'a> {
                 text,
                 color,
                 anchor,
+                font_family,
             } => {
                 let text = self.interpolate(text);
 
@@ -108,6 +120,11 @@ impl<'a> RenderContext<'a> {
                         .resolve_color(Some(color))
                         .unwrap_or(UNRESOLVED_CONTENT_COLOR),
                     anchor: *anchor,
+                    font_family: font_family
+                        .as_deref()
+                        .or(panel_font_family)
+                        .unwrap_or("sans-serif")
+                        .to_string(),
                 })
             }
             Layer::Bar {
@@ -208,6 +225,7 @@ mod tests {
             text: text.to_string(),
             color,
             anchor: Anchor9::Center,
+            font_family: None,
         }
     }
 
@@ -238,6 +256,32 @@ mod tests {
                 text: "Blue Monday".to_string(),
                 color: RgbaColor::opaque(255, 255, 255),
                 anchor: Anchor9::Center,
+                font_family: "sans-serif".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_text_layer_overrides_the_panel_font() {
+        let variables = VariableStore::default();
+        let context = RenderContext::new(&variables);
+        let mut layer = text("Play", white());
+        let Layer::Text { font_family, .. } = &mut layer else {
+            unreachable!();
+        };
+        *font_family = Some("Layer Font".to_string());
+
+        assert_eq!(
+            only(context.resolve_with_font(
+                &control(vec![layer]),
+                false,
+                Some("Panel Font"),
+            )),
+            Some(ResolvedLayer::Text {
+                text: "Play".to_string(),
+                color: RgbaColor::opaque(255, 255, 255),
+                anchor: Anchor9::Center,
+                font_family: "Layer Font".to_string(),
             })
         );
     }
@@ -336,6 +380,7 @@ mod tests {
                 text: "Play".to_string(),
                 color: UNRESOLVED_CONTENT_COLOR,
                 anchor: Anchor9::Center,
+                font_family: "sans-serif".to_string(),
             })
         );
     }
@@ -548,6 +593,7 @@ mod tests {
                 text: "Play".to_string(),
                 color: RgbaColor::opaque(255, 255, 255),
                 anchor: Anchor9::Center,
+                font_family: "sans-serif".to_string(),
             })
         );
     }

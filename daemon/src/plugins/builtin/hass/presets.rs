@@ -135,6 +135,7 @@ fn face(domain: &str, entity_id: &str, text: String, icon: String) -> Vec<Layer>
             text,
             color: RgbaColor::opaque(255, 255, 255).into(),
             anchor: Anchor9::BottomCenter,
+            font_family: None,
         },
     ];
     if domain == "light" {

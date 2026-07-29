@@ -45,7 +45,7 @@ export type Layer
       scale_percent: number;
       tint: ColorBinding | null;
     }
-    | { kind: "text"; text: string; color: ColorBinding; anchor: Anchor9; }
+    | { kind: "text"; text: string; color: ColorBinding; anchor: Anchor9; font_family?: string; }
     | {
       kind: "bar";
       value: ValueBinding;
@@ -106,6 +106,7 @@ export type Panel = {
   panel_id: string;
   name: string;
   layout: GridLayout;
+  font_family?: string;
   capabilities: Capabilities;
   controls: Control[];
   dials: PanelDial[];
@@ -409,15 +410,17 @@ export type AddDeviceInput = {
 export type CreatePanelInput = {
   name: string;
   layout: GridLayout;
+  font_family?: string;
   capabilities: Capabilities;
   controls: Control[];
   dials: PanelDial[];
 };
-export type PanelPayload = Pick<Panel, "name" | "layout" | "capabilities" | "controls" | "dials">;
+export type PanelPayload = Pick<Panel, "name" | "layout" | "font_family" | "capabilities" | "controls" | "dials">;
 
 export const panelPayload = (panel: Panel): PanelPayload => ({
   name: panel.name,
   layout: panel.layout,
+  font_family: panel.font_family,
   capabilities: panel.capabilities,
   controls: panel.controls,
   dials: panel.dials,

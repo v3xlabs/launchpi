@@ -10,6 +10,7 @@ fn router(state: AppState) -> Router {
     Router::new()
         .merge(routes::surfaces::router())
         .merge(routes::plugins::router())
+        .merge(routes::fonts::router())
         .fallback(web::serve)
         .with_state(state)
 }

@@ -128,6 +128,7 @@ fn references_of_state(state: &RenderedState) -> Vec<VariableRef> {
                 text,
                 color,
                 anchor: _,
+                font_family: _,
             } => {
                 found.extend(template::references(text));
                 extend_from_color(&mut found, color);
@@ -182,6 +183,7 @@ mod tests {
                             text: text.to_string(),
                             color: RgbaColor::opaque(255, 255, 255).into(),
                             anchor: Anchor9::Center,
+                            font_family: None,
                         }]
                     })
                     .unwrap_or_default(),
@@ -200,6 +202,7 @@ mod tests {
                 columns: 4,
                 rows: 2,
             },
+            font_family: None,
             capabilities: SurfaceCapabilities::default(),
             controls,
             dials: Vec::new(),
@@ -291,6 +294,7 @@ mod tests {
                 text: "Kitchen".to_string(),
                 color: ColorBinding::Reference("$(hass.home:light.kitchen.text_color)".to_string()),
                 anchor: Anchor9::Center,
+                font_family: None,
             },
         ];
         let index = DependencyIndex::build(&[(surface(), panel(vec![keyed]))]);

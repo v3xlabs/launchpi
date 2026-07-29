@@ -56,6 +56,7 @@ pub(crate) fn default_panel() -> Panel {
             columns: 16,
             rows: 2,
         },
+        font_family: None,
         capabilities: studio_capabilities(),
         controls: vec![Control {
             control_id: ControlId("hello".to_string()),

@@ -24,6 +24,7 @@ in
       rustToolchain
       rust-analyzer
       bacon
+      fontconfig
       just
       nodejs_24
       pnpm_11

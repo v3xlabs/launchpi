@@ -28,6 +28,7 @@ impl RenderedState {
                     text: text.into(),
                     color: foreground.into(),
                     anchor: Anchor9::Center,
+                    font_family: None,
                 },
             ],
             is_pressed,
@@ -58,6 +59,8 @@ pub enum Layer {
         color: ColorBinding,
         #[serde(default)]
         anchor: Anchor9,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        font_family: Option<String>,
     },
     Bar {
         value: ValueBinding,
@@ -126,6 +129,7 @@ pub enum ResolvedLayer {
         text: String,
         color: RgbaColor,
         anchor: Anchor9,
+        font_family: String,
     },
     Bar {
         value: u16,
@@ -311,6 +315,7 @@ image = "$(mpris.default:art)"
                     text: "$(mpris.default:title)".to_string(),
                     color: ColorBinding::Reference("$(mpris.default:accent)".to_string()),
                     anchor: Anchor9::BottomCenter,
+                    font_family: None,
                 },
                 Layer::Bar {
                     value: ValueBinding::Reference("$(mpris.default:position)".to_string()),

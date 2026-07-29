@@ -1,5 +1,6 @@
-import { Component, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
+import { Component, createResource, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 
+import { fetchFontFamilies } from "../api/fonts";
 import { ColorBinding } from "../api/inventory";
 import { ConfigField, fetchLookup } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
@@ -25,6 +26,32 @@ export const TextField: Component<{
     />
   </label>
 );
+
+export const FontFamilyField: Component<{
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}> = properties => {
+  const [families] = createResource(fetchFontFamilies);
+  const listId = createUniqueId();
+
+  return (
+    <label class="field-label">
+      {properties.label}
+      <input
+        class="field-input"
+        value={properties.value}
+        placeholder={properties.placeholder}
+        list={listId}
+        onInput={event => properties.onChange(event.currentTarget.value)}
+      />
+      <datalist id={listId}>
+        <For each={families() ?? []}>{(family) => <option value={family} />}</For>
+      </datalist>
+    </label>
+  );
+};
 
 /**
  * A colour, parametrised like every other field: one input that holds either a hex literal or a

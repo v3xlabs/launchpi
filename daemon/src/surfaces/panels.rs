@@ -69,6 +69,7 @@ impl SurfaceRegistry {
             panel_id: self.create_panel_id(),
             name: format!("Auto {columns}x{rows}"),
             layout: PanelLayout { columns, rows },
+            font_family: None,
             capabilities: studio_capabilities(),
             controls,
             dials: Vec::new(),

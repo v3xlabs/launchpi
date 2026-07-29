@@ -14,7 +14,7 @@ import { PresetPickerDialog } from "../dialogs/PresetPickerDialog";
 import { newState } from "../utils/rendered";
 import { BindingsEditor } from "./BindingsEditor";
 import { DialEditor, DialsField } from "./DialEditor";
-import { TextField } from "./fields";
+import { FontFamilyField, TextField } from "./fields";
 import { LayersField } from "./LayerEditor";
 
 export type PanelSelection = { kind: "control"; controlId: string; } | { kind: "dial"; index: number; };
@@ -35,6 +35,15 @@ const PanelSettings: Component<{
         onChange={value =>
           properties.onMutate((panel) => {
             panel.name = value;
+          })}
+      />
+      <FontFamilyField
+        label="Font family"
+        value={properties.panel.font_family ?? ""}
+        placeholder="System sans-serif"
+        onChange={value =>
+          properties.onMutate((panel) => {
+            panel.font_family = value.trim() || undefined;
           })}
       />
       <fieldset class="grid gap-1">

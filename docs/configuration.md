@@ -36,6 +36,26 @@ the only directory worth backing up or checking in.
 
 Writes are atomic: the daemon writes `<name>.toml.tmp` and renames.
 
+## Fonts
+
+Launchpi resolves text fonts through the host Fontconfig installation. It does
+not bundle a font. A panel can set `font_family` as its default; a text layer
+can set its own `font_family` to override that default. An omitted value uses
+the system `sans-serif` family.
+
+```toml
+[[panels]]
+font_family = "Inter"
+
+[[panels.controls.default_state.layers]]
+kind = "text"
+text = "Kitchen"
+font_family = "JetBrains Mono"
+```
+
+On NixOS, install font packages and enable Fontconfig with
+`fonts.fontconfig.enable = true`.
+
 ## devices.toml
 
 Physical hardware endpoints. Each device declares its layout and capabilities

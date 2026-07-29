@@ -1,5 +1,6 @@
 {
   alsa-lib,
+  fontconfig,
   rustPlatform,
   just,
   lib,
@@ -43,6 +44,7 @@ rustPlatform.buildRustPackage {
 
   buildInputs = [
     alsa-lib
+    fontconfig
     jack2
   ];
 

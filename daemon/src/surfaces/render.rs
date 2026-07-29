@@ -51,7 +51,14 @@ impl SurfaceRegistry {
             .controls
             .iter()
             .filter_map(|control| {
-                rendering_for_control(control, false, panel.layout.columns, false, &context)
+                rendering_for_control(
+                    control,
+                    false,
+                    panel.layout.columns,
+                    false,
+                    panel.font_family.as_deref(),
+                    &context,
+                )
             })
             .collect()
     }
@@ -66,6 +73,11 @@ impl SurfaceRegistry {
         let panel_id = device.active_panel_id?;
         let panel = self.panel(&panel_id.0)?;
         if self.has_open_subpanel(surface_id) {
+            let subpanel_font_family = device
+                .open_subpanels
+                .last()
+                .and_then(|layer| self.panel(&layer.panel_id.0))
+                .and_then(|panel| panel.font_family);
             if let Some(control) = self.top_subpanel_control_at(surface_id, key_index) {
                 let columns = match device.layout {
                     crate::surfaces::layout::SurfaceLayout::Grid { columns, .. } => columns,
@@ -76,6 +88,7 @@ impl SurfaceRegistry {
                     is_pressed,
                     columns,
                     false,
+                    subpanel_font_family.as_deref(),
                     &self.render_context(),
                 );
             }
@@ -86,6 +99,7 @@ impl SurfaceRegistry {
                         is_pressed,
                         panel.layout.columns,
                         true,
+                        panel.font_family.as_deref(),
                         &self.render_context(),
                     )
                 })?
@@ -98,6 +112,7 @@ impl SurfaceRegistry {
                     is_pressed,
                     panel.layout.columns,
                     false,
+                    panel.font_family.as_deref(),
                     &self.render_context(),
                 )
             })?
@@ -158,9 +173,10 @@ fn rendering_for_control(
     is_pressed: bool,
     columns: u16,
     is_dimmed: bool,
+    panel_font_family: Option<&str>,
     context: &RenderContext<'_>,
 ) -> Option<KeyRendering> {
-    let state = context.resolve(control, is_pressed);
+    let state = context.resolve_with_font(control, is_pressed, panel_font_family);
     Some(KeyRendering {
         key_index: key_index_for(control, columns)?,
         layers: state.layers,
