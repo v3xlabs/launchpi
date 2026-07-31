@@ -1,4 +1,5 @@
 use std::{
+    path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -9,6 +10,7 @@ use std::{
 use async_trait::async_trait;
 use chrono::Local;
 use serde_json::{json, Value as JsonValue};
+use sysinfo::{Disks, System as HostSystem};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -30,8 +32,25 @@ use crate::{
 };
 
 const CLOCK_VALUE: &str = "clock";
+const DATE_VALUE: &str = "date";
+const WEEKDAY_VALUE: &str = "weekday";
 const TIMER_VALUE: &str = "timer";
+const CPU_USAGE_VALUE: &str = "cpu_usage_pct";
+const MEMORY_USED_BYTES_VALUE: &str = "memory_used_bytes";
+const MEMORY_TOTAL_BYTES_VALUE: &str = "memory_total_bytes";
+const MEMORY_USAGE_VALUE: &str = "memory_usage_pct";
+const MEMORY_VALUE: &str = "memory";
+const LOAD_AVERAGE_1M_VALUE: &str = "load_average_1m";
+const LOAD_AVERAGE_5M_VALUE: &str = "load_average_5m";
+const LOAD_AVERAGE_15M_VALUE: &str = "load_average_15m";
+const DISK_FREE_BYTES_VALUE: &str = "disk_free_bytes";
+const DISK_TOTAL_BYTES_VALUE: &str = "disk_total_bytes";
+const DISK_USAGE_VALUE: &str = "disk_usage_pct";
+const DISK_FREE_VALUE: &str = "disk_free";
+const UPTIME_SECONDS_VALUE: &str = "uptime_seconds";
+const UPTIME_VALUE: &str = "uptime";
 const START_TIMER: &str = "start_timer";
+const TELEMETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 pub const FACTORY: PluginFactory = PluginFactory {
     plugin_type: "system",
@@ -43,7 +62,7 @@ fn manifest() -> PluginManifest {
     PluginManifest {
         plugin_type: "system",
         display_name: "System",
-        description: "Local clock and countdown timers.",
+        description: "Local clock, timers, and machine telemetry.",
         config_schema: Vec::new(),
         actions: vec![ActionDefinition::new(START_TIMER)
             .label("Start countdown")
@@ -53,8 +72,33 @@ fn manifest() -> PluginManifest {
         variables: vec![
             VariableDefinition::new(CLOCK_VALUE, VariableKind::Text)
                 .description("Current local time in 24-hour format."),
+            VariableDefinition::new(DATE_VALUE, VariableKind::Text)
+                .description("Current local date."),
+            VariableDefinition::new(WEEKDAY_VALUE, VariableKind::Text)
+                .description("Current local weekday."),
             VariableDefinition::new(TIMER_VALUE, VariableKind::Text)
                 .description("Time remaining in the active countdown."),
+            VariableDefinition::new(CPU_USAGE_VALUE, VariableKind::Number)
+                .description("CPU use as a percentage on the machine running Launchpi."),
+            VariableDefinition::new(MEMORY_USED_BYTES_VALUE, VariableKind::Number),
+            VariableDefinition::new(MEMORY_TOTAL_BYTES_VALUE, VariableKind::Number),
+            VariableDefinition::new(MEMORY_USAGE_VALUE, VariableKind::Number)
+                .description("Memory use as a percentage."),
+            VariableDefinition::new(MEMORY_VALUE, VariableKind::Text)
+                .description("Used and total memory."),
+            VariableDefinition::new(LOAD_AVERAGE_1M_VALUE, VariableKind::Number),
+            VariableDefinition::new(LOAD_AVERAGE_5M_VALUE, VariableKind::Number),
+            VariableDefinition::new(LOAD_AVERAGE_15M_VALUE, VariableKind::Number),
+            VariableDefinition::new(DISK_FREE_BYTES_VALUE, VariableKind::Number)
+                .description("Free bytes on the root filesystem."),
+            VariableDefinition::new(DISK_TOTAL_BYTES_VALUE, VariableKind::Number),
+            VariableDefinition::new(DISK_USAGE_VALUE, VariableKind::Number)
+                .description("Root filesystem use as a percentage."),
+            VariableDefinition::new(DISK_FREE_VALUE, VariableKind::Text)
+                .description("Free and total space on the root filesystem."),
+            VariableDefinition::new(UPTIME_SECONDS_VALUE, VariableKind::Number),
+            VariableDefinition::new(UPTIME_VALUE, VariableKind::Text)
+                .description("Time since the machine started."),
         ],
     }
 }
@@ -72,6 +116,7 @@ pub async fn start(
         timer_generation: Arc::new(AtomicU64::new(0)),
     });
     tokio::spawn(publish_clock(context));
+    tokio::spawn(publish_telemetry(plugin.context.clone()));
     Ok(plugin)
 }
 
@@ -144,6 +189,8 @@ impl SystemPlugin {
 async fn publish_clock(context: PluginContext) {
     loop {
         context.set_value(CLOCK_VALUE, VariableValue::Text(local_time()));
+        context.set_value(DATE_VALUE, VariableValue::Text(local_date()));
+        context.set_value(WEEKDAY_VALUE, VariableValue::Text(local_weekday()));
         tokio::select! {
             _ = context.cancel.cancelled() => return,
             _ = tokio::time::sleep(Duration::from_secs(1)) => {}
@@ -151,8 +198,125 @@ async fn publish_clock(context: PluginContext) {
     }
 }
 
+async fn publish_telemetry(context: PluginContext) {
+    let mut system = HostSystem::new();
+    let mut disks = Disks::new_with_refreshed_list();
+    loop {
+        system.refresh_cpu_usage();
+        system.refresh_memory();
+        disks.refresh(false);
+        publish_metrics(&context, &system, &disks);
+        tokio::select! {
+            _ = context.cancel.cancelled() => return,
+            _ = tokio::time::sleep(TELEMETRY_INTERVAL) => {}
+        }
+    }
+}
+
+fn publish_metrics(context: &PluginContext, system: &HostSystem, disks: &Disks) {
+    let memory_used = system.used_memory();
+    let memory_total = system.total_memory();
+    let memory_usage = percentage(memory_used, memory_total);
+    let load = HostSystem::load_average();
+    let uptime = HostSystem::uptime();
+    let disk = disks
+        .list()
+        .iter()
+        .find(|disk| disk.mount_point() == Path::new("/"));
+    let (disk_free, disk_total) = disk
+        .map(|disk| (disk.available_space(), disk.total_space()))
+        .unwrap_or_default();
+
+    context.set_value(
+        CPU_USAGE_VALUE,
+        VariableValue::Number(f64::from(system.global_cpu_usage())),
+    );
+    context.set_value(
+        MEMORY_USED_BYTES_VALUE,
+        VariableValue::Number(memory_used as f64),
+    );
+    context.set_value(
+        MEMORY_TOTAL_BYTES_VALUE,
+        VariableValue::Number(memory_total as f64),
+    );
+    context.set_value(MEMORY_USAGE_VALUE, VariableValue::Number(memory_usage));
+    context.set_value(
+        MEMORY_VALUE,
+        VariableValue::Text(format!(
+            "{} / {}",
+            format_bytes(memory_used),
+            format_bytes(memory_total)
+        )),
+    );
+    context.set_value(LOAD_AVERAGE_1M_VALUE, VariableValue::Number(load.one));
+    context.set_value(LOAD_AVERAGE_5M_VALUE, VariableValue::Number(load.five));
+    context.set_value(LOAD_AVERAGE_15M_VALUE, VariableValue::Number(load.fifteen));
+    context.set_value(
+        DISK_FREE_BYTES_VALUE,
+        VariableValue::Number(disk_free as f64),
+    );
+    context.set_value(
+        DISK_TOTAL_BYTES_VALUE,
+        VariableValue::Number(disk_total as f64),
+    );
+    context.set_value(
+        DISK_USAGE_VALUE,
+        VariableValue::Number(percentage(disk_total.saturating_sub(disk_free), disk_total)),
+    );
+    context.set_value(
+        DISK_FREE_VALUE,
+        VariableValue::Text(format!(
+            "{} free of {}",
+            format_bytes(disk_free),
+            format_bytes(disk_total)
+        )),
+    );
+    context.set_value(UPTIME_SECONDS_VALUE, VariableValue::Number(uptime as f64));
+    context.set_value(UPTIME_VALUE, VariableValue::Text(format_uptime(uptime)));
+}
+
 fn local_time() -> String {
     Local::now().format("%H:%M").to_string()
+}
+
+fn local_date() -> String {
+    Local::now().format("%Y-%m-%d").to_string()
+}
+
+fn local_weekday() -> String {
+    Local::now().format("%A").to_string()
+}
+
+fn percentage(value: u64, total: u64) -> f64 {
+    if total == 0 {
+        return 0.0;
+    }
+    (value as f64 * 100.0 / total as f64).round()
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+fn format_uptime(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let hours = seconds / 3_600 % 24;
+    let minutes = seconds / 60 % 60;
+    match days {
+        0 => format!("{hours:02}:{minutes:02}"),
+        _ => format!("{days}d {hours:02}:{minutes:02}"),
+    }
 }
 
 fn format_remaining(duration: Duration) -> String {
@@ -175,10 +339,72 @@ fn presets() -> Vec<Preset> {
             action_bindings: Vec::new(),
         },
     }];
+    presets.extend([
+        readout_preset("date", "Time", "Date", "mdi:calendar", "$(self:date)"),
+        readout_preset(
+            "weekday",
+            "Time",
+            "Weekday",
+            "mdi:calendar-week",
+            "$(self:weekday)",
+        ),
+    ]);
     for duration_minutes in [5, 10, 15] {
         presets.push(timer_preset(duration_minutes));
     }
+    presets.extend([
+        readout_preset(
+            "cpu-usage",
+            "Machine",
+            "CPU usage",
+            "mdi:cpu-64-bit",
+            "CPU\n$(self:cpu_usage_pct)%",
+        ),
+        readout_preset(
+            "memory-usage",
+            "Machine",
+            "Memory usage",
+            "mdi:memory",
+            "Memory\n$(self:memory_usage_pct)%",
+        ),
+        readout_preset(
+            "load-average",
+            "Machine",
+            "Load average",
+            "mdi:chart-line",
+            "Load\n$(self:load_average_1m)",
+        ),
+        readout_preset(
+            "disk-free",
+            "Machine",
+            "Disk free",
+            "mdi:harddisk",
+            "Disk\n$(self:disk_free)",
+        ),
+        readout_preset(
+            "uptime",
+            "Machine",
+            "System uptime",
+            "mdi:clock-check-outline",
+            "Uptime\n$(self:uptime)",
+        ),
+    ]);
     presets
+}
+
+fn readout_preset(preset_id: &str, category: &str, name: &str, icon: &str, text: &str) -> Preset {
+    Preset {
+        preset_id: preset_id.to_string(),
+        category: category.to_string(),
+        name: name.to_string(),
+        description: None,
+        control: ControlTemplate {
+            name: name.to_string(),
+            default_state: face(icon, text),
+            pressed_state: None,
+            action_bindings: Vec::new(),
+        },
+    }
 }
 
 fn timer_preset(duration_minutes: u64) -> Preset {
@@ -236,7 +462,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn presets_offer_a_clock_and_requested_timer_durations() {
+    fn presets_offer_time_and_machine_readouts() {
         let offered = presets();
         assert_eq!(
             offered
@@ -245,9 +471,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 "clock",
+                "date",
+                "weekday",
                 "timer-5-minutes",
                 "timer-10-minutes",
-                "timer-15-minutes"
+                "timer-15-minutes",
+                "cpu-usage",
+                "memory-usage",
+                "load-average",
+                "disk-free",
+                "uptime"
             ]
         );
     }
@@ -256,5 +489,12 @@ mod tests {
     fn remaining_time_rounds_up_to_the_next_second() {
         assert_eq!(format_remaining(Duration::from_secs(300)), "05:00");
         assert_eq!(format_remaining(Duration::from_millis(1)), "00:01");
+    }
+
+    #[test]
+    fn bytes_and_uptime_are_key_sized_readouts() {
+        assert_eq!(format_bytes(1_536), "1.5 KiB");
+        assert_eq!(format_uptime(3_900), "01:05");
+        assert_eq!(format_uptime(90_000), "1d 01:00");
     }
 }
