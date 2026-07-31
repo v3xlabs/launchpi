@@ -122,6 +122,7 @@ fn substitute_in_state(state: &mut RenderedState, integration_id: &IntegrationId
                 color,
                 anchor: _,
                 font_family: _,
+                font_size: _,
             } => {
                 *text = rewritten(text, integration_id);
                 rewrite_color(color);
@@ -223,6 +224,7 @@ mod tests {
                             color: ColorBinding::Reference("$(self:text)".to_string()),
                             anchor: Anchor9::Center,
                             font_family: None,
+                            font_size: None,
                         },
                         Layer::Bar {
                             value: ValueBinding::Reference("$(self:position)".to_string()),
@@ -277,6 +279,7 @@ mod tests {
                     color: ColorBinding::Reference("$(discord.home:text)".to_string()),
                     anchor: Anchor9::Center,
                     font_family: None,
+                    font_size: None,
                 },
                 Layer::Bar {
                     value: ValueBinding::Reference("$(discord.home:position)".to_string()),
@@ -318,6 +321,7 @@ mod tests {
             color: RgbaColor::opaque(255, 255, 255).into(),
             anchor: Anchor9::Center,
             font_family: None,
+            font_size: None,
         }];
         substitute_self(&mut subject, &IntegrationId("discord.home".to_string()));
 
@@ -328,6 +332,7 @@ mod tests {
                 color: RgbaColor::opaque(255, 255, 255).into(),
                 anchor: Anchor9::Center,
                 font_family: None,
+                font_size: None,
             }]
         );
     }

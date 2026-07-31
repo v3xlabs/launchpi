@@ -108,7 +108,7 @@ const LayerFields: Component<{
             <ColorField
               label="Colour"
               value={fill().color}
-              fallback="#1e293b"
+              fallback="#000000"
               onChange={color =>
                 properties.onMutate((layer) => {
                   if (layer.kind === "fill") layer.color = color;
@@ -201,6 +201,21 @@ const LayerFields: Component<{
                   })}
               />
             </div>
+            <NumberField
+              label="Font size"
+              value={text().font_size ?? null}
+              placeholder="Auto"
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  if (layer.kind !== "text") return;
+
+                  const fontSize = toCount(value);
+
+                  layer.font_size = fontSize === undefined
+                    ? undefined
+                    : Math.round(Math.min(Math.max(fontSize, 8), 72));
+                })}
+            />
           </>
         )}
       </Match>

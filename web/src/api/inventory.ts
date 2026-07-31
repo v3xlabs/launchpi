@@ -45,7 +45,7 @@ export type Layer
       scale_percent: number;
       tint: ColorBinding | null;
     }
-    | { kind: "text"; text: string; color: ColorBinding; anchor: Anchor9; font_family?: string; }
+    | { kind: "text"; text: string; color: ColorBinding; anchor: Anchor9; font_family?: string; font_size?: number; }
     | {
       kind: "bar";
       value: ValueBinding;
@@ -226,7 +226,7 @@ const isLayer = (value: unknown): value is Layer => {
       return isString(value.image) && isString(value.anchor) && isNumber(value.scale_percent);
     }
     case "text": {
-      return isString(value.text) && isBoundColor(value.color) && isString(value.anchor);
+      return isString(value.text) && isBoundColor(value.color) && isString(value.anchor) && (value.font_size === undefined || isNumber(value.font_size));
     }
     case "bar": {
       return isBoundColor(value.color) && isNumber(value.thickness);

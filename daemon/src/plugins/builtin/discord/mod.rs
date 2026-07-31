@@ -331,6 +331,7 @@ fn presets(settings: &DiscordConfig) -> Vec<Preset> {
                             color: RgbaColor::opaque(255, 255, 255).into(),
                             anchor: Anchor9::BottomStart,
                             font_family: None,
+                            font_size: None,
                         },
                         Layer::Image {
                             image: AssetId(format!("$(self:channel_members_{index}_status_icon)")),
@@ -1101,6 +1102,7 @@ mod tests {
             color: RgbaColor::opaque(255, 255, 255).into(),
             anchor: Anchor9::BottomStart,
             font_family: None,
+            font_size: None,
         }));
         assert!(layers.contains(&Layer::Border {
             color: ColorBinding::Reference("$(self:channel_members_1_status_color)".to_string()),

@@ -1289,7 +1289,8 @@ fn draw_layer(pixels: &mut [u8], layer: &ResolvedLayer, assets: Option<&Arc<Asse
             color,
             anchor,
             font_family,
-        } => draw_text(pixels, text, rgb(color), *anchor, font_family),
+            font_size,
+        } => draw_text(pixels, text, rgb(color), *anchor, font_family, *font_size),
         ResolvedLayer::Bar {
             value,
             maximum,
@@ -1487,6 +1488,7 @@ fn draw_text(
     color: (u8, u8, u8),
     anchor: Anchor9,
     font_family: &str,
+    font_size: Option<u8>,
 ) {
     let text = text.trim();
     if text.is_empty() {
@@ -1500,7 +1502,10 @@ fn draw_text(
     let max_width = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
     let band_height = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
 
-    let px = fit_text_scale(&font, text, max_width, band_height);
+    let px = font_size
+        .map(f32::from)
+        .unwrap_or_else(|| fit_text_scale(&font, text, max_width, band_height))
+        .clamp(KEY_TEXT_MIN_PX, KEY_TEXT_MAX_PX);
     let scaled = font.as_scaled(PxScale::from(px));
     let text_width: f32 = text
         .chars()
@@ -1618,6 +1623,7 @@ mod tests {
             color: RgbaColor::opaque(255, 255, 255),
             anchor: Anchor9::Center,
             font_family: "sans-serif".to_string(),
+            font_size: None,
         }
     }
 

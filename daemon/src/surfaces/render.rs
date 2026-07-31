@@ -47,18 +47,51 @@ impl SurfaceRegistry {
                 .collect();
         }
         let context = self.render_context();
-        panel
-            .controls
-            .iter()
-            .filter_map(|control| {
-                rendering_for_control(
-                    control,
-                    false,
-                    panel.layout.columns,
-                    false,
-                    panel.font_family.as_deref(),
-                    &context,
-                )
+        let crate::surfaces::layout::SurfaceLayout::Grid { columns, rows } = device.layout else {
+            return panel
+                .controls
+                .iter()
+                .filter_map(|control| {
+                    rendering_for_control(
+                        control,
+                        false,
+                        panel.layout.columns,
+                        false,
+                        panel.font_family.as_deref(),
+                        &context,
+                    )
+                })
+                .collect();
+        };
+
+        (0..u32::from(columns) * u32::from(rows))
+            .filter_map(|index| {
+                let key_index = u8::try_from(index).ok()?;
+                let column = u16::from(key_index) % columns;
+                let row = u16::from(key_index) / columns;
+                let rendering = panel
+                    .controls
+                    .iter()
+                    .find(|control| control.position.column == column && control.position.row == row)
+                    .and_then(|control| {
+                        rendering_for_control(
+                            control,
+                            false,
+                            panel.layout.columns,
+                            false,
+                            panel.font_family.as_deref(),
+                            &context,
+                        )
+                    })
+                    .unwrap_or(KeyRendering {
+                        key_index,
+                        layers: vec![ResolvedLayer::Fill {
+                            color: RgbaColor::opaque(0, 0, 0),
+                        }],
+                        is_dimmed: false,
+                    });
+
+                Some(rendering)
             })
             .collect()
     }
@@ -211,6 +244,21 @@ mod tests {
 
     fn fill_of(rendering: &KeyRendering) -> Option<RgbaColor> {
         rendering.palette_color()
+    }
+
+    #[test]
+    fn an_empty_panel_key_is_rendered_black() {
+        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![default_panel()]);
+        let surface_id = SurfaceId("stream-deck-studio-1".to_string());
+        let _ = registry.activate(&surface_id);
+
+        let empty_key = registry
+            .active_key_renderings(&surface_id)
+            .into_iter()
+            .find(|rendering| rendering.key_index == 1)
+            .expect("every grid position should render");
+
+        assert_eq!(fill_of(&empty_key), Some(RgbaColor::opaque(0, 0, 0)));
     }
 
     fn next_rendering(
