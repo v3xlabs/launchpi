@@ -8,7 +8,8 @@ import { TextField } from "../components/fields";
 import { KeyImage } from "../components/KeyImage";
 import { useInventory } from "../context/InventoryContext";
 
-type Section = { integrationId: string; title: string; presets: Preset[]; };
+type Category = { title: string; presets: Preset[]; };
+type Section = { integrationId: string; title: string; categories: Category[]; };
 
 /** `KeyImage` reads only the two states, so a preset can be previewed without being placed. */
 const asControl = (integrationId: string, preset: Preset): Control => ({
@@ -30,7 +31,7 @@ const PresetKey: Component<{ control: Control; }> = (properties) => {
   onMount(() => {
     const observer = new IntersectionObserver(
       entries => setIsVisible(entries.some(entry => entry.isIntersecting)),
-      { rootMargin: "200px" },
+      { root: host?.closest<HTMLDivElement>(".preset-list"), rootMargin: "96px" },
     );
 
     if (host !== undefined) observer.observe(host);
@@ -65,12 +66,28 @@ export const PresetPickerDialog: Component<{
 
     return store
       .presets()
-      .map(instance => ({
-        integrationId: instance.integration_id,
-        title: instance.display_name,
-        presets: instance.presets.filter(matching),
-      }))
-      .filter(section => section.presets.length > 0);
+      .map((instance): Section => {
+        const categories: Category[] = [];
+        const matchingPresets = instance.presets.filter(matching);
+
+        for (const preset of matchingPresets) {
+          const category = categories.find(({ title }) => title === preset.category);
+
+          if (category === undefined) {
+            categories.push({ title: preset.category, presets: [preset] });
+          }
+          else {
+            category.presets.push(preset);
+          }
+        }
+
+        return {
+          integrationId: instance.integration_id,
+          title: instance.display_name,
+          categories,
+        };
+      })
+      .filter(section => section.categories.length > 0);
   });
 
   const choose = (preset: Preset) => {
@@ -109,7 +126,7 @@ export const PresetPickerDialog: Component<{
                 placeholder="member, lights, channel..."
                 onChange={setSearch}
               />
-              <div class="max-h-[62vh] overflow-y-auto overflow-x-hidden">
+              <div class="preset-list">
                 <Show
                   when={sections().length > 0}
                   fallback={<p class="empty">No plugin is offering a preset.</p>}
@@ -118,18 +135,29 @@ export const PresetPickerDialog: Component<{
                     {section => (
                       <section class="preset-section">
                         <p class="preset-heading">{section.title}</p>
-                        <div class="preset-grid">
-                          <For each={section.presets}>
-                            {preset => (
-                              <button
-                                type="button"
-                                class="preset-tile"
-                                title={preset.description ?? preset.category}
-                                onClick={() => choose(preset)}
-                              >
-                                <PresetKey control={asControl(section.integrationId, preset)} />
-                                <span class="preset-name">{preset.name}</span>
-                              </button>
+                        <div class="preset-categories">
+                          <For each={section.categories}>
+                            {category => (
+                              <section class="preset-category" aria-labelledby={`${section.integrationId}-${category.title}`}>
+                                <p class="preset-category-heading" id={`${section.integrationId}-${category.title}`}>
+                                  {category.title}
+                                </p>
+                                <div class="preset-grid">
+                                  <For each={category.presets}>
+                                    {preset => (
+                                      <button
+                                        type="button"
+                                        class="preset-tile"
+                                        title={preset.description ?? preset.category}
+                                        onClick={() => choose(preset)}
+                                      >
+                                        <PresetKey control={asControl(section.integrationId, preset)} />
+                                        <span class="preset-name">{preset.name}</span>
+                                      </button>
+                                    )}
+                                  </For>
+                                </div>
+                              </section>
                             )}
                           </For>
                         </div>
