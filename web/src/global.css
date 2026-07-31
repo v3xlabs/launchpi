@@ -113,9 +113,12 @@ button, input, select, textarea { font: inherit; }
 .anchor-cell { @apply h-5 w-6 border border-transparent bg-neutral-800 transition hover:bg-neutral-700; }
 .anchor-cell[data-selected="true"] { @apply bg-blue-500; }
 
-/* Presets: one grid per plugin, so a button is recognised by its picture rather than its name. */
+.preset-list { @apply max-h-[62vh] overflow-y-auto overflow-x-hidden overscroll-contain; }
 .preset-section { @apply grid gap-1.5 border-t border-neutral-800 py-2 first:border-t-0 first:pt-0; }
 .preset-heading { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }
+.preset-categories { @apply grid gap-3; }
+.preset-category { @apply grid gap-1.5; }
+.preset-category-heading { @apply text-xs font-medium text-neutral-500; }
 .preset-grid { @apply grid grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-1.5; }
 .preset-tile { @apply grid justify-items-center gap-1 border border-transparent p-1 transition hover:border-neutral-700 hover:bg-neutral-800/60; }
 .preset-key { @apply relative block h-14 w-14 overflow-hidden rounded bg-neutral-950; }
