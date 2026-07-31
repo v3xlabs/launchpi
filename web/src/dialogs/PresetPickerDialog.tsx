@@ -9,7 +9,7 @@ import { KeyImage } from "../components/KeyImage";
 import { useInventory } from "../context/InventoryContext";
 
 type Category = { title: string; presets: Preset[]; };
-type Section = { integrationId: string; title: string; categories: Category[]; };
+type Section = { integrationId: string; title: string; categories: Category[]; presetCount: number; };
 
 /** `KeyImage` reads only the two states, so a preset can be previewed without being placed. */
 const asControl = (integrationId: string, preset: Preset): Control => ({
@@ -55,6 +55,8 @@ export const PresetPickerDialog: Component<{
   const store = useInventory();
   const [isOpen, setIsOpen] = createSignal(false);
   const [search, setSearch] = createSignal("");
+  const [selectedIntegrationId, setSelectedIntegrationId] = createSignal<string | null>(null);
+  let presetList: HTMLDivElement | undefined;
 
   const sections = createMemo<Section[]>(() => {
     const needle = search().trim()
@@ -85,10 +87,19 @@ export const PresetPickerDialog: Component<{
           integrationId: instance.integration_id,
           title: instance.display_name,
           categories,
+          presetCount: matchingPresets.length,
         };
       })
       .filter(section => section.categories.length > 0);
   });
+  const selectedSection = createMemo(
+    () => sections().find(section => section.integrationId === selectedIntegrationId()) ?? sections()[0],
+  );
+
+  const selectIntegration = (integrationId: string) => {
+    setSelectedIntegrationId(integrationId);
+    presetList?.scrollTo({ top: 0 });
+  };
 
   const choose = (preset: Preset) => {
     properties.onChoose(preset.control);
@@ -103,13 +114,14 @@ export const PresetPickerDialog: Component<{
         setIsOpen(open);
 
         if (!open) setSearch("");
+        else setSelectedIntegrationId(sections()[0]?.integrationId ?? null);
       }}
     >
       <Dialog.Trigger as="div" class="contents">{properties.trigger}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
-          <Dialog.Content class="dialog-content" data-size="wide">
+          <Dialog.Content class="dialog-content" data-size="wide" data-preset-picker>
             <div class="dialog-head">
               <Dialog.Title class="dialog-title">Presets</Dialog.Title>
               <Dialog.CloseButton class="icon-button" aria-label="Close">
@@ -126,44 +138,63 @@ export const PresetPickerDialog: Component<{
                 placeholder="member, lights, channel..."
                 onChange={setSearch}
               />
-              <div class="preset-list">
+              <div class="preset-picker">
                 <Show
                   when={sections().length > 0}
-                  fallback={<p class="empty">No plugin is offering a preset.</p>}
+                  fallback={<p class="empty">No configured integration is offering a preset.</p>}
                 >
-                  <For each={sections()}>
-                    {section => (
-                      <section class="preset-section">
-                        <p class="preset-heading">{section.title}</p>
-                        <div class="preset-categories">
-                          <For each={section.categories}>
-                            {category => (
-                              <section class="preset-category" aria-labelledby={`${section.integrationId}-${category.title}`}>
-                                <p class="preset-category-heading" id={`${section.integrationId}-${category.title}`}>
-                                  {category.title}
-                                </p>
-                                <div class="preset-grid">
-                                  <For each={category.presets}>
-                                    {preset => (
-                                      <button
-                                        type="button"
-                                        class="preset-tile"
-                                        title={preset.description ?? preset.category}
-                                        onClick={() => choose(preset)}
-                                      >
-                                        <PresetKey control={asControl(section.integrationId, preset)} />
-                                        <span class="preset-name">{preset.name}</span>
-                                      </button>
-                                    )}
-                                  </For>
-                                </div>
-                              </section>
-                            )}
-                          </For>
-                        </div>
-                      </section>
-                    )}
-                  </For>
+                  <>
+                    <nav class="preset-sidebar" aria-label="Preset integrations">
+                      <For each={sections()}>
+                        {section => (
+                          <button
+                            type="button"
+                            class="preset-integration"
+                            data-selected={section.integrationId === selectedSection()?.integrationId}
+                            onClick={() => selectIntegration(section.integrationId)}
+                          >
+                            <span class="preset-integration-name">{section.integrationId}</span>
+                            <span class="preset-integration-count">{section.presetCount}</span>
+                          </button>
+                        )}
+                      </For>
+                    </nav>
+                    <div class="preset-list" ref={presetList}>
+                      <Show when={selectedSection()}>
+                        {section => (
+                          <section class="preset-section">
+                            <p class="preset-heading">{section().title}</p>
+                            <div class="preset-categories">
+                              <For each={section().categories}>
+                                {category => (
+                                  <section class="preset-category" aria-labelledby={`${section().integrationId}-${category.title}`}>
+                                    <p class="preset-category-heading" id={`${section().integrationId}-${category.title}`}>
+                                      {category.title}
+                                    </p>
+                                    <div class="preset-grid">
+                                      <For each={category.presets}>
+                                        {preset => (
+                                          <button
+                                            type="button"
+                                            class="preset-tile"
+                                            title={preset.description ?? preset.category}
+                                            onClick={() => choose(preset)}
+                                          >
+                                            <PresetKey control={asControl(section().integrationId, preset)} />
+                                            <span class="preset-name">{preset.name}</span>
+                                          </button>
+                                        )}
+                                      </For>
+                                    </div>
+                                  </section>
+                                )}
+                              </For>
+                            </div>
+                          </section>
+                        )}
+                      </Show>
+                    </div>
+                  </>
                 </Show>
               </div>
             </div>

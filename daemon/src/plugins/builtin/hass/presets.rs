@@ -125,7 +125,7 @@ fn icon_for(entry: &CatalogueEntry, fallback: &'static str) -> String {
 fn face(entity_id: &str, text: String, icon: String, reports_state: bool) -> Vec<Layer> {
     let mut layers = vec![
         Layer::Fill {
-            color: RgbaColor::opaque(30, 41, 59).into(),
+            color: RgbaColor::opaque(0, 0, 0).into(),
         },
         Layer::Image {
             image: AssetId(icon),

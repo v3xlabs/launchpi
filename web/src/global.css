@@ -113,7 +113,14 @@ button, input, select, textarea { font: inherit; }
 .anchor-cell { @apply min-h-0 border border-transparent bg-neutral-800 transition hover:bg-neutral-700; }
 .anchor-cell[data-selected="true"] { @apply bg-blue-500; }
 
-.preset-list { @apply max-h-[62vh] overflow-y-auto overflow-x-hidden overscroll-contain; }
+.dialog-content[data-size="wide"][data-preset-picker] { @apply max-w-7xl; }
+.preset-picker { @apply grid min-h-0 grid-cols-[13rem_minmax(0,1fr)] border border-neutral-800; }
+.preset-sidebar { @apply max-h-[62vh] overflow-y-auto border-r border-neutral-800 bg-neutral-950 py-1; }
+.preset-integration { @apply grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-2 px-2 py-2 text-left transition hover:bg-neutral-800 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400; }
+.preset-integration[data-selected="true"] { @apply bg-neutral-800; box-shadow: inset 0.125rem 0 0 theme(colors.blue.500); }
+.preset-integration-name { @apply truncate text-base font-medium text-neutral-200; }
+.preset-integration-count { @apply col-start-2 row-start-1 text-base tabular-nums text-neutral-500; }
+.preset-list { @apply max-h-[62vh] min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain p-2; }
 .preset-section { @apply grid gap-1.5 border-t border-neutral-800 py-2 first:border-t-0 first:pt-0; }
 .preset-heading { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }
 .preset-categories { @apply grid gap-3; }

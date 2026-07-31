@@ -307,7 +307,7 @@ fn presets(settings: &DiscordConfig) -> Vec<Preset> {
                 default_state: RenderedState {
                     layers: vec![
                         Layer::Fill {
-                            color: RgbaColor::opaque(30, 41, 59).into(),
+                            color: RgbaColor::opaque(0, 0, 0).into(),
                         },
                         Layer::Image {
                             image: AssetId(format!("$(self:channel_members_{index}_avatar)")),
@@ -363,7 +363,7 @@ fn presets(settings: &DiscordConfig) -> Vec<Preset> {
                 default_state: RenderedState::labelled(
                     format!("Mute\n$(self:channel_members_{index})"),
                     RgbaColor::opaque(255, 255, 255),
-                    RgbaColor::opaque(30, 41, 59),
+                    RgbaColor::opaque(0, 0, 0),
                     false,
                 ),
                 pressed_state: None,
@@ -395,7 +395,7 @@ fn channel_preset(preset_id: &str, name: &str, text: &str) -> Preset {
             default_state: RenderedState::labelled(
                 text,
                 RgbaColor::opaque(255, 255, 255),
-                RgbaColor::opaque(30, 41, 59),
+                RgbaColor::opaque(0, 0, 0),
                 false,
             ),
             pressed_state: None,
