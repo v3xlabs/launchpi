@@ -18,7 +18,7 @@ use crate::{
     identifiers::{AssetId, IntegrationId},
     panels::{
         control::ControlTemplate,
-        rendered_state::{Anchor9, Fit, Layer, RenderedState, RgbaColor},
+        rendered_state::{Anchor9, Edge, Fit, Layer, RenderedState, RgbaColor, ValueBinding},
     },
     plugins::{
         instance::InstanceConfig,
@@ -229,7 +229,7 @@ fn publish_metrics(context: &PluginContext, system: &HostSystem, disks: &Disks) 
 
     context.set_value(
         CPU_USAGE_VALUE,
-        VariableValue::Number(f64::from(system.global_cpu_usage())),
+        VariableValue::Number(f64::from(system.global_cpu_usage().round())),
     );
     context.set_value(
         MEMORY_USED_BYTES_VALUE,
@@ -265,11 +265,7 @@ fn publish_metrics(context: &PluginContext, system: &HostSystem, disks: &Disks) 
     );
     context.set_value(
         DISK_FREE_VALUE,
-        VariableValue::Text(format!(
-            "{} free of {}",
-            format_bytes(disk_free),
-            format_bytes(disk_total)
-        )),
+        VariableValue::Text(format_bytes(disk_free)),
     );
     context.set_value(UPTIME_SECONDS_VALUE, VariableValue::Number(uptime as f64));
     context.set_value(UPTIME_VALUE, VariableValue::Text(format_uptime(uptime)));
@@ -280,7 +276,7 @@ fn local_time() -> String {
 }
 
 fn local_date() -> String {
-    Local::now().format("%Y-%m-%d").to_string()
+    Local::now().format("%-d %b").to_string()
 }
 
 fn local_weekday() -> String {
@@ -353,40 +349,43 @@ fn presets() -> Vec<Preset> {
         presets.push(timer_preset(duration_minutes));
     }
     presets.extend([
-        readout_preset(
+        percentage_preset(
             "cpu-usage",
             "Machine",
             "CPU usage",
-            "mdi:cpu-64-bit",
-            "CPU\n$(self:cpu_usage_pct)%",
+            "mdi:chip",
+            "$(self:cpu_usage_pct)%",
+            CPU_USAGE_VALUE,
         ),
-        readout_preset(
+        percentage_preset(
             "memory-usage",
             "Machine",
             "Memory usage",
             "mdi:memory",
-            "Memory\n$(self:memory_usage_pct)%",
+            "$(self:memory_usage_pct)%",
+            MEMORY_USAGE_VALUE,
         ),
         readout_preset(
             "load-average",
             "Machine",
             "Load average",
             "mdi:chart-line",
-            "Load\n$(self:load_average_1m)",
+            "$(self:load_average_1m)",
         ),
-        readout_preset(
+        percentage_preset(
             "disk-free",
             "Machine",
             "Disk free",
             "mdi:harddisk",
-            "Disk\n$(self:disk_free)",
+            "Free\n$(self:disk_free)\n$(self:disk_usage_pct)%",
+            DISK_USAGE_VALUE,
         ),
         readout_preset(
             "uptime",
             "Machine",
             "System uptime",
             "mdi:clock-check-outline",
-            "Uptime\n$(self:uptime)",
+            "$(self:uptime)",
         ),
     ]);
     presets
@@ -405,6 +404,25 @@ fn readout_preset(preset_id: &str, category: &str, name: &str, icon: &str, text:
             action_bindings: Vec::new(),
         },
     }
+}
+
+fn percentage_preset(
+    preset_id: &str,
+    category: &str,
+    name: &str,
+    icon: &str,
+    text: &str,
+    value_name: &str,
+) -> Preset {
+    let mut preset = readout_preset(preset_id, category, name, icon, text);
+    preset.control.default_state.layers.push(Layer::Bar {
+        value: ValueBinding::Reference(format!("$(self:{value_name})")),
+        maximum: 100.into(),
+        color: RgbaColor::opaque(255, 255, 255).into(),
+        edge: Edge::Bottom,
+        thickness: 5,
+    });
+    preset
 }
 
 fn timer_preset(duration_minutes: u64) -> Preset {
@@ -442,7 +460,7 @@ fn face(icon: &str, text: &str) -> RenderedState {
                 image: AssetId(icon.to_string()),
                 fit: Fit::Contain,
                 anchor: Anchor9::TopCenter,
-                scale_percent: 50,
+                scale_percent: 40,
                 tint: None,
             },
             Layer::Text {

@@ -554,8 +554,8 @@ mod tests {
                     crate::panels::rendered_state::Layer::Text { text, .. } => Some(text.as_str()),
                     _ => None,
                 }),
-            Some("Kitchen\n$(hass.home:light.kitchen.state)"),
-            "the self sigil is rewritten to the publishing instance on the way in"
+            Some("Kitchen"),
+            "the generated label does not need the state because its border reports it"
         );
 
         let Action::InvokeIntegration { integration_id, .. } =

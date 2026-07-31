@@ -71,10 +71,7 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
         .friendly_name
         .clone()
         .unwrap_or_else(|| entity_id.to_string());
-    let text = match shape.reports_state {
-        true => format!("{name}\n$(self:{entity_id}.state)"),
-        false => name.clone(),
-    };
+    let text = key_label(&name, &entry.domain);
 
     Preset {
         preset_id: entity_id.to_string(),
@@ -101,6 +98,19 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
             }],
         },
     }
+}
+
+fn key_label(name: &str, domain: &str) -> String {
+    let suffix = match domain {
+        "light" => " Light",
+        "switch" => " Switch",
+        _ => return name.to_string(),
+    };
+
+    name.strip_suffix(suffix)
+        .filter(|label| !label.is_empty())
+        .unwrap_or(name)
+        .to_string()
 }
 
 /// The entity colour goes on the outline rather than the face because `values.rs` answers black for
@@ -131,7 +141,7 @@ fn face(entity_id: &str, text: String, icon: String, reports_state: bool) -> Vec
             image: AssetId(icon),
             fit: Fit::Contain,
             anchor: Anchor9::TopCenter,
-            scale_percent: 50,
+            scale_percent: 40,
             tint: None,
         },
         Layer::Text {
@@ -261,10 +271,7 @@ mod tests {
     fn a_light_toggles_and_outlines_itself_in_its_own_colour() {
         let preset = only("light.kitchen", "Kitchen");
 
-        assert_eq!(
-            label_of(&preset),
-            Some("Kitchen\n$(self:light.kitchen.state)")
-        );
+        assert_eq!(label_of(&preset), Some("Kitchen"));
         assert_eq!(
             outline_of(&preset),
             Some(&ColorBinding::Reference(
@@ -320,10 +327,7 @@ mod tests {
     #[test]
     fn a_media_player_key_plays_and_pauses_and_shows_what_it_is_doing() {
         let preset = only("media_player.study", "Study");
-        assert_eq!(
-            label_of(&preset),
-            Some("Study\n$(self:media_player.study.state)")
-        );
+        assert_eq!(label_of(&preset), Some("Study"));
 
         let (_, parameters) = pressed(&preset);
         assert_eq!(parameters["service"], json!("media_play_pause"));
@@ -335,10 +339,17 @@ mod tests {
             .pop()
             .expect("a light is offered whether or not it is named");
         assert_eq!(preset.name, "light.kitchen");
+        assert_eq!(label_of(&preset), Some("light.kitchen"));
+    }
+
+    #[test]
+    fn a_key_label_drops_only_the_domain_suffix() {
+        assert_eq!(key_label("Dining Light 1 Light", "light"), "Dining Light 1");
         assert_eq!(
-            label_of(&preset),
-            Some("light.kitchen\n$(self:light.kitchen.state)")
+            key_label("Christmas Tree Lights (ENSP7) Switch", "switch"),
+            "Christmas Tree Lights (ENSP7)"
         );
+        assert_eq!(key_label("Living Room Light", "scene"), "Living Room Light");
     }
 
     /// The picker keys off `preset_id`, so a republish that renumbered them would move every entry

@@ -1,6 +1,9 @@
 {
   alsa-lib,
   fontconfig,
+  pango,
+  cairo,
+  glib,
   rustPlatform,
   just,
   lib,
@@ -45,6 +48,9 @@ rustPlatform.buildRustPackage {
   buildInputs = [
     alsa-lib
     fontconfig
+    pango
+    cairo
+    glib
     jack2
   ];
 

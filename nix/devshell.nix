@@ -25,6 +25,9 @@ in
       rust-analyzer
       bacon
       fontconfig
+      pango
+      cairo
+      glib
       just
       nodejs_24
       pnpm_11

@@ -1,17 +1,17 @@
 use std::{
     collections::BTreeMap,
-    fs,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, LazyLock, Mutex,
+        Arc,
     },
     time::{Duration, Instant},
 };
 
-use ab_glyph::{point, Font, FontArc, Glyph, PxScale, ScaleFont};
-use fontconfig::Fontconfig;
+use cairo::{Context as CairoContext, Format as CairoFormat, ImageSurface};
 use jpeg_encoder::{ColorType, Encoder};
 use mdns_sd::{ResolvedService, ServiceDaemon, ServiceEvent};
+use pango::{Alignment as PangoAlignment, FontDescription, WrapMode};
+use pangocairo::functions::{create_layout, show_layout};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
@@ -69,6 +69,7 @@ const IMAGE_REPORT_HEADER_SIZE: usize = 8;
 const KEY_TEXT_PADDING: f32 = 6.0;
 const KEY_TEXT_MAX_PX: f32 = 40.0;
 const KEY_TEXT_MIN_PX: f32 = 8.0;
+const PANGO_SCALE: i32 = 1024;
 const DIAL_RING_COMMAND: u8 = 0x0f;
 const DIAL_KNOB_COMMAND: u8 = 0x10;
 const CHILD_QUERY_INTERVAL: Duration = Duration::from_secs(5);
@@ -77,9 +78,6 @@ const REPLY_QUEUE_SIZE: usize = 8;
 
 /// Keeps a badge off the bezel at every anchor.
 const OVERLAY_INSET: usize = 4;
-
-static FONTS: LazyLock<Mutex<BTreeMap<String, FontArc>>> =
-    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TransportMode {
@@ -371,8 +369,7 @@ async fn handle_connection(
         };
         info!(
             ?transport,
-            initialization_attempts,
-            "starting Stream Deck initialization before read loop"
+            initialization_attempts, "starting Stream Deck initialization before read loop"
         );
         for attempt in 0..initialization_attempts {
             if attempt > 0 {
@@ -1277,7 +1274,15 @@ fn draw_layer(pixels: &mut [u8], layer: &ResolvedLayer, assets: Option<&Arc<Asse
             anchor,
             font_family,
             font_size,
-        } => draw_text(pixels, text, rgb(color), *anchor, font_family, *font_size),
+        } => draw_text(
+            pixels,
+            text,
+            rgb(color),
+            *anchor,
+            font_family,
+            *font_size,
+            (0, STUDIO_KEY_IMAGE_SIZE),
+        ),
         ResolvedLayer::Bar {
             value,
             maximum,
@@ -1430,7 +1435,24 @@ fn render_key_image(
     let mut pixels = vec![0_u8; STUDIO_KEY_IMAGE_SIZE * STUDIO_KEY_IMAGE_SIZE * 3];
 
     for layer in &rendering.layers {
-        draw_layer(&mut pixels, layer, assets);
+        match layer {
+            ResolvedLayer::Text {
+                text,
+                color,
+                anchor,
+                font_family,
+                font_size,
+            } => draw_text(
+                &mut pixels,
+                text,
+                rgb(color),
+                *anchor,
+                font_family,
+                *font_size,
+                text_vertical_bounds(&rendering.layers, *anchor),
+            ),
+            _ => draw_layer(&mut pixels, layer, assets),
+        }
     }
 
     if flip_image {
@@ -1448,6 +1470,34 @@ fn render_key_image(
         .map_err(|error| error.to_string())?;
 
     Ok(encoded)
+}
+
+fn text_vertical_bounds(layers: &[ResolvedLayer], text_anchor: Anchor9) -> (usize, usize) {
+    let (_, text_vertical) = anchor_axes(text_anchor);
+    let mut top = 0;
+    let mut bottom = STUDIO_KEY_IMAGE_SIZE;
+
+    for layer in layers {
+        let ResolvedLayer::Image {
+            anchor,
+            scale_percent,
+            ..
+        } = layer
+        else {
+            continue;
+        };
+        let (_, image_vertical) = anchor_axes(*anchor);
+        let size = (STUDIO_KEY_IMAGE_SIZE * usize::from(*scale_percent) / 100).max(1);
+        let (_, image_top) = anchored_origin(size, *anchor);
+
+        match (text_vertical, image_vertical) {
+            (2, 0) => top = top.max(image_top + size + KEY_TEXT_PADDING as usize),
+            (0, 2) => bottom = bottom.min(image_top.saturating_sub(KEY_TEXT_PADDING as usize)),
+            _ => {}
+        }
+    }
+
+    (top.min(bottom), bottom)
 }
 
 fn flip_pixels_180(pixels: &mut [u8], width: usize, height: usize) {
@@ -1476,97 +1526,117 @@ fn draw_text(
     anchor: Anchor9,
     font_family: &str,
     font_size: Option<u8>,
+    (top_bound, bottom_bound): (usize, usize),
 ) {
     let text = text.trim();
     if text.is_empty() {
         return;
     }
 
-    let Some(font) = font_for(font_family) else {
-        warn!(font_family, "unable to resolve system font");
+    let mut surface = match ImageSurface::create(
+        CairoFormat::ARgb32,
+        STUDIO_KEY_IMAGE_SIZE as i32,
+        STUDIO_KEY_IMAGE_SIZE as i32,
+    ) {
+        Ok(surface) => surface,
+        Err(error) => {
+            warn!(%error, "unable to create text surface");
+            return;
+        }
+    };
+    let context = match CairoContext::new(&surface) {
+        Ok(context) => context,
+        Err(error) => {
+            warn!(%error, "unable to create text context");
+            return;
+        }
+    };
+    let layout = create_layout(&context);
+    let max_width = (STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0).round() as i32;
+    let max_height = (bottom_bound.saturating_sub(top_bound) as f32 - KEY_TEXT_PADDING * 2.0)
+        .max(1.0)
+        .round() as i32;
+    layout.set_text(text);
+    layout.set_width(max_width * PANGO_SCALE);
+    layout.set_wrap(WrapMode::WordChar);
+    layout.set_alignment(match anchor_axes(anchor).0 {
+        0 => PangoAlignment::Left,
+        1 => PangoAlignment::Center,
+        _ => PangoAlignment::Right,
+    });
+
+    let font_size = font_size
+        .map(f32::from)
+        .unwrap_or_else(|| fit_text_size(&layout, font_family, max_height));
+    let mut description = FontDescription::from_string(font_family);
+    description.set_absolute_size(f64::from(font_size) * f64::from(PANGO_SCALE));
+    layout.set_font_description(Some(&description));
+    let (_, logical) = layout.pixel_extents();
+    let (horizontal, vertical) = anchor_axes(anchor);
+    let left = match horizontal {
+        0 => KEY_TEXT_PADDING,
+        1 => (STUDIO_KEY_IMAGE_SIZE as f32 - logical.width() as f32) / 2.0,
+        _ => STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING - logical.width() as f32,
+    };
+    let top = match vertical {
+        0 => top_bound as f32 + KEY_TEXT_PADDING,
+        1 => (top_bound as f32 + bottom_bound as f32 - logical.height() as f32) / 2.0,
+        _ => bottom_bound as f32 - KEY_TEXT_PADDING - logical.height() as f32,
+    };
+    context.set_source_rgb(
+        f64::from(color.0) / f64::from(u8::MAX),
+        f64::from(color.1) / f64::from(u8::MAX),
+        f64::from(color.2) / f64::from(u8::MAX),
+    );
+    context.move_to(
+        f64::from(left - logical.x() as f32),
+        f64::from(top - logical.y() as f32),
+    );
+    show_layout(&context, &layout);
+    drop(context);
+    surface.flush();
+    let stride = surface.stride() as usize;
+    let Ok(data) = surface.data() else {
         return;
     };
-    let max_width = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
-    let band_height = STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0;
-
-    let px = font_size
-        .map(f32::from)
-        .unwrap_or_else(|| fit_text_scale(&font, text, max_width, band_height))
-        .clamp(KEY_TEXT_MIN_PX, KEY_TEXT_MAX_PX);
-    let scaled = font.as_scaled(PxScale::from(px));
-    let text_width: f32 = text
-        .chars()
-        .map(|character| scaled.h_advance(font.glyph_id(character)))
-        .sum();
-
-    let (horizontal, vertical) = anchor_axes(anchor);
-    let ascent = scaled.ascent();
-    let descent = -scaled.descent();
-    let start_x = match horizontal {
-        0 => KEY_TEXT_PADDING,
-        1 => (STUDIO_KEY_IMAGE_SIZE as f32 - text_width) / 2.0,
-        _ => STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING - text_width,
-    };
-    let baseline_y = match vertical {
-        0 => KEY_TEXT_PADDING + ascent,
-        1 => (STUDIO_KEY_IMAGE_SIZE as f32 - (ascent + descent)) / 2.0 + ascent,
-        _ => STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING - descent,
-    };
-
-    let mut caret_x = start_x;
-    for character in text.chars() {
-        let glyph_id = font.glyph_id(character);
-        let glyph = Glyph {
-            id: glyph_id,
-            scale: PxScale::from(px),
-            position: point(caret_x, baseline_y),
-        };
-        if let Some(outline) = font.outline_glyph(glyph) {
-            let bounds = outline.px_bounds();
-            outline.draw(|glyph_x, glyph_y, coverage| {
-                blend_pixel(
-                    pixels,
-                    bounds.min.x as i32 + glyph_x as i32,
-                    bounds.min.y as i32 + glyph_y as i32,
-                    color,
-                    coverage,
-                );
-            });
+    for y in 0..STUDIO_KEY_IMAGE_SIZE {
+        for x in 0..STUDIO_KEY_IMAGE_SIZE {
+            let offset = y * stride + x * 4;
+            let alpha_byte = data[offset + 3];
+            if alpha_byte == 0 {
+                continue;
+            }
+            let unpremultiply = |channel: u8| {
+                (u16::from(channel) * u16::from(u8::MAX) / u16::from(alpha_byte)) as u8
+            };
+            blend_pixel(
+                pixels,
+                x as i32,
+                y as i32,
+                (
+                    unpremultiply(data[offset + 2]),
+                    unpremultiply(data[offset + 1]),
+                    unpremultiply(data[offset]),
+                ),
+                f32::from(alpha_byte) / f32::from(u8::MAX),
+            );
         }
-        caret_x += scaled.h_advance(glyph_id);
     }
 }
 
-fn font_for(font_family: &str) -> Option<FontArc> {
-    if let Some(font) = FONTS.lock().unwrap().get(font_family).cloned() {
-        return Some(font);
+fn fit_text_size(layout: &pango::Layout, font_family: &str, max_height: i32) -> f32 {
+    let largest = KEY_TEXT_MAX_PX.floor() as u8;
+    let smallest = KEY_TEXT_MIN_PX.ceil() as u8;
+    for size in (smallest..=largest).rev() {
+        let mut description = FontDescription::from_string(font_family);
+        description.set_absolute_size(f64::from(size) * f64::from(PANGO_SCALE));
+        layout.set_font_description(Some(&description));
+        let (_, logical) = layout.pixel_extents();
+        if logical.height() <= max_height {
+            return f32::from(size);
+        }
     }
-
-    let fontconfig = Fontconfig::new()?;
-    let matched = fontconfig.find(font_family, None)?;
-    let font = FontArc::try_from_vec(fs::read(matched.path).ok()?).ok()?;
-
-    FONTS
-        .lock()
-        .unwrap()
-        .insert(font_family.to_string(), font.clone());
-    Some(font)
-}
-
-fn fit_text_scale(font: &impl Font, text: &str, max_width: f32, max_height: f32) -> f32 {
-    let width_at = |px: f32| -> f32 {
-        let scaled = font.as_scaled(PxScale::from(px));
-        text.chars()
-            .map(|character| scaled.h_advance(font.glyph_id(character)))
-            .sum()
-    };
-
-    let mut px = max_height.min(KEY_TEXT_MAX_PX);
-    let width = width_at(px);
-    if width > max_width && width > 0.0 {
-        px *= max_width / width;
-    }
-    px.clamp(KEY_TEXT_MIN_PX, KEY_TEXT_MAX_PX)
+    f32::from(smallest)
 }
 
 fn set_pixel(pixels: &mut [u8], x: usize, y: usize, color: (u8, u8, u8)) {
@@ -1597,10 +1667,10 @@ mod tests {
 
     use super::{
         anchored_origin, dial_report_size, draw_border, draw_fill, flip_pixels_180,
-        parse_child_device_info, parse_primary_device_info, render_key_image, Anchor9, Edge,
-        KeyRendering, PendingRenders, ResolvedLayer, RgbaColor, SurfaceCommand, TransportMode,
-        DIAL_RING_COMMAND, ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE, NETWORK_DOCK_PRODUCT_ID,
-        OVERLAY_INSET, STREAM_DECK_STUDIO, STUDIO_KEY_IMAGE_SIZE,
+        parse_child_device_info, parse_primary_device_info, render_key_image, text_vertical_bounds,
+        Anchor9, Edge, Fit, KeyRendering, PendingRenders, ResolvedLayer, RgbaColor, SurfaceCommand,
+        TransportMode, DIAL_RING_COMMAND, ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE,
+        NETWORK_DOCK_PRODUCT_ID, OVERLAY_INSET, STREAM_DECK_STUDIO, STUDIO_KEY_IMAGE_SIZE,
     };
     use crate::drivers::streamdeck::model::STREAM_DECK_XL;
 
@@ -1611,6 +1681,16 @@ mod tests {
             anchor: Anchor9::Center,
             font_family: "sans-serif".to_string(),
             font_size: None,
+        }
+    }
+
+    fn top_image(scale_percent: u8) -> ResolvedLayer {
+        ResolvedLayer::Image {
+            image: crate::identifiers::AssetId("mdi:clock-outline".to_string()),
+            fit: Fit::Contain,
+            anchor: Anchor9::TopCenter,
+            scale_percent,
+            tint: None,
         }
     }
 
@@ -1768,6 +1848,13 @@ mod tests {
         assert_eq!(at(3, 50), (10, 20, 30), "the frame is four pixels deep");
         assert_eq!(at(4, 50), (0, 0, 0), "and no deeper");
         assert_eq!(at(48, 48), (0, 0, 0));
+    }
+
+    #[test]
+    fn bottom_text_reserves_space_below_a_top_image() {
+        let bounds = text_vertical_bounds(&[top_image(40)], Anchor9::BottomCenter);
+
+        assert_eq!(bounds, (48, STUDIO_KEY_IMAGE_SIZE));
     }
 
     #[test]

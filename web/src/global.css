@@ -131,6 +131,13 @@ button, input, select, textarea { font: inherit; }
 .preset-key { @apply relative block h-14 w-14 overflow-hidden rounded bg-neutral-950; }
 .preset-name { @apply line-clamp-2 text-center text-[0.68rem] leading-tight text-neutral-300; }
 
+@media (max-width: 40rem) {
+  .preset-picker { @apply grid-cols-1; }
+  .preset-sidebar { @apply flex max-h-none overflow-x-auto overflow-y-hidden border-r-0 border-b py-1; }
+  .preset-integration { @apply flex w-auto shrink-0 items-center gap-x-2 whitespace-nowrap; }
+  .preset-list { @apply max-h-[52vh]; }
+}
+
 /* Navigation */
 .nav { @apply flex flex-col gap-3 py-2; }
 .nav-heading-row { @apply flex items-center gap-1 pr-2; }
