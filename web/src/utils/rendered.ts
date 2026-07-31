@@ -46,13 +46,14 @@ export const fromHex = (value: string): RgbaColor => ({
 /** Two layers, so the simplest key stays as simple as it was before it had a stack. */
 export const newState = (isPressed: boolean): RenderedState => ({
   layers: [
-    { kind: "fill", color: { red: 30, green: 41, blue: 59, alpha: 255 } },
+    { kind: "fill", color: { red: 0, green: 0, blue: 0, alpha: 255 } },
     {
       kind: "text",
       text: "",
       color: { red: 255, green: 255, blue: 255, alpha: 255 },
       anchor: "center",
       font_family: undefined,
+      font_size: undefined,
     },
   ],
   is_pressed: isPressed,
@@ -64,13 +65,20 @@ export const newLayer = (kind: LayerKind): Layer => {
 
   switch (kind) {
     case "fill": {
-      return { kind: "fill", color: { red: 30, green: 41, blue: 59, alpha: 255 } };
+      return { kind: "fill", color: { red: 0, green: 0, blue: 0, alpha: 255 } };
     }
     case "image": {
       return { kind: "image", image: "", fit: "cover", anchor: "center", scale_percent: 100, tint: null };
     }
     case "text": {
-      return { kind: "text", text: "", color: white, anchor: "center", font_family: undefined };
+      return {
+        kind: "text",
+        text: "",
+        color: white,
+        anchor: "center",
+        font_family: undefined,
+        font_size: undefined,
+      };
     }
     case "bar": {
       return { kind: "bar", value: 0, maximum: 100, color: white, edge: "bottom", thickness: 6 };

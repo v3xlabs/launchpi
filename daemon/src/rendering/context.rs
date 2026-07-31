@@ -111,6 +111,7 @@ impl<'a> RenderContext<'a> {
                 color,
                 anchor,
                 font_family,
+                font_size,
             } => {
                 let text = self.interpolate(text);
 
@@ -125,6 +126,7 @@ impl<'a> RenderContext<'a> {
                         .or(panel_font_family)
                         .unwrap_or("sans-serif")
                         .to_string(),
+                    font_size: *font_size,
                 })
             }
             Layer::Bar {
@@ -226,6 +228,7 @@ mod tests {
             color,
             anchor: Anchor9::Center,
             font_family: None,
+            font_size: None,
         }
     }
 
@@ -257,6 +260,7 @@ mod tests {
                 color: RgbaColor::opaque(255, 255, 255),
                 anchor: Anchor9::Center,
                 font_family: "sans-serif".to_string(),
+                font_size: None,
             })
         );
     }
@@ -266,10 +270,16 @@ mod tests {
         let variables = VariableStore::default();
         let context = RenderContext::new(&variables);
         let mut layer = text("Play", white());
-        let Layer::Text { font_family, .. } = &mut layer else {
+        let Layer::Text {
+            font_family,
+            font_size,
+            ..
+        } = &mut layer
+        else {
             unreachable!();
         };
         *font_family = Some("Layer Font".to_string());
+        *font_size = Some(24);
 
         assert_eq!(
             only(context.resolve_with_font(
@@ -282,6 +292,7 @@ mod tests {
                 color: RgbaColor::opaque(255, 255, 255),
                 anchor: Anchor9::Center,
                 font_family: "Layer Font".to_string(),
+                font_size: Some(24),
             })
         );
     }
@@ -381,6 +392,7 @@ mod tests {
                 color: UNRESOLVED_CONTENT_COLOR,
                 anchor: Anchor9::Center,
                 font_family: "sans-serif".to_string(),
+                font_size: None,
             })
         );
     }
@@ -594,6 +606,7 @@ mod tests {
                 color: RgbaColor::opaque(255, 255, 255),
                 anchor: Anchor9::Center,
                 font_family: "sans-serif".to_string(),
+                font_size: None,
             })
         );
     }

@@ -62,11 +62,11 @@ pub(crate) fn default_panel() -> Panel {
             control_id: ControlId("hello".to_string()),
             name: "Hello".to_string(),
             position: SurfacePosition { column: 0, row: 0 },
-            default_state: RenderedState::labelled("Hello", white(), color(35, 88, 165), false),
+            default_state: RenderedState::labelled("Hello", white(), color(0, 0, 0), false),
             pressed_state: Some(RenderedState::labelled(
                 "Hello",
                 white(),
-                color(18, 44, 83),
+                color(0, 0, 0),
                 true,
             )),
             action_bindings: Vec::new(),

@@ -96,11 +96,11 @@ button, input, select, textarea { font: inherit; }
 .range-input { @apply h-8 w-full cursor-pointer bg-transparent accent-blue-500; }
 
 /* A key's face as an ordered stack, listed the way it is drawn. */
-.layer-card { @apply border border-neutral-800 bg-neutral-950; }
-.layer-head { @apply flex items-center justify-between gap-2 border-b border-neutral-800 px-2 py-1.5; }
+.layer-card { @apply border-t border-neutral-800 first:border-t-0; }
+.layer-head { @apply flex items-center justify-between gap-2 px-1 py-1.5; }
 .layer-kind { @apply text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-400; }
 .layer-head .icon-button, .layer-head .danger-button { @apply h-6 w-6; }
-.layer-body { @apply grid gap-2 p-2; }
+.layer-body { @apply grid gap-2 px-1 pb-3; }
 .layer-add { @apply flex flex-wrap gap-1.5; }
 .layer-add .secondary-button { @apply h-7 px-2 text-[0.7rem]; }
 .icon-picker { @apply grid gap-2 border border-neutral-800 bg-neutral-900 p-2; }
@@ -109,8 +109,8 @@ button, input, select, textarea { font: inherit; }
 .icon-tile img { @apply h-5 w-5; }
 
 /* The nine anchors drawn where they mean, rather than listed by name. */
-.anchor-grid { @apply grid w-max grid-cols-3 gap-0.5 border border-neutral-700 bg-neutral-950 p-0.5; }
-.anchor-cell { @apply h-5 w-6 border border-transparent bg-neutral-800 transition hover:bg-neutral-700; }
+.anchor-grid { @apply grid h-8 w-full grid-cols-3 gap-px border border-neutral-700 bg-neutral-950 p-px; }
+.anchor-cell { @apply min-h-0 border border-transparent bg-neutral-800 transition hover:bg-neutral-700; }
 .anchor-cell[data-selected="true"] { @apply bg-blue-500; }
 
 .preset-list { @apply max-h-[62vh] overflow-y-auto overflow-x-hidden overscroll-contain; }

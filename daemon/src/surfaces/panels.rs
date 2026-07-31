@@ -56,7 +56,7 @@ impl SurfaceRegistry {
                         default_state: RenderedState::labelled(
                             format!("{index}"),
                             white(),
-                            color(30, 41, 59),
+                            color(0, 0, 0),
                             false,
                         ),
                         pressed_state: None,
