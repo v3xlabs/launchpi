@@ -215,6 +215,7 @@ fn presets() -> Vec<Preset> {
             "$(self:title)\n$(self:artist)",
         ),
         artwork_preset(),
+        artwork_with_title_preset(),
         transport_preset(
             "play-pause",
             "Play / Pause",
@@ -233,6 +234,31 @@ fn artwork_preset() -> Preset {
         preset_id: "now-playing-artwork".to_string(),
         category: "Playback".to_string(),
         name: name.to_string(),
+        description: Some("Shows the current album cover.".to_string()),
+        control: ControlTemplate {
+            name: name.to_string(),
+            default_state: RenderedState {
+                layers: vec![Layer::Image {
+                    image: AssetId("$(self:art_url)".to_string()),
+                    fit: Fit::Cover,
+                    anchor: Anchor9::Center,
+                    scale_percent: 100,
+                    tint: None,
+                }],
+                is_pressed: false,
+            },
+            pressed_state: None,
+            action_bindings: Vec::new(),
+        },
+    }
+}
+
+fn artwork_with_title_preset() -> Preset {
+    let name = "Now playing artwork with title";
+    Preset {
+        preset_id: "now-playing-artwork-title".to_string(),
+        category: "Playback".to_string(),
+        name: name.to_string(),
         description: Some("Shows the current album cover with track details.".to_string()),
         control: ControlTemplate {
             name: name.to_string(),
@@ -244,6 +270,15 @@ fn artwork_preset() -> Preset {
                         anchor: Anchor9::Center,
                         scale_percent: 100,
                         tint: None,
+                    },
+                    Layer::Fill {
+                        color: RgbaColor {
+                            red: 0,
+                            green: 0,
+                            blue: 0,
+                            alpha: 140,
+                        }
+                        .into(),
                     },
                     Layer::Text {
                         text: "$(self:title)\n$(self:artist)".to_string(),
@@ -878,13 +913,14 @@ mod tests {
             [
                 "now-playing",
                 "now-playing-artwork",
+                "now-playing-artwork-title",
                 "play-pause",
                 "previous",
                 "next",
                 "stop"
             ]
         );
-        for (preset, action_name) in offered.iter().skip(2).zip([
+        for (preset, action_name) in offered.iter().skip(3).zip([
             PLAY_PAUSE_ACTION,
             PREVIOUS_ACTION,
             NEXT_ACTION,
