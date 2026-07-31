@@ -86,7 +86,12 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
         control: ControlTemplate {
             name,
             default_state: RenderedState {
-                layers: face(&entry.domain, entity_id, text, icon_for(entry, shape.icon)),
+                layers: face(
+                    entity_id,
+                    text,
+                    icon_for(entry, shape.icon),
+                    shape.reports_state,
+                ),
                 is_pressed: false,
             },
             pressed_state: None,
@@ -98,15 +103,13 @@ fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Prese
     }
 }
 
-/// A light is the only domain `fields_for` reports a colour for. It goes on the outline rather than
-/// the face because `values.rs` answers black for an entity that is off and white for one that is
-/// on without a colour of its own, and a key whose whole face is that colour has no legible label
-/// left at either end of the range.
+/// The entity colour goes on the outline rather than the face because `values.rs` answers black for
+/// an entity that is off and white for one that is on without a colour of its own, and a key whose
+/// whole face is that colour has no legible label left at either end of the range.
 /// The icon is left white rather than tinted with the entity's colour: `color_of` answers black
 /// for anything that is off, and a black glyph on a dark key is a key that looks broken rather than
 /// one that looks off. The colour goes on the outline, which reads against the fill in every state.
 ///
-/// Only a light is outlined at all, because `fields_for` publishes a colour for that domain alone.
 /// What Home Assistant already draws for an entity wins over the domain default, so an icon
 /// someone chose there is the icon here. An icon this pack does not have falls back rather than
 /// drawing nothing, which is why the answer is checked rather than trusted.
@@ -119,7 +122,7 @@ fn icon_for(entry: &CatalogueEntry, fallback: &'static str) -> String {
         .to_string()
 }
 
-fn face(domain: &str, entity_id: &str, text: String, icon: String) -> Vec<Layer> {
+fn face(entity_id: &str, text: String, icon: String, reports_state: bool) -> Vec<Layer> {
     let mut layers = vec![
         Layer::Fill {
             color: RgbaColor::opaque(30, 41, 59).into(),
@@ -139,7 +142,7 @@ fn face(domain: &str, entity_id: &str, text: String, icon: String) -> Vec<Layer>
             font_size: None,
         },
     ];
-    if domain == "light" {
+    if reports_state {
         layers.push(Layer::Border {
             color: ColorBinding::Reference(format!("$(self:{entity_id}.color)")),
             width: 5,
@@ -274,17 +277,17 @@ mod tests {
         assert_eq!(parameters["entity_id"], json!("light.kitchen"));
     }
 
-    /// Every other domain reports white when on and black when off, which says nothing about the
-    /// entity and only makes the label harder to read.
     #[test]
-    fn only_a_light_is_outlined_in_a_colour_it_actually_reports() {
-        for entity_id in ["switch.desk_lamp", "fan.purifier", "scene.movie"] {
+    fn every_stateful_entity_is_outlined() {
+        for entity_id in ["switch.desk_lamp", "fan.purifier", "media_player.study"] {
             assert_eq!(
                 outline_of(&only(entity_id, "Anything")),
-                None,
-                "{entity_id} does not report a colour"
+                Some(&ColorBinding::Reference(format!(
+                    "$(self:{entity_id}.color)"
+                )))
             );
         }
+        assert_eq!(outline_of(&only("scene.movie", "Anything")), None);
     }
 
     #[test]

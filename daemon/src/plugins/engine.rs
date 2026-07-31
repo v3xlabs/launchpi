@@ -186,6 +186,7 @@ impl PluginEngine {
         });
 
         engine.load_user_values();
+        engine.start_system_instance().await;
         engine.load_instances().await;
         engine.rebuild_index().await;
 
@@ -513,6 +514,18 @@ impl PluginEngine {
                 });
             }
         }
+    }
+
+    async fn start_system_instance(&self) {
+        let identity = InstanceIdentity {
+            plugin_type: "system".to_string(),
+            name: "default".to_string(),
+        };
+        let document = InstanceDocument {
+            display_name: Some("System".to_string()),
+            ..Default::default()
+        };
+        self.start_instance(identity, document).await;
     }
 
     pub fn describe_instance(&self, integration_id: &IntegrationId) -> Option<PluginInstance> {
