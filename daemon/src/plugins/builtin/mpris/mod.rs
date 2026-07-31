@@ -20,6 +20,12 @@ use zbus::{
 };
 
 use crate::{
+    bindings::action::{Action, ActionBinding, ActionTrigger},
+    identifiers::{AssetId, IntegrationId},
+    panels::{
+        control::ControlTemplate,
+        rendered_state::{Anchor9, Fit, Layer, RenderedState, RgbaColor},
+    },
     plugins::{
         builtin::mpris::{
             config::MprisConfig,
@@ -33,6 +39,7 @@ use crate::{
             ActionDefinition, ConfigField, PluginManifest, VariableDefinition, VariableKind,
         },
         plugin::{Plugin, PluginContext, PluginError, PluginFactory, Subscription},
+        preset::Preset,
     },
     surfaces::logs::SurfaceLogLevel,
     variables::VariableValue,
@@ -43,6 +50,10 @@ use crate::{
 const POSITION_VALUE: &str = "position";
 const ART_URL_VALUE: &str = "art_url";
 const ART_VALUE: &str = "art";
+const PLAY_PAUSE_ACTION: &str = "play_pause";
+const NEXT_ACTION: &str = "next";
+const PREVIOUS_ACTION: &str = "previous";
+const STOP_ACTION: &str = "stop";
 
 /// `file://` URLs arrive percent-encoded, and cover art lives in directories with spaces in them
 /// more often than not.
@@ -167,6 +178,7 @@ async fn start(
     let connection = Connection::session().await.map_err(|error| {
         PluginError::Configuration(format!("no session bus to watch for players: {error}"))
     })?;
+    context.set_presets(presets());
 
     let plugin = Arc::new(MprisPlugin {
         connection,
@@ -192,6 +204,114 @@ async fn start(
     });
 
     Ok(plugin)
+}
+
+fn presets() -> Vec<Preset> {
+    vec![
+        readout_preset(
+            "now-playing",
+            "Now playing",
+            "mdi:music",
+            "$(self:title)\n$(self:artist)",
+        ),
+        artwork_preset(),
+        transport_preset(
+            "play-pause",
+            "Play / Pause",
+            "mdi:play-pause",
+            PLAY_PAUSE_ACTION,
+        ),
+        transport_preset("previous", "Previous", "mdi:skip-previous", PREVIOUS_ACTION),
+        transport_preset("next", "Next", "mdi:skip-next", NEXT_ACTION),
+        transport_preset("stop", "Stop", "mdi:stop", STOP_ACTION),
+    ]
+}
+
+fn artwork_preset() -> Preset {
+    let name = "Now playing artwork";
+    Preset {
+        preset_id: "now-playing-artwork".to_string(),
+        category: "Playback".to_string(),
+        name: name.to_string(),
+        description: Some("Shows the current album cover with track details.".to_string()),
+        control: ControlTemplate {
+            name: name.to_string(),
+            default_state: RenderedState {
+                layers: vec![
+                    Layer::Image {
+                        image: AssetId("$(self:art_url)".to_string()),
+                        fit: Fit::Cover,
+                        anchor: Anchor9::Center,
+                        scale_percent: 100,
+                        tint: None,
+                    },
+                    Layer::Text {
+                        text: "$(self:title)\n$(self:artist)".to_string(),
+                        color: RgbaColor::opaque(255, 255, 255).into(),
+                        anchor: Anchor9::BottomCenter,
+                        font_family: None,
+                        font_size: None,
+                    },
+                ],
+                is_pressed: false,
+            },
+            pressed_state: None,
+            action_bindings: Vec::new(),
+        },
+    }
+}
+
+fn readout_preset(preset_id: &str, name: &str, icon: &str, text: &str) -> Preset {
+    Preset {
+        preset_id: preset_id.to_string(),
+        category: "Playback".to_string(),
+        name: name.to_string(),
+        description: None,
+        control: ControlTemplate {
+            name: name.to_string(),
+            default_state: face(icon, text),
+            pressed_state: None,
+            action_bindings: Vec::new(),
+        },
+    }
+}
+
+fn transport_preset(preset_id: &str, name: &str, icon: &str, action_name: &str) -> Preset {
+    let mut preset = readout_preset(preset_id, name, icon, name);
+    preset.control.action_bindings.push(ActionBinding {
+        gesture: ActionTrigger::Press,
+        actions: vec![Action::InvokeIntegration {
+            integration_id: IntegrationId("self".to_string()),
+            action_name: action_name.to_string(),
+            parameters: JsonValue::Null,
+        }],
+    });
+    preset
+}
+
+fn face(icon: &str, text: &str) -> RenderedState {
+    RenderedState {
+        layers: vec![
+            Layer::Fill {
+                color: RgbaColor::opaque(0, 0, 0).into(),
+            },
+            Layer::Image {
+                image: AssetId(icon.to_string()),
+                fit: Fit::Contain,
+                anchor: Anchor9::TopCenter,
+                scale_percent: 40,
+                tint: None,
+            },
+            Layer::Text {
+                text: text.to_string(),
+                color: RgbaColor::opaque(255, 255, 255).into(),
+                anchor: Anchor9::BottomCenter,
+                font_family: None,
+                font_size: None,
+            },
+        ],
+        is_pressed: false,
+    }
 }
 
 /// Everything keyed by a well-known `org.mpris.MediaPlayer2.*` name, plus the mapping needed to get
@@ -744,6 +864,46 @@ mod tests {
 
     fn parse(action_name: &str, parameters: JsonValue) -> Result<PlayerCommand, PluginError> {
         parse_command(action_name, &parameters, |raw| raw.to_string())
+    }
+
+    #[test]
+    fn presets_offer_now_playing_and_transport_controls() {
+        let offered = presets();
+
+        assert_eq!(
+            offered
+                .iter()
+                .map(|preset| preset.preset_id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "now-playing",
+                "now-playing-artwork",
+                "play-pause",
+                "previous",
+                "next",
+                "stop"
+            ]
+        );
+        for (preset, action_name) in offered.iter().skip(2).zip([
+            PLAY_PAUSE_ACTION,
+            PREVIOUS_ACTION,
+            NEXT_ACTION,
+            STOP_ACTION,
+        ]) {
+            let binding = &preset.control.action_bindings[0];
+            assert_eq!(binding.gesture, ActionTrigger::Press);
+            let Action::InvokeIntegration {
+                integration_id,
+                action_name: actual_action_name,
+                parameters,
+            } = &binding.actions[0]
+            else {
+                panic!("a transport preset invokes MPRIS");
+            };
+            assert_eq!(integration_id.0, "self");
+            assert_eq!(actual_action_name, action_name);
+            assert_eq!(parameters, &JsonValue::Null);
+        }
     }
 
     #[test]

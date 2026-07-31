@@ -285,7 +285,7 @@ color = "$(discord.home:status)"
 
 [[layers]]
 kind = "image"
-image = "$(mpris.default:art)"
+image = "$(mpris.default:art_url)"
 "#,
         )
         .expect("valid toml");
@@ -298,7 +298,7 @@ image = "$(mpris.default:art)"
                     width: default_border_width(),
                 },
                 Layer::Image {
-                    image: AssetId("$(mpris.default:art)".to_string()),
+                    image: AssetId("$(mpris.default:art_url)".to_string()),
                     fit: Fit::Cover,
                     anchor: Anchor9::Center,
                     scale_percent: full_scale(),

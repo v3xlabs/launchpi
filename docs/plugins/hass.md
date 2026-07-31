@@ -17,11 +17,11 @@ Only curated sensor and binary-sensor device classes should become presets. All 
 
 ### Controls
 
+- Covers and garage doors with separate Open, Close, and Stop controls.
+- Locks with separate one-second-hold Lock and Unlock controls.
 - Climate controls for current temperature, target temperature, and HVAC mode.
 - Vacuum controls for start, pause, return to dock, and state.
 - Timer controls for remaining time, start, cancel, and finish.
-- Covers and garage doors with open, close, and stop actions.
-- Locks with separate lock and unlock actions.
 - Camera snapshots where an entity exposes an image URL.
 
 ### Catalogue metadata

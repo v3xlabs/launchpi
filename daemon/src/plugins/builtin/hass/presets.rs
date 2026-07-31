@@ -19,6 +19,8 @@ use crate::{
     },
 };
 
+const SAFETY_HOLD_DURATION_MS: u64 = 1_000;
+
 /// What one press of a key for this domain should do, and whether reading the entity's state back
 /// says anything a person wants on the key. A scene reports the moment it was last applied and a
 /// button reports nothing at all, so neither has a state worth printing.
@@ -38,7 +40,6 @@ fn recommended(domain: &str) -> Option<Recommended> {
         "switch" => ("Switches", "toggle", true, "mdi:toggle-switch-variant"),
         "fan" => ("Fans", "toggle", true, "mdi:fan"),
         "input_boolean" => ("Toggles", "toggle", true, "mdi:toggle-switch"),
-        "cover" => ("Covers", "toggle", true, "mdi:window-shutter"),
         "automation" => ("Automations", "toggle", true, "mdi:robot"),
         "media_player" => ("Media players", "media_play_pause", true, "mdi:play-circle"),
         "scene" => ("Scenes", "turn_on", false, "mdi:palette"),
@@ -60,10 +61,18 @@ fn recommended(domain: &str) -> Option<Recommended> {
 pub fn from_catalogue(catalogue: &BTreeMap<String, CatalogueEntry>) -> Vec<Preset> {
     catalogue
         .iter()
-        .filter_map(|(entity_id, entry)| {
-            recommended(&entry.domain).map(|shape| preset(entity_id, entry, &shape))
-        })
+        .flat_map(|(entity_id, entry)| presets_for(entity_id, entry))
         .collect()
+}
+
+fn presets_for(entity_id: &str, entry: &CatalogueEntry) -> Vec<Preset> {
+    match entry.domain.as_str() {
+        "cover" => cover_presets(entity_id, entry),
+        "lock" => lock_presets(entity_id, entry),
+        _ => recommended(&entry.domain)
+            .map(|shape| vec![preset(entity_id, entry, &shape)])
+            .unwrap_or_default(),
+    }
 }
 
 fn preset(entity_id: &str, entry: &CatalogueEntry, shape: &Recommended) -> Preset {
@@ -111,6 +120,82 @@ fn key_label(name: &str, domain: &str) -> String {
         .filter(|label| !label.is_empty())
         .unwrap_or(name)
         .to_string()
+}
+
+fn cover_presets(entity_id: &str, entry: &CatalogueEntry) -> Vec<Preset> {
+    [
+        ("open", "open_cover", "Open", "mdi:arrow-up-bold"),
+        ("close", "close_cover", "Close", "mdi:arrow-down-bold"),
+        ("stop", "stop_cover", "Stop", "mdi:stop"),
+    ]
+    .into_iter()
+    .map(|(preset_action, service, label, icon)| {
+        action_preset(
+            entity_id,
+            entry,
+            "Covers",
+            preset_action,
+            service,
+            label,
+            icon,
+            ActionTrigger::Press,
+        )
+    })
+    .collect()
+}
+
+fn lock_presets(entity_id: &str, entry: &CatalogueEntry) -> Vec<Preset> {
+    [
+        ("lock", "Lock", "mdi:lock"),
+        ("unlock", "Unlock", "mdi:lock-open"),
+    ]
+    .into_iter()
+    .map(|(service, label, icon)| {
+        action_preset(
+            entity_id,
+            entry,
+            "Locks",
+            service,
+            service,
+            label,
+            icon,
+            ActionTrigger::Hold {
+                duration_ms: SAFETY_HOLD_DURATION_MS,
+            },
+        )
+    })
+    .collect()
+}
+
+fn action_preset(
+    entity_id: &str,
+    entry: &CatalogueEntry,
+    category: &str,
+    preset_action: &str,
+    service: &str,
+    label: &str,
+    icon: &str,
+    gesture: ActionTrigger,
+) -> Preset {
+    let name = entry.friendly_name.as_deref().unwrap_or(entity_id);
+    Preset {
+        preset_id: format!("{entity_id}:{preset_action}"),
+        category: category.to_string(),
+        name: format!("{name} {label}"),
+        description: Some(entity_id.to_string()),
+        control: ControlTemplate {
+            name: format!("{name} {label}"),
+            default_state: RenderedState {
+                layers: face(entity_id, label.to_string(), icon.to_string(), false),
+                is_pressed: false,
+            },
+            pressed_state: None,
+            action_bindings: vec![ActionBinding {
+                gesture,
+                actions: vec![service_action(entity_id, &entry.domain, service)],
+            }],
+        },
+    }
 }
 
 /// The entity colour goes on the outline rather than the face because `values.rs` answers black for
@@ -162,22 +247,26 @@ fn face(entity_id: &str, text: String, icon: String, reports_state: bool) -> Vec
 }
 
 fn press(entity_id: &str, domain: &str, service: &str) -> Action {
-    let (action_name, parameters) = match domain {
-        "light" => (LIGHT_TOGGLE, json!({ "entity_id": entity_id })),
-        _ => (
-            CALL_SERVICE,
-            json!({
-                "domain": domain,
-                "service": service,
-                "entity_id": entity_id,
-            }),
-        ),
-    };
+    if domain != "light" {
+        return service_action(entity_id, domain, service);
+    }
 
     Action::InvokeIntegration {
         integration_id: IntegrationId("self".to_string()),
-        action_name: action_name.to_string(),
-        parameters,
+        action_name: LIGHT_TOGGLE.to_string(),
+        parameters: json!({ "entity_id": entity_id }),
+    }
+}
+
+fn service_action(entity_id: &str, domain: &str, service: &str) -> Action {
+    Action::InvokeIntegration {
+        integration_id: IntegrationId("self".to_string()),
+        action_name: CALL_SERVICE.to_string(),
+        parameters: json!({
+            "domain": domain,
+            "service": service,
+            "entity_id": entity_id,
+        }),
     }
 }
 
@@ -309,6 +398,69 @@ mod tests {
         assert_eq!(parameters["domain"], json!("switch"));
         assert_eq!(parameters["service"], json!("toggle"));
         assert_eq!(parameters["entity_id"], json!("switch.desk_lamp"));
+    }
+
+    #[test]
+    fn a_cover_gets_unambiguous_open_close_and_stop_presets() {
+        let offered = from_catalogue(&catalogue(&[("cover.garage", Some("Garage Door"))]));
+
+        assert_eq!(
+            offered
+                .iter()
+                .map(|preset| preset.preset_id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "cover.garage:open",
+                "cover.garage:close",
+                "cover.garage:stop"
+            ]
+        );
+        for (preset, service) in offered
+            .iter()
+            .zip(["open_cover", "close_cover", "stop_cover"])
+        {
+            let binding = &preset.control.action_bindings[0];
+            assert_eq!(binding.gesture, ActionTrigger::Press);
+            let Action::InvokeIntegration {
+                action_name,
+                parameters,
+                ..
+            } = &binding.actions[0]
+            else {
+                panic!("a cover preset calls Home Assistant");
+            };
+            assert_eq!(action_name, CALL_SERVICE);
+            assert_eq!(parameters["domain"], json!("cover"));
+            assert_eq!(parameters["service"], json!(service));
+            assert_eq!(parameters["entity_id"], json!("cover.garage"));
+        }
+    }
+
+    #[test]
+    fn a_lock_requires_a_hold_to_lock_or_unlock() {
+        let offered = from_catalogue(&catalogue(&[("lock.front_door", Some("Front Door"))]));
+
+        assert_eq!(
+            offered
+                .iter()
+                .map(|preset| preset.preset_id.as_str())
+                .collect::<Vec<_>>(),
+            ["lock.front_door:lock", "lock.front_door:unlock"]
+        );
+        for (preset, service) in offered.iter().zip(["lock", "unlock"]) {
+            let binding = &preset.control.action_bindings[0];
+            assert_eq!(
+                binding.gesture,
+                ActionTrigger::Hold {
+                    duration_ms: SAFETY_HOLD_DURATION_MS,
+                }
+            );
+            let Action::InvokeIntegration { parameters, .. } = &binding.actions[0] else {
+                panic!("a lock preset calls Home Assistant");
+            };
+            assert_eq!(parameters["domain"], json!("lock"));
+            assert_eq!(parameters["service"], json!(service));
+        }
     }
 
     /// A scene's state is the timestamp it was last applied and a script's is whether it happens to
