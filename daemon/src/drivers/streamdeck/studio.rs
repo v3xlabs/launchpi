@@ -125,10 +125,6 @@ impl ConnectionStats {
     fn uptime_ms(&self) -> u128 {
         self.connected_at.elapsed().as_millis()
     }
-
-    fn since_inbound_ms(&self) -> u128 {
-        self.last_inbound_at.elapsed().as_millis()
-    }
 }
 
 /// A report the read loop owes the device. The two loops own opposite halves of the socket, so the
@@ -373,6 +369,11 @@ async fn handle_connection(
         } else {
             1
         };
+        info!(
+            ?transport,
+            initialization_attempts,
+            "starting Stream Deck initialization before read loop"
+        );
         for attempt in 0..initialization_attempts {
             if attempt > 0 {
                 sleep(CHILD_INITIALIZATION_RETRY_DELAY).await;
@@ -398,14 +399,12 @@ async fn handle_connection(
                 send_knob_color(&mut stream, transport, dial_index, color.clone()).await?;
                 send_dial_ring(&mut stream, transport, dial_index, color, lit_segments).await?;
             }
-            // Nothing is read while this runs, so a slow initial paint delays the first keepalive
-            // acknowledgement. Worth seeing the number.
-            debug!(
+            info!(
                 attempt,
                 key_count,
                 dial_count,
                 elapsed_ms = started.elapsed().as_millis(),
-                "painted active panel onto Stream Deck"
+                "completed Stream Deck initialization before read loop"
             );
         }
     }
@@ -444,21 +443,18 @@ async fn read_loop<R: AsyncRead + Unpin>(
 ) -> Result<(), String> {
     let reports_written = io.reports_written;
     while io.is_active.load(Ordering::Acquire) {
-        match timeout(
-            READ_TIMEOUT,
-            read_transport_packet(
-                io.state,
-                &io.surface.surface_id,
-                &mut reader,
-                Some(io.transport),
-                stats,
-                replies,
-            ),
+        match read_transport_packet(
+            io.state,
+            &io.surface.surface_id,
+            &mut reader,
+            Some(io.transport),
+            stats,
+            replies,
         )
         .await
         {
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => {
+            Ok(_) => {}
+            Err(error) => {
                 warn!(
                     %error,
                     uptime_ms = stats.uptime_ms(),
@@ -469,17 +465,6 @@ async fn read_loop<R: AsyncRead + Unpin>(
                     "read from the Stream Deck failed"
                 );
                 return Err(error);
-            }
-            Err(_) => {
-                return Err(format!(
-                    "no data for {}s (last packet {}ms ago, {} packets, {} reports written, {} unhandled reports, {} suspicious reads)",
-                    READ_TIMEOUT.as_secs(),
-                    stats.since_inbound_ms(),
-                    stats.inbound_packets,
-                    reports_written.load(Ordering::Relaxed),
-                    stats.unhandled_reports,
-                    stats.suspicious_reads,
-                ));
             }
         }
     }
@@ -505,8 +490,14 @@ async fn write_loop<W: AsyncWrite + Unpin>(
             // Acknowledgements keep the session alive, so they never queue behind renders.
             biased;
             Some(reply) = replies.recv() => {
+                debug!(
+                    what = reply.what,
+                    bytes = reply.bytes.len(),
+                    "writing Stream Deck reply"
+                );
                 write_all_timed(&mut writer, &reply.bytes, reply.what).await?;
                 reports_written.fetch_add(1, Ordering::Relaxed);
+                debug!(what = reply.what, "wrote Stream Deck reply");
             }
             command = commands.recv() => {
                 let Some(command) = command else {
@@ -670,8 +661,10 @@ async fn handle_legacy_packet<R: AsyncRead + Unpin>(
     acknowledgement[0] = 3;
     acknowledgement[1] = 26;
     acknowledgement[2] = packet[5];
-    trace!(
+    debug!(
         connection = packet[5],
+        uptime_ms = stats.uptime_ms(),
+        inbound_packets = stats.inbound_packets,
         "acknowledging Stream Deck keepalive"
     );
     queue_reply(
@@ -1126,10 +1119,7 @@ async fn send_key_image<W: AsyncWrite + Unpin>(
             .copy_from_slice(chunk);
 
         match transport {
-            TransportMode::Legacy => stream
-                .write_all(&report)
-                .await
-                .map_err(|error| error.to_string())?,
+            TransportMode::Legacy => write_all_timed(stream, &report, "key image").await?,
             TransportMode::Cora => {
                 write_cora_message(stream, CORA_VERBATIM, CORA_WRITE, 0, &report).await?
             }
@@ -1146,10 +1136,7 @@ async fn reset_key_stream<W: AsyncWrite + Unpin>(
     let mut report = vec![0_u8; LEGACY_RESPONSE_SIZE];
     report[0] = 0x02;
     match transport {
-        TransportMode::Legacy => stream
-            .write_all(&report)
-            .await
-            .map_err(|error| error.to_string()),
+        TransportMode::Legacy => write_all_timed(stream, &report, "key stream reset").await,
         TransportMode::Cora => {
             write_cora_message(stream, CORA_VERBATIM, CORA_WRITE, 0, &report).await
         }
