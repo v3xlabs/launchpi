@@ -93,6 +93,18 @@ export type VariableChangedEvent = {
   rendered: string;
 };
 
+export type PresentationChangedEvent = {
+  type: "presentation_changed";
+  surface_id: string;
+};
+
+export const asPresentationChangedEvent = (
+  value: Record<string, unknown>,
+): PresentationChangedEvent | null =>
+  (value.type === "presentation_changed" && typeof value.surface_id === "string"
+    ? { type: "presentation_changed", surface_id: value.surface_id }
+    : null);
+
 export const asVariableChangedEvent = (
   value: Record<string, unknown>,
 ): VariableChangedEvent | null =>

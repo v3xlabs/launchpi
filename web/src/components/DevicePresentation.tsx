@@ -1,11 +1,13 @@
 import { Component, createResource, For, Show } from "solid-js";
 
 import { Device, fetchDevicePresentation } from "../api/inventory";
+import { useInventory } from "../context/InventoryContext";
 import { KeyImage } from "./KeyImage";
 
 export const DevicePresentation: Component<{ device: Device; pressedKeys: Set<number>; }> = (properties) => {
+  const store = useInventory();
   const presentationKey = () =>
-    `${properties.device.surface_id}:${properties.device.active_panel_id}:${properties.device.open_subpanels.length}`;
+    `${properties.device.surface_id}:${store.presentationVersionFor(properties.device.surface_id)}`;
   const [presentation] = createResource(presentationKey, () => fetchDevicePresentation(properties.device.surface_id));
 
   return (

@@ -65,7 +65,9 @@ impl SurfaceRegistry {
         });
         drop(devices);
         self.render_active_panel(&surface_id.0);
-        self.emit(crate::events::ServerEvent::Changed);
+        self.emit(crate::events::ServerEvent::PresentationChanged {
+            surface_id: surface_id.clone(),
+        });
         Ok(())
     }
 
@@ -78,7 +80,9 @@ impl SurfaceRegistry {
             .is_some_and(|device| device.open_subpanels.pop().is_some());
         if closed {
             self.render_active_panel(&surface_id.0);
-            self.emit(crate::events::ServerEvent::Changed);
+            self.emit(crate::events::ServerEvent::PresentationChanged {
+                surface_id: surface_id.clone(),
+            });
         }
         closed
     }

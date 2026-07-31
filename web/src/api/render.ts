@@ -14,21 +14,12 @@ export type RenderRequest = {
 
 /**
  * Distinct renderings held at once. A key bound to a once-a-second value produces a new rendering
- * every second, and every one of them is an object URL holding a decoded JPEG; without a bound
- * this map is a memory leak that grows for as long as the tab is open.
+ * every second. The cache holds blobs rather than object URLs, so evicting an old render cannot
+ * invalidate an image another mounted component is still showing.
  */
 const CACHE_LIMIT = 256;
 
-const cache = new Map<string, Promise<string>>();
-
-const forget = (body: string): void => {
-  const held = cache.get(body);
-
-  cache.delete(body);
-  // Revoking releases the blob. Awaiting first matters: an in-flight request would otherwise leak
-  // the URL it is about to produce.
-  void held?.then(url => URL.revokeObjectURL(url)).catch(() => undefined);
-};
+const cache = new Map<string, Promise<Blob>>();
 
 /**
  * Drops anything that might have been drawn with this asset. The browser no longer resolves
@@ -36,17 +27,17 @@ const forget = (body: string): void => {
  * would be wrong, and clearing everything is both correct and rare - once per newly-seen image.
  */
 export const forgetRendersUsing = (): void => {
-  for (const body of cache.keys()) forget(body);
+  cache.clear();
 };
 
-export const renderedKeyImageUrl = (request: RenderRequest): Promise<string> => {
+export const renderedKeyImage = (request: RenderRequest, cacheKey: string): Promise<Blob> => {
   const body = JSON.stringify(request);
-  const cached = cache.get(body);
+  const cached = cache.get(cacheKey);
 
   if (cached !== undefined) {
     // Refresh its place in insertion order so what is on screen is not what gets evicted.
-    cache.delete(body);
-    cache.set(body, cached);
+    cache.delete(cacheKey);
+    cache.set(cacheKey, cached);
 
     return cached;
   }
@@ -60,17 +51,16 @@ export const renderedKeyImageUrl = (request: RenderRequest): Promise<string> => 
       if (!response.ok) throw new Error("Unable to render key image.");
 
       return response.blob();
-    })
-    .then(blob => URL.createObjectURL(blob));
+    });
 
-  cache.set(body, pending);
+  cache.set(cacheKey, pending);
 
   while (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next();
 
     if (oldest.done === true) break;
 
-    forget(oldest.value);
+    cache.delete(oldest.value);
   }
 
   return pending;

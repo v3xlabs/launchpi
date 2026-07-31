@@ -1,7 +1,7 @@
-import { Component, createResource, Show } from "solid-js";
+import { Component, createEffect, createResource, createSignal, onCleanup, Show } from "solid-js";
 
 import { Control } from "../api/inventory";
-import { renderedKeyImageUrl } from "../api/render";
+import { renderedKeyImage } from "../api/render";
 import { useInventory } from "../context/InventoryContext";
 import { referencesInLayer } from "../utils/variables";
 
@@ -31,12 +31,30 @@ export const KeyImage: Component<{ control: Control; isPressed: boolean; }> = (p
     return names.map(name => [store.variables[name], store.assetArrivals[store.variables[name] ?? ""]]);
   };
   const renderKey = () => JSON.stringify([request(), dependencies()]);
-  const [url] = createResource(renderKey, () => renderedKeyImageUrl(request()));
+  const [image] = createResource(renderKey, cacheKey => renderedKeyImage(request(), cacheKey));
+  const [url, setUrl] = createSignal<string>();
+  let activeUrl: string | undefined;
+
+  createEffect(() => {
+    const blob = image.latest;
+
+    if (blob === undefined) return;
+
+    const nextUrl = URL.createObjectURL(blob);
+    const previousUrl = activeUrl;
+
+    activeUrl = nextUrl;
+    setUrl(nextUrl);
+    if (previousUrl !== undefined) URL.revokeObjectURL(previousUrl);
+  });
+
+  onCleanup(() => {
+    if (activeUrl !== undefined) URL.revokeObjectURL(activeUrl);
+  });
 
   return (
-    // `latest` keeps the previous frame on screen while the next one renders. Reading `url()`
-    // instead would blank the key on every change, which is the flicker.
-    <Show when={url.latest}>
+    // The previous URL stays mounted until the new blob is ready, so a live value never blanks it.
+    <Show when={url()}>
       {source => (
         <img src={source()} alt="" class="pointer-events-none absolute inset-0 h-full w-full object-cover" />
       )}

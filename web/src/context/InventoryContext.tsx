@@ -18,6 +18,7 @@ import {
   asDialStateEvent,
   asEventFrame,
   asKeyStateEvent,
+  asPresentationChangedEvent,
   asVariableChangedEvent,
 } from "../api/events";
 import * as api from "../api/inventory";
@@ -83,6 +84,7 @@ export type InventoryStore = {
   pressedDialsForPanel: (panelId: string) => Set<number>;
   /** A device's activity log, oldest first. */
   logsFor: (surfaceId: string) => LogEntry[];
+  presentationVersionFor: (surfaceId: string) => number;
 } & PluginStore;
 
 const InventoryContext = createContext<InventoryStore>();
@@ -101,6 +103,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
   const [dialLevels, setDialLevels] = createStore<DialLevels>({});
   const [pressedDialsBySurface, setPressedDialsBySurface] = createStore<Record<string, number[]>>({});
   const [logsBySurface, setLogsBySurface] = createStore<Record<string, LogEntry[]>>({});
+  const [presentationVersions, setPresentationVersions] = createStore<Record<string, number>>({});
   const [isSaving, setIsSaving] = createSignal(false);
   const [isConnected, setIsConnected] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -150,6 +153,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
     return pressed;
   };
   const logsFor = (surfaceId: string): LogEntry[] => logsBySurface[surfaceId] ?? [];
+  const presentationVersionFor = (surfaceId: string): number => presentationVersions[surfaceId] ?? 0;
   const appendLog = (entry: LogEntry) => {
     setLogsBySurface(
       produce((state) => {
@@ -259,6 +263,17 @@ export const InventoryProvider: ParentComponent = (properties) => {
 
       if (variable !== null) {
         pluginStore.setVariable(variable.integration_id, variable.name, variable.rendered);
+
+        return;
+      }
+
+      const presentation = asPresentationChangedEvent(parsed);
+
+      if (presentation !== null) {
+        setPresentationVersions(
+          presentation.surface_id,
+          version => (version ?? 0) + 1,
+        );
 
         return;
       }
@@ -446,6 +461,7 @@ export const InventoryProvider: ParentComponent = (properties) => {
     pressedDialsFor,
     pressedDialsForPanel,
     logsFor,
+    presentationVersionFor,
     ...pluginStore,
   };
 

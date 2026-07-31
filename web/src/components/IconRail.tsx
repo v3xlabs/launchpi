@@ -40,7 +40,7 @@ export const IconRail: Component = () => (
       aria-label="Launchpi"
       title="Launchpi"
     >
-      <img src="icon.svg" class="size-8" />
+      <img src="/icon.svg" class="size-8" />
     </Link>
     <Link
       to="/devices"

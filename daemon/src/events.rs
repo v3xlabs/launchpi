@@ -49,6 +49,10 @@ pub enum ServerEvent {
     PresetsChanged {
         integration_id: IntegrationId,
     },
+    /// One surface's visible controls changed without changing saved workspace data.
+    PresentationChanged {
+        surface_id: SurfaceId,
+    },
     /// The set of things changed: something was added, removed, renamed or reassigned. Not for
     /// status, which has its own event.
     Changed,
@@ -68,6 +72,17 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&event).unwrap(),
             r#"{"type":"key_state","surface_id":"stream-deck-studio-1","key_index":3,"is_pressed":true}"#
+        );
+    }
+
+    #[test]
+    fn presentation_change_names_only_the_surface_to_refresh() {
+        let event = ServerEvent::PresentationChanged {
+            surface_id: SurfaceId("stream-deck-studio-1".to_string()),
+        };
+        assert_eq!(
+            serde_json::to_string(&event).unwrap(),
+            r#"{"type":"presentation_changed","surface_id":"stream-deck-studio-1"}"#
         );
     }
 }
