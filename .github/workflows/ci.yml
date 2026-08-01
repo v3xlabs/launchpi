@@ -7,10 +7,29 @@ on:
     branches: [master]
 
 jobs:
-  build:
+  rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v20
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
-      - run: nix build .#launchpi
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev libfontconfig1-dev libpango1.0-dev libcairo2-dev libglib2.0-dev libjack-jackd2-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: daemon
+      - run: cargo build --manifest-path daemon/Cargo.toml --locked --release
+
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm --dir web build
