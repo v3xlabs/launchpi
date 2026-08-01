@@ -169,7 +169,7 @@ async fn scrape_metrics(
             .map_err(|e| format!("JSON parse failed: {}", e))
     } else {
         // Raw exposition format — strip labels from metric names
-        let mut metrics: Vec<(String, String)> = Vec::new();
+        let mut metrics: Vec<serde_json::Value> = Vec::new();
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -182,9 +182,9 @@ async fn scrape_metrics(
                 // Strip labels: "metric_name{labels}" -> "metric_name"
                 let name = raw_name.split('{').next().unwrap_or(raw_name).to_string();
                 if let Ok(num) = value.parse::<f64>() {
-                    metrics.push((name, num.to_string()));
+                    metrics.push(serde_json::json!({ "name": name, "value": num }));
                 } else {
-                    metrics.push((name, value.to_string()));
+                    metrics.push(serde_json::json!({ "name": name, "value": value }));
                 }
             }
         }
