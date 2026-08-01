@@ -1,27 +1,22 @@
+mod config;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use tokio::sync::Mutex;
 use tracing::warn;
 
-use crate::{
-    bindings::action::{Action, ActionBinding, ActionTrigger},
-    identifiers::IntegrationId,
-    panels::{
-        control::ControlTemplate,
-        rendered_state::{Anchor9, Edge, Fit, Layer, RenderedState, RgbaColor, ValueBinding},
-    },
-    plugins::{
-        instance::InstanceConfig,
-        manifest::{
-            ActionDefinition, ConfigField, PluginManifest, VariableDefinition, VariableKind,
-        },
-        plugin::{Plugin, PluginContext, PluginError, PluginFactory},
-        preset::Preset,
-    },
-    variables::VariableValue,
+use crate::panels::control::ControlTemplate;
+use crate::panels::rendered_state::{Anchor9, Edge, Layer, RenderedState, RgbaColor, ValueBinding};
+use crate::plugins::{
+    instance::InstanceConfig,
+    manifest::{ActionDefinition, ConfigField, PluginManifest, VariableDefinition, VariableKind},
+    plugin::{Plugin, PluginContext, PluginError, PluginFactory},
+    preset::Preset,
 };
+use crate::variables::VariableValue;
+use config::PrometheusConfig;
 
 pub const FACTORY: PluginFactory = PluginFactory {
     plugin_type: "prometheus",
@@ -82,7 +77,7 @@ pub async fn start(
 
     // Build HTTP client headers
     let mut headers = cfg.headers.clone();
-    if let Some(token) = cfg.bearer_token {
+    if let Some(ref token) = cfg.bearer_token {
         headers.insert("Authorization".to_string(), format!("Bearer {}", token));
     }
 
@@ -101,7 +96,6 @@ pub async fn start(
         plugin.base_url.clone(),
         plugin.interval,
         plugin.headers.clone(),
-        plugin.scrape_state.clone(),
     ));
 
     Ok(plugin)
@@ -134,7 +128,6 @@ async fn scrape_loop(
     base_url: String,
     interval: std::time::Duration,
     headers: std::collections::BTreeMap<String, String>,
-    state: std::sync::Arc<tokio::sync::Mutex<ScrapeState>>,
 ) {
     let client = reqwest::Client::new();
 
@@ -147,14 +140,9 @@ async fn scrape_loop(
         match scrape_metrics(&client, &context, &base_url, &headers).await {
             Ok(metrics) => {
                 publish_metrics(&context, &metrics);
-                let mut s = state.lock().await;
-                s.last_success = Some(std::time::Instant::now());
-                s.last_error = None;
             }
             Err(e) => {
                 warn!(error = %e, "Failed to scrape Prometheus metrics");
-                let mut s = state.lock().await;
-                s.last_error = Some(e.to_string());
             }
         }
     }
@@ -175,21 +163,29 @@ async fn scrape_metrics(
         builder = builder.header(key, value);
     }
 
-    let response = builder.send().await.map_err(|e| format!("HTTP request failed: {}", e))?;
+    let response = builder
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!("HTTP error: {}", response.status()));
     }
 
-    let body: serde_json::Value = response.json().await.map_err(|e| format!("JSON parse failed: {}", e))?;
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("JSON parse failed: {}", e))?;
 
     Ok(body)
 }
 
 fn publish_metrics(context: &PluginContext, body: &serde_json::Value) {
-    // Extract metrics from Prometheus response
-    // Response format: { status: "success", data: { resultType: "vector", result: [...] } }
-    let result = match body.get("data")?.get("result")?.as_array() {
+    let result = match body
+        .get("data")
+        .and_then(|d| d.get("result"))
+        .and_then(|r| r.as_array())
+    {
         Some(arr) => arr,
         None => return,
     };
@@ -197,23 +193,32 @@ fn publish_metrics(context: &PluginContext, body: &serde_json::Value) {
     let mut metrics_text = String::new();
 
     for metric in result {
-        let metric_name = metric.get("metric")?.get("__name__")?.as_str()?;
-        let value = metric.get("value")?.get(1)?.as_str()?;
+        let metric_name = match metric
+            .get("metric")
+            .and_then(|m| m.get("__name__"))
+            .and_then(|n| n.as_str())
+        {
+            Some(name) => name,
+            None => continue,
+        };
+
+        let value = match metric
+            .get("value")
+            .and_then(|v| v.get(1))
+            .and_then(|v| v.as_str())
+        {
+            Some(v) => v,
+            None => continue,
+        };
 
         // Try to parse as number
         if let Ok(num) = value.parse::<f64>() {
-            context.set_value(
-                metric_name,
-                VariableValue::Number(num),
-            );
+            context.set_value(metric_name, VariableValue::Number(num));
         } else {
-            context.set_value(
-                metric_name,
-                VariableValue::Text(value.to_string()),
-            );
+            context.set_value(metric_name, VariableValue::Text(value.to_string()));
         }
 
-        if metrics_text.len() < MAX_BODY_VARIABLE_LENGTH {
+        if metrics_text.len() < config::MAX_BODY_VARIABLE_LENGTH {
             if !metrics_text.is_empty() {
                 metrics_text.push(',');
             }
@@ -222,9 +227,10 @@ fn publish_metrics(context: &PluginContext, body: &serde_json::Value) {
     }
 
     context.set_value("metrics", VariableValue::Text(metrics_text));
-    context.set_value("last_scrape", VariableValue::Text(
-        chrono::Local::now().format("%H:%M:%S").to_string()
-    ));
+    context.set_value(
+        "last_scrape",
+        VariableValue::Text(chrono::Local::now().format("%H:%M:%S").to_string()),
+    );
 }
 
 #[async_trait]
@@ -239,16 +245,14 @@ impl Plugin for PrometheusPlugin {
                 let variable_name = parameters
                     .get("variable_name")
                     .and_then(JsonValue::as_str)
-                    .ok_or_else(|| PluginError::Configuration("variable_name is required".to_string()))?;
+                    .ok_or_else(|| {
+                        PluginError::Configuration("variable_name is required".to_string())
+                    })?;
 
                 self.run_query(promql, variable_name).await
             }
             _ => Err(PluginError::UnknownAction(action_name.to_string())),
         }
-    }
-
-    async fn shutdown(&self) {
-        self.context.cancel.cancel();
     }
 }
 
@@ -263,34 +267,60 @@ impl PrometheusPlugin {
             builder = builder.header(key, value);
         }
 
-        let response = builder.send().await.map_err(|e| {
-            PluginError::Upstream(format!("HTTP request failed: {}", e))
-        })?;
+        let response = builder
+            .send()
+            .await
+            .map_err(|e| PluginError::Upstream(format!("HTTP request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(PluginError::Upstream(format!("HTTP error: {}", response.status())));
+            return Err(PluginError::Upstream(format!(
+                "HTTP error: {}",
+                response.status()
+            )));
         }
 
-        let body: serde_json::Value = response.json().await.map_err(|e| {
-            PluginError::Upstream(format!("JSON parse failed: {}", e))
-        })?;
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| PluginError::Upstream(format!("JSON parse failed: {}", e)))?;
 
         // Extract first result value
-        if let (Some(result), Some(first)) = (
-            body.get("data")?.get("result")?.as_array(),
-            body.get("data")?.get("result")?.as_array().and_then(|arr| arr.first()),
-        ) {
-            if let Some(value_str) = first.get("value")?.get(1)?.as_str() {
-                if let Ok(num) = value_str.parse::<f64>() {
-                    self.context.set_value(variable_name, VariableValue::Number(num));
-                } else {
-                    self.context.set_value(variable_name, VariableValue::Text(value_str.to_string()));
-                }
-                return Ok(());
+        let result = body
+            .get("data")
+            .and_then(|d| d.get("result"))
+            .and_then(|r| r.as_array());
+
+        let first = match result {
+            Some(arr) => arr.first(),
+            None => {
+                return Err(PluginError::Upstream(
+                    "No results returned from query".to_string(),
+                ))
             }
+        };
+
+        let value_str = match first
+            .and_then(|v| v.get("value"))
+            .and_then(|v| v.get(1))
+            .and_then(|v| v.as_str())
+        {
+            Some(s) => s,
+            None => {
+                return Err(PluginError::Upstream(
+                    "No value in query result".to_string(),
+                ))
+            }
+        };
+
+        if let Ok(num) = value_str.parse::<f64>() {
+            self.context
+                .set_value(variable_name, VariableValue::Number(num));
+        } else {
+            self.context
+                .set_value(variable_name, VariableValue::Text(value_str.to_string()));
         }
 
-        Err(PluginError::Upstream("No results returned from query".to_string()))
+        Ok(())
     }
 }
 
@@ -301,7 +331,7 @@ fn presets() -> Vec<Preset> {
             preset_id: "cpu_usage".to_string(),
             category: "Prometheus".to_string(),
             name: "CPU Usage".to_string(),
-            description: Some("CPU utilization percentage."),
+            description: Some("CPU utilization percentage.".to_string()),
             control: ControlTemplate {
                 name: "CPU Usage".to_string(),
                 default_state: percentage_state("$(self:100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))))".to_string()),
@@ -313,7 +343,7 @@ fn presets() -> Vec<Preset> {
             preset_id: "memory_usage".to_string(),
             category: "Prometheus".to_string(),
             name: "Memory Usage".to_string(),
-            description: Some("Memory utilization percentage."),
+            description: Some("Memory utilization percentage.".to_string()),
             control: ControlTemplate {
                 name: "Memory Usage".to_string(),
                 default_state: percentage_state("$(self:100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))".to_string()),
@@ -325,7 +355,7 @@ fn presets() -> Vec<Preset> {
             preset_id: "disk_usage".to_string(),
             category: "Prometheus".to_string(),
             name: "Disk Usage".to_string(),
-            description: Some("Disk utilization percentage."),
+            description: Some("Disk utilization percentage.".to_string()),
             control: ControlTemplate {
                 name: "Disk Usage".to_string(),
                 default_state: percentage_state("$(self:100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}))".to_string()),
@@ -350,7 +380,7 @@ fn percentage_state(promql: String) -> RenderedState {
                 font_size: None,
             },
             Layer::Bar {
-                value: ValueBinding::Literal(json!(0)),
+                value: ValueBinding::Literal(0),
                 maximum: 100.into(),
                 color: RgbaColor::opaque(255, 255, 255).into(),
                 edge: Edge::Bottom,
