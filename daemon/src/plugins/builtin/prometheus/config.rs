@@ -19,6 +19,10 @@ pub struct PrometheusConfig {
     pub bearer_token: Option<String>,
     #[serde(default)]
     pub headers: std::collections::BTreeMap<String, String>,
+    /// Scrape path — `/api/v1/query?query=%7B__name__%3D~'.%2B'%7D` for standard Prometheus,
+    /// or `/metrics` for raw exposition format.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 impl PrometheusConfig {
@@ -34,7 +38,6 @@ impl PrometheusConfig {
         if self.target.is_empty() {
             return Err("target is required".to_string());
         }
-        // Ensure target is absolute (http/https)
         if !self.target.starts_with("http://") && !self.target.starts_with("https://") {
             return Err(format!(
                 "target must be an absolute URL (http:// or https://), got: {}",
@@ -42,5 +45,11 @@ impl PrometheusConfig {
             ));
         }
         Ok(self.target.clone())
+    }
+
+    pub fn scrape_path(&self) -> String {
+        self.path
+            .clone()
+            .unwrap_or_else(|| "/api/v1/query?query=%7B__name__%3D~'.%2B'%7D".to_string())
     }
 }

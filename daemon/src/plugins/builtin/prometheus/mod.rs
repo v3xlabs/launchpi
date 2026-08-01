@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
-use tokio::sync::Mutex;
 use tracing::warn;
 
 use crate::panels::control::ControlTemplate;
@@ -42,6 +41,10 @@ fn manifest() -> PluginManifest {
             ConfigField::secret("bearer_token")
                 .label("Bearer token")
                 .help("Optional Bearer token for authentication."),
+            ConfigField::text("path")
+                .label("Scrape path")
+                .placeholder("/api/v1/query?query=%7B__name__%3D~'.%2B'%7D")
+                .help("Path for scraping — use `/metrics` for raw exposition format, or the API query path for standard Prometheus."),
         ],
         actions: vec![
             ActionDefinition::new("query")
@@ -51,7 +54,7 @@ fn manifest() -> PluginManifest {
                     ConfigField::text("query")
                         .label("PromQL query")
                         .required()
-                        .placeholder("up or 100 * (1 - node_cpu_seconds_total{mode=\"idle\"} / rate(node_cpu_seconds_total[5m]))"),
+                        .placeholder("up or 100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))"),
                     ConfigField::text("variable_name")
                         .label("Variable name")
                         .required()
@@ -60,7 +63,9 @@ fn manifest() -> PluginManifest {
         ],
         variables: vec![
             VariableDefinition::new("metrics", VariableKind::Text)
-                .description("Last scraped metrics as a JSON text blob (truncated)."),
+                .description("Last scraped metrics as a text blob (truncated)."),
+            VariableDefinition::new("last_scrape", VariableKind::Text)
+                .description("Timestamp of last successful scrape."),
         ],
     }
 }
@@ -73,7 +78,7 @@ pub async fn start(
         .deserialize()
         .map_err(|e| PluginError::Configuration(e.to_string()))?;
 
-    let base_url = cfg.base_url().map_err(|e| PluginError::Configuration(e))?;
+    let scrape_path = cfg.scrape_path();
 
     // Build HTTP client headers
     let mut headers = cfg.headers.clone();
@@ -85,15 +90,16 @@ pub async fn start(
 
     let plugin = Arc::new(PrometheusPlugin {
         context: context.clone(),
-        base_url,
+        base_url: cfg.base_url().map_err(|e| PluginError::Configuration(e))?,
+        scrape_path,
         interval: cfg.scrape_interval(),
         headers,
-        scrape_state: Mutex::new(ScrapeState::default()),
     });
 
     tokio::spawn(scrape_loop(
         plugin.context.clone(),
         plugin.base_url.clone(),
+        plugin.scrape_path.clone(),
         plugin.interval,
         plugin.headers.clone(),
     ));
@@ -104,28 +110,15 @@ pub async fn start(
 struct PrometheusPlugin {
     context: PluginContext,
     base_url: String,
+    scrape_path: String,
     interval: std::time::Duration,
     headers: std::collections::BTreeMap<String, String>,
-    scrape_state: Mutex<ScrapeState>,
-}
-
-struct ScrapeState {
-    last_success: Option<std::time::Instant>,
-    last_error: Option<String>,
-}
-
-impl Default for ScrapeState {
-    fn default() -> Self {
-        Self {
-            last_success: None,
-            last_error: None,
-        }
-    }
 }
 
 async fn scrape_loop(
     context: PluginContext,
     base_url: String,
+    scrape_path: String,
     interval: std::time::Duration,
     headers: std::collections::BTreeMap<String, String>,
 ) {
@@ -137,12 +130,12 @@ async fn scrape_loop(
             _ = tokio::time::sleep(interval) => {}
         }
 
-        match scrape_metrics(&client, &context, &base_url, &headers).await {
-            Ok(metrics) => {
-                publish_metrics(&context, &metrics);
+        match scrape_metrics(&client, &context, &base_url, &scrape_path, &headers).await {
+            Ok(body) => {
+                publish_metrics(&context, &body);
             }
             Err(e) => {
-                warn!(error = %e, "Failed to scrape Prometheus metrics");
+                warn!(error = %e, "Failed to scrape metrics");
             }
         }
     }
@@ -152,11 +145,11 @@ async fn scrape_metrics(
     client: &reqwest::Client,
     _context: &PluginContext,
     base_url: &str,
+    scrape_path: &str,
     headers: &std::collections::BTreeMap<String, String>,
 ) -> Result<serde_json::Value, String> {
-    // Query for all metrics
-    let url = format!("{}/api/v1/query", base_url);
-    let mut builder = client.get(&url).query(&[("query", "{__name__=~'.+'}")]);
+    let url = format!("{}{}", base_url, scrape_path);
+    let mut builder = client.get(&url);
 
     // Add custom headers
     for (key, value) in headers {
@@ -172,24 +165,60 @@ async fn scrape_metrics(
         return Err(format!("HTTP error: {}", response.status()));
     }
 
-    let body: serde_json::Value = response
-        .json()
+    let text = response
+        .text()
         .await
-        .map_err(|e| format!("JSON parse failed: {}", e))?;
+        .map_err(|e| format!("Body read failed: {}", e))?;
 
-    Ok(body)
+    // Detect format: JSON API returns {"status":"success","data":{...}}
+    let trimmed = text.trim();
+    if trimmed.starts_with('{') {
+        serde_json::from_str(&text)
+            .map_err(|e| format!("JSON parse failed: {}", e))
+    } else {
+        // Raw exposition format — wrap in JSON for publish_metrics
+        let mut metrics: Vec<(String, String)> = Vec::new();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            if parts.len() == 2 {
+                let (name, value) = (parts[0], parts[1]);
+                if let Ok(num) = value.parse::<f64>() {
+                    metrics.push((name.to_string(), num.to_string()));
+                } else {
+                    metrics.push((name.to_string(), value.to_string()));
+                }
+            }
+        }
+        Ok(serde_json::json!({ "metrics": metrics }))
+    }
 }
 
 fn publish_metrics(context: &PluginContext, body: &serde_json::Value) {
-    let result = match body
+    // Try JSON API format first: data.result
+    if let Some(result) = body
         .get("data")
         .and_then(|d| d.get("result"))
         .and_then(|r| r.as_array())
     {
-        Some(arr) => arr,
-        None => return,
-    };
+        publish_json_metrics(context, result);
+        return;
+    }
 
+    // Try raw metrics format: { "metrics": [{ "name": "...", "value": "..." }, ...] }
+    if let Some(metrics) = body
+        .get("metrics")
+        .and_then(|m| m.as_array())
+    {
+        publish_raw_metrics(context, metrics);
+        return;
+    }
+}
+
+fn publish_json_metrics(context: &PluginContext, result: &[serde_json::Value]) {
     let mut metrics_text = String::new();
 
     for metric in result {
@@ -223,6 +252,41 @@ fn publish_metrics(context: &PluginContext, body: &serde_json::Value) {
                 metrics_text.push(',');
             }
             metrics_text.push_str(&format!("{}:{}", metric_name, value));
+        }
+    }
+
+    context.set_value("metrics", VariableValue::Text(metrics_text));
+    context.set_value(
+        "last_scrape",
+        VariableValue::Text(chrono::Local::now().format("%H:%M:%S").to_string()),
+    );
+}
+
+fn publish_raw_metrics(context: &PluginContext, metrics: &[serde_json::Value]) {
+    let mut metrics_text = String::new();
+
+    for m in metrics {
+        let name = match m.get("name").and_then(|n| n.as_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        let value = match m.get("value").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        // Try to parse as number
+        if let Ok(num) = value.parse::<f64>() {
+            context.set_value(name, VariableValue::Number(num));
+        } else {
+            context.set_value(name, VariableValue::Text(value.to_string()));
+        }
+
+        if metrics_text.len() < config::MAX_BODY_VARIABLE_LENGTH {
+            if !metrics_text.is_empty() {
+                metrics_text.push(',');
+            }
+            metrics_text.push_str(&format!("{}:{}", name, value));
         }
     }
 
