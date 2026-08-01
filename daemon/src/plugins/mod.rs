@@ -18,5 +18,21 @@ pub fn registry() -> &'static [PluginFactory] {
         builtin::hass::FACTORY,
         builtin::discord::FACTORY,
         builtin::system::FACTORY,
+        builtin::prometheus::FACTORY,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_contains_prometheus() {
+        let types: Vec<&str> = registry().iter().map(|f| f.plugin_type).collect();
+        assert!(
+            types.contains(&"prometheus"),
+            "registry must contain prometheus; found: {:?}",
+            types
+        );
+    }
 }
