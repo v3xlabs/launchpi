@@ -6,13 +6,10 @@ use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use tracing::warn;
 
-use crate::panels::control::ControlTemplate;
-use crate::panels::rendered_state::{Anchor9, Edge, Layer, RenderedState, RgbaColor, ValueBinding};
 use crate::plugins::{
     instance::InstanceConfig,
     manifest::{ActionDefinition, ConfigField, PluginManifest, VariableDefinition, VariableKind},
     plugin::{Plugin, PluginContext, PluginError, PluginFactory},
-    preset::Preset,
 };
 use crate::variables::VariableValue;
 use config::PrometheusConfig;
@@ -54,7 +51,7 @@ fn manifest() -> PluginManifest {
                     ConfigField::text("query")
                         .label("PromQL query")
                         .required()
-                        .placeholder("up or 100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))"),
+                        .placeholder("up"),
                     ConfigField::text("variable_name")
                         .label("Variable name")
                         .required()
@@ -62,8 +59,6 @@ fn manifest() -> PluginManifest {
                 ]),
         ],
         variables: vec![
-            VariableDefinition::new("metrics", VariableKind::Text)
-                .description("Last scraped metrics as a text blob (truncated)."),
             VariableDefinition::new("last_scrape", VariableKind::Text)
                 .description("Timestamp of last successful scrape."),
         ],
@@ -85,8 +80,6 @@ pub async fn start(
     if let Some(ref token) = cfg.bearer_token {
         headers.insert("Authorization".to_string(), format!("Bearer {}", token));
     }
-
-    context.set_presets(presets());
 
     let plugin = Arc::new(PrometheusPlugin {
         context: context.clone(),
@@ -130,7 +123,7 @@ async fn scrape_loop(
             _ = tokio::time::sleep(interval) => {}
         }
 
-        match scrape_metrics(&client, &context, &base_url, &scrape_path, &headers).await {
+        match scrape_metrics(&client, &base_url, &scrape_path, &headers).await {
             Ok(body) => {
                 publish_metrics(&context, &body);
             }
@@ -143,7 +136,6 @@ async fn scrape_loop(
 
 async fn scrape_metrics(
     client: &reqwest::Client,
-    _context: &PluginContext,
     base_url: &str,
     scrape_path: &str,
     headers: &std::collections::BTreeMap<String, String>,
@@ -219,8 +211,6 @@ fn publish_metrics(context: &PluginContext, body: &serde_json::Value) {
 }
 
 fn publish_json_metrics(context: &PluginContext, result: &[serde_json::Value]) {
-    let mut metrics_text = String::new();
-
     for metric in result {
         let metric_name = match metric
             .get("metric")
@@ -246,16 +236,8 @@ fn publish_json_metrics(context: &PluginContext, result: &[serde_json::Value]) {
         } else {
             context.set_value(metric_name, VariableValue::Text(value.to_string()));
         }
-
-        if metrics_text.len() < config::MAX_BODY_VARIABLE_LENGTH {
-            if !metrics_text.is_empty() {
-                metrics_text.push(',');
-            }
-            metrics_text.push_str(&format!("{}:{}", metric_name, value));
-        }
     }
 
-    context.set_value("metrics", VariableValue::Text(metrics_text));
     context.set_value(
         "last_scrape",
         VariableValue::Text(chrono::Local::now().format("%H:%M:%S").to_string()),
@@ -263,8 +245,6 @@ fn publish_json_metrics(context: &PluginContext, result: &[serde_json::Value]) {
 }
 
 fn publish_raw_metrics(context: &PluginContext, metrics: &[serde_json::Value]) {
-    let mut metrics_text = String::new();
-
     for m in metrics {
         let name = match m.get("name").and_then(|n| n.as_str()) {
             Some(n) => n,
@@ -281,16 +261,8 @@ fn publish_raw_metrics(context: &PluginContext, metrics: &[serde_json::Value]) {
         } else {
             context.set_value(name, VariableValue::Text(value.to_string()));
         }
-
-        if metrics_text.len() < config::MAX_BODY_VARIABLE_LENGTH {
-            if !metrics_text.is_empty() {
-                metrics_text.push(',');
-            }
-            metrics_text.push_str(&format!("{}:{}", name, value));
-        }
     }
 
-    context.set_value("metrics", VariableValue::Text(metrics_text));
     context.set_value(
         "last_scrape",
         VariableValue::Text(chrono::Local::now().format("%H:%M:%S").to_string()),
@@ -385,72 +357,5 @@ impl PrometheusPlugin {
         }
 
         Ok(())
-    }
-}
-
-// Preset generation - common Prometheus metrics
-fn presets() -> Vec<Preset> {
-    vec![
-        Preset {
-            preset_id: "cpu_usage".to_string(),
-            category: "Prometheus".to_string(),
-            name: "CPU Usage".to_string(),
-            description: Some("CPU utilization percentage.".to_string()),
-            control: ControlTemplate {
-                name: "CPU Usage".to_string(),
-                default_state: percentage_state("$(self:100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))))".to_string()),
-                pressed_state: None,
-                action_bindings: Vec::new(),
-            },
-        },
-        Preset {
-            preset_id: "memory_usage".to_string(),
-            category: "Prometheus".to_string(),
-            name: "Memory Usage".to_string(),
-            description: Some("Memory utilization percentage.".to_string()),
-            control: ControlTemplate {
-                name: "Memory Usage".to_string(),
-                default_state: percentage_state("$(self:100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))".to_string()),
-                pressed_state: None,
-                action_bindings: Vec::new(),
-            },
-        },
-        Preset {
-            preset_id: "disk_usage".to_string(),
-            category: "Prometheus".to_string(),
-            name: "Disk Usage".to_string(),
-            description: Some("Disk utilization percentage.".to_string()),
-            control: ControlTemplate {
-                name: "Disk Usage".to_string(),
-                default_state: percentage_state("$(self:100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}))".to_string()),
-                pressed_state: None,
-                action_bindings: Vec::new(),
-            },
-        },
-    ]
-}
-
-fn percentage_state(promql: String) -> RenderedState {
-    RenderedState {
-        layers: vec![
-            Layer::Fill {
-                color: RgbaColor::opaque(0, 0, 0).into(),
-            },
-            Layer::Text {
-                text: promql.clone(),
-                color: RgbaColor::opaque(255, 255, 255).into(),
-                anchor: Anchor9::Center,
-                font_family: None,
-                font_size: None,
-            },
-            Layer::Bar {
-                value: ValueBinding::Literal(0),
-                maximum: 100.into(),
-                color: RgbaColor::opaque(255, 255, 255).into(),
-                edge: Edge::Bottom,
-                thickness: 5,
-            },
-        ],
-        is_pressed: false,
     }
 }
