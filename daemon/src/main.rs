@@ -55,8 +55,10 @@ async fn main() {
         drivers::streamdeck::studio::start_connection_monitor(state.clone(), surface);
     }
 
-    if let Err(error) = drivers::streamdeck::studio::start_discovery(state.clone()) {
-        error!(%error, "unable to start Stream Deck Studio discovery");
+    if config::device_discovery_enabled() {
+        if let Err(error) = drivers::streamdeck::studio::start_discovery(state.clone()) {
+            error!(%error, "unable to start Stream Deck Studio discovery");
+        }
     }
 
     if let Err(error) = api::serve(state).await {

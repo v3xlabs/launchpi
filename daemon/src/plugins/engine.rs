@@ -148,6 +148,7 @@ pub struct PluginEngine {
     presets: Arc<PresetStore>,
     directory: PluginDirectory,
     values_path: PathBuf,
+    user_values: RwLock<Vec<UserValue>>,
     http: reqwest::Client,
     assets: Arc<AssetStore>,
     instances: RwLock<HashMap<IntegrationId, RunningInstance>>,
@@ -175,6 +176,7 @@ impl PluginEngine {
             presets: Arc::default(),
             directory,
             values_path,
+            user_values: RwLock::default(),
             http: reqwest::Client::new(),
             assets,
             instances: RwLock::default(),
@@ -227,17 +229,22 @@ impl PluginEngine {
     fn load_user_values(&self) {
         match values::load(&self.values_path) {
             Ok(values) => {
-                for value in values {
+                for value in &values {
                     self.variables
                         .set(VariableRef::user(&value.name), value.as_variable());
                 }
+                *self.user_values.write().unwrap() = values;
             }
             Err(error) => warn!(%error, "unable to read user values"),
         }
     }
 
     pub fn user_values(&self) -> Vec<UserValue> {
-        values::load(&self.values_path).unwrap_or_default()
+        self.user_values.read().unwrap().clone()
+    }
+
+    pub fn export_user_values(&self) -> Result<String, String> {
+        values::render(self.user_values()).map_err(|error| error.to_string())
     }
 
     pub fn set_user_value(&self, value: UserValue) -> Result<(), String> {
@@ -259,7 +266,8 @@ impl PluginEngine {
             }
         };
         values.sort_by(|left, right| left.name.cmp(&right.name));
-        values::save(&self.values_path, values).map_err(|error| error.to_string())?;
+        values::save(&self.values_path, values.clone()).map_err(|error| error.to_string())?;
+        *self.user_values.write().unwrap() = values;
         self.publish_user_value(&value.name, value.as_variable());
         if is_new {
             // The set of user values changed, not just one reading.
@@ -275,7 +283,8 @@ impl PluginEngine {
         if values.len() == before {
             return Err(format!("{name} was not found"));
         }
-        values::save(&self.values_path, values).map_err(|error| error.to_string())?;
+        values::save(&self.values_path, values.clone()).map_err(|error| error.to_string())?;
+        *self.user_values.write().unwrap() = values;
         let reference = VariableRef::user(name);
         self.variables.clear_one(&reference);
         let targets = self.index.read().unwrap().targets_for_variable(&reference);

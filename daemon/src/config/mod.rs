@@ -14,6 +14,20 @@ use std::{
 use anyhow::{Context, Result};
 use serde::Serialize;
 
+pub fn is_read_only() -> bool {
+    env::var("LAUNCHPI_CONFIG_READ_ONLY")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(false)
+}
+
+pub fn device_discovery_enabled() -> bool {
+    env::var("LAUNCHPI_DISCOVERY")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(true)
+}
+
 pub fn config_directory() -> Result<PathBuf> {
     if let Some(path) = env::var_os("LAUNCHPI_CONFIG_DIR") {
         return Ok(PathBuf::from(path));
@@ -48,6 +62,9 @@ pub fn state_directory() -> Result<PathBuf> {
 }
 
 pub fn write_toml<T: Serialize>(path: &Path, document: &T) -> Result<()> {
+    if is_read_only() {
+        return Ok(());
+    }
     let temporary_path = path.with_extension("toml.tmp");
     fs::write(&temporary_path, toml::to_string_pretty(document)?)?;
     fs::rename(temporary_path, path)?;

@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::{
-    config::secret::SecretRef,
+    config::{is_read_only, secret::SecretRef},
     identifiers::IntegrationId,
     plugins::{
         instance::{parse_instance_stem, InstanceDocument, InstanceIdentity},
@@ -62,6 +62,9 @@ impl PluginDirectory {
     }
 
     pub fn save(&self, identity: &InstanceIdentity, document: &InstanceDocument) -> Result<()> {
+        if is_read_only() {
+            return Ok(());
+        }
         let path = self.root.join(identity.file_name());
         let temporary_path = path.with_extension("toml.tmp");
         fs::write(&temporary_path, toml::to_string_pretty(document)?)?;
@@ -71,6 +74,9 @@ impl PluginDirectory {
     }
 
     pub fn delete(&self, identity: &InstanceIdentity) -> Result<()> {
+        if is_read_only() {
+            return Ok(());
+        }
         let path = self.root.join(identity.file_name());
         if path.exists() {
             fs::remove_file(&path)

@@ -86,8 +86,14 @@ impl AppState {
             .into_iter()
             .filter(|device| device.parent_surface_id.is_none())
             .collect();
-        self.persistence
-            .render_configuration(devices, self.surfaces.panels())
+        let configuration = self
+            .persistence
+            .render_configuration(devices, self.surfaces.panels())?;
+        let values = self
+            .plugins
+            .export_user_values()
+            .map_err(anyhow::Error::msg)?;
+        Ok(format!("{configuration}\n# values.toml\n{values}"))
     }
 
     pub fn update_status(
