@@ -18,10 +18,14 @@
       ln -s ${toml.generate "values.toml" cfg.settings.values} "$out/values.toml"
     ''}
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: value: ''
-      ln -s ${toml.generate "${name}.toml" value} "$out/plugins/${name}.toml"
-    '') cfg.settings.plugins)}
+        ln -s ${toml.generate "${name}.toml" value} "$out/plugins/${name}.toml"
+      '')
+      cfg.settings.plugins)}
   '';
-  configDir = if cfg.settings == null then cfg.configDir else settingsDir;
+  configDir =
+    if cfg.settings == null
+    then cfg.configDir
+    else settingsDir;
 in {
   options.services.launchpi = {
     enable = lib.mkEnableOption "Launchpi";
@@ -40,6 +44,12 @@ in {
       description = "Primary group under which Launchpi runs.";
     };
 
+    extraGroups = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [];
+      description = "Supplementary groups for hardware access.";
+    };
+
     host = lib.mkOption {
       type = lib.types.str;
       default = "127.0.0.1";
@@ -52,24 +62,30 @@ in {
       description = "Port on which Launchpi serves its web interface and API.";
     };
 
+    discovery = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether to discover devices through mDNS.";
+    };
+
     openFirewall = lib.mkEnableOption "opening the Launchpi port in the firewall";
 
     configDir = lib.mkOption {
       type = lib.types.path;
       default = "/var/lib/launchpi/config";
-      description = "Directory containing Launchpi configuration files.";
+      description = "Directory containing configuration files.";
     };
 
     stateDir = lib.mkOption {
       type = lib.types.path;
       default = "/var/lib/launchpi/state";
-      description = "Directory containing Launchpi runtime state.";
+      description = "Directory containing runtime state.";
     };
 
     cacheDir = lib.mkOption {
       type = lib.types.path;
       default = "/var/cache/launchpi";
-      description = "Directory containing Launchpi cached assets.";
+      description = "Directory containing cached assets.";
     };
 
     settings = lib.mkOption {
@@ -141,10 +157,13 @@ in {
         Restart = "on-failure";
         RestartSec = 5;
         StateDirectory = "launchpi";
+        SupplementaryGroups = cfg.extraGroups;
       };
       environment = {
         LAUNCHPI_CACHE_DIR = cfg.cacheDir;
         LAUNCHPI_CONFIG_DIR = configDir;
+        LAUNCHPI_CONFIG_READ_ONLY = lib.boolToString (cfg.settings != null);
+        LAUNCHPI_DISCOVERY = lib.boolToString cfg.discovery;
         LAUNCHPI_HOST = cfg.host;
         LAUNCHPI_PORT = toString cfg.port;
         LAUNCHPI_STATE_DIR = cfg.stateDir;
