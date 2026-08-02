@@ -7,9 +7,21 @@
   cfg = config.services.launchpi;
 in {
   options.services.launchpi = {
-    enable = lib.mkEnableOption "the Launchpi user service";
+    enable = lib.mkEnableOption "Launchpi";
 
     package = lib.mkPackageOption self.packages.${pkgs.stdenv.hostPlatform.system} "launchpi" {};
+
+    user = lib.mkOption {
+      type = lib.types.str;
+      default = "launchpi";
+      description = "User account under which Launchpi runs.";
+    };
+
+    group = lib.mkOption {
+      type = lib.types.str;
+      default = "launchpi";
+      description = "Primary group under which Launchpi runs.";
+    };
 
     host = lib.mkOption {
       type = lib.types.str;
@@ -25,11 +37,24 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.user.services.launchpi = {
+    users.groups = lib.optionalAttrs (cfg.group == "launchpi") {
+      launchpi = {};
+    };
+
+    users.users = lib.optionalAttrs (cfg.user == "launchpi") {
+      launchpi = {
+        isSystemUser = true;
+        inherit (cfg) group;
+      };
+    };
+
+    systemd.services.launchpi = {
       description = "Launchpi MIDI controller service";
-      wantedBy = [ "default.target" ];
+      wantedBy = ["multi-user.target"];
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/launchpi";
+        User = cfg.user;
+        Group = cfg.group;
         Restart = "on-failure";
         RestartSec = 5;
       };
