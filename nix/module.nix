@@ -195,14 +195,14 @@
     source:
       if builtins.isPath source
       then documentEntries "devices" source
-      else [removeNulls ((builtins.removeAttrs source ["enable"]) // {is_enabled = source.enable;})]
+      else [(removeNulls ((builtins.removeAttrs source ["enable"]) // {is_enabled = source.enable;}))]
   ) cfg.settings.devices;
 
   configuredPanels = builtins.concatMap (
     source:
       if builtins.isPath source
       then documentEntries "panels" source
-      else [removeNulls source]
+      else [(removeNulls source)]
   ) cfg.settings.panels;
 
   toml = pkgs.formats.toml {};
