@@ -14,13 +14,13 @@ Open-source multi-functional midi controller platform for the novation launchpad
 
 ### Nix
 
-If you just want it up and running
+If you just want it up and running to try it out
 
 ```sh
 nix run github:v3xlabs/launchpi#launchpi
 ```
 
-The main way to run it is long-term is as a service:
+Tho most likely you will want to run it as a service:
 
 ```nix
 {
@@ -45,22 +45,6 @@ services.launchpi = {
 };
 ```
 
-The service runs as the `launchpi` system user by default. Set `user`, `group`,
-and `extraGroups` when it needs access through an existing account or host
-hardware groups. `openFirewall` opens the configured HTTP port. Set
-`discovery = false` when every Stream Deck is listed in the configuration.
-
-```nix
-services.launchpi = {
-  enable = true;
-  user = "launchpi";
-  extraGroups = [ "audio" ];
-  host = "0.0.0.0";
-  openFirewall = true;
-  discovery = false;
-};
-```
-
 ### Declarative configuration
 
 `services.launchpi.settings` generates an immutable configuration directory.
@@ -68,98 +52,101 @@ Changes made in the web UI remain active until Launchpi restarts, then the
 declarative configuration is loaded again. Export temporary changes from the UI
 and add them to `settings` to keep them.
 
+Known Stream Deck models provide their own layout and capabilities. Set only
+`model`; do not configure device layout or capabilities.
+
+The copy-TOML buttons export complete panel and device documents. Add those
+files directly to the matching list; their document versions are ignored and
+the module writes the current version.
+
+```nix
+services.launchpi.settings = {
+  devices = [
+    ./devices/network-dock.toml
+    ./devices/studio.toml
+  ];
+
+  panels = [
+    ./panels/main.toml
+    ./panels/media.toml
+    ./panels/lights.toml
+    ./panels/weather.toml
+  ];
+};
+```
+
 ```nix
 services.launchpi = {
   enable = true;
   discovery = false;
 
   settings = {
-    devices = {
-      version = 1;
-      devices = [
-        {
-          surface_id = "studio";
-          name = "Studio";
-          host = "10.0.0.195";
-          port = 5343;
-          model = "Stream Deck Studio";
-          layout = {
-            Grid = {
-              columns = 8;
-              rows = 4;
-            };
-          };
-          capabilities = {
-            supports_color = true;
-            supports_images = true;
-            supports_text = true;
-            supports_brightness = true;
-            supports_haptics = false;
-          };
-          active_panel_id = "main";
-          is_enabled = true;
-        }
-      ];
-    };
+    devices = [
+      {
+        surface_id = "studio";
+        name = "Studio";
+        host = "10.0.0.195";
+        port = 5343;
+        model = "Stream Deck Studio";
+        active_panel_id = "main";
+        enable = true;
+      }
+    ];
 
-    panels = {
-      version = 5;
-      panels = [
-        {
-          panel_id = "main";
-          name = "Main";
-          layout = {
-            columns = 8;
-            rows = 4;
-          };
-          capabilities = {
-            supports_color = true;
-            supports_images = true;
-            supports_text = true;
-            supports_brightness = true;
-            supports_haptics = false;
-          };
-          controls = [
-            {
-              control_id = "welcome";
-              name = "Welcome";
-              position = {
-                column = 0;
-                row = 0;
-              };
-              default_state = {
-                is_pressed = false;
-                layers = [
-                  {
-                    kind = "fill";
-                    color = {
-                      red = 30;
-                      green = 41;
-                      blue = 59;
-                      alpha = 255;
-                    };
-                  }
-                  {
-                    kind = "text";
-                    text = "Hello";
-                    color = {
-                      red = 255;
-                      green = 255;
-                      blue = 255;
-                      alpha = 255;
-                    };
-                  }
-                ];
-              };
-              action_bindings = [];
-            }
-          ];
-        }
-      ];
-    };
+    panels = [
+      {
+        panel_id = "main";
+        name = "Main";
+        layout = {
+          columns = 16;
+          rows = 2;
+        };
+        capabilities = {
+          supports_color = true;
+          supports_images = true;
+          supports_text = true;
+          supports_brightness = true;
+          supports_haptics = false;
+        };
+        controls = [
+          {
+            control_id = "welcome";
+            name = "Welcome";
+            position = {
+              column = 0;
+              row = 0;
+            };
+            default_state = {
+              is_pressed = false;
+              layers = [
+                {
+                  kind = "fill";
+                  color = {
+                    red = 30;
+                    green = 41;
+                    blue = 59;
+                    alpha = 255;
+                  };
+                }
+                {
+                  kind = "text";
+                  text = "Hello";
+                  color = {
+                    red = 255;
+                    green = 255;
+                    blue = 255;
+                    alpha = 255;
+                  };
+                }
+              ];
+            };
+            action_bindings = [];
+          }
+        ];
+      }
+    ];
 
     plugins."mpris.default" = {
-      version = 1;
       enabled = true;
       display_name = "Local media";
       config.preferred_player = "spotify";

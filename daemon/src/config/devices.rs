@@ -5,17 +5,74 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::write_toml,
+    drivers::streamdeck::model::{model_by_name, STREAM_DECK, STREAM_DECK_NETWORK_DOCK},
     identifiers::{PanelId, SurfaceId},
     surfaces::{
         layout::{SurfaceCapabilities, SurfaceLayout},
-        managed::ManagedNetworkSurface,
+        managed::{ManagedNetworkSurface, NetworkSurfaceStatus},
     },
 };
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct DevicesDocument {
     version: u8,
-    devices: Vec<ManagedNetworkSurface>,
+    devices: Vec<ConfiguredDevice>,
+}
+
+#[derive(Deserialize)]
+struct ConfiguredDevice {
+    surface_id: SurfaceId,
+    name: String,
+    host: String,
+    port: u16,
+    serial_number: Option<String>,
+    model: String,
+    #[serde(default)]
+    layout: Option<SurfaceLayout>,
+    #[serde(default)]
+    capabilities: Option<SurfaceCapabilities>,
+    active_panel_id: Option<PanelId>,
+    is_enabled: bool,
+}
+
+impl From<ConfiguredDevice> for ManagedNetworkSurface {
+    fn from(device: ConfiguredDevice) -> Self {
+        let model = model_by_name(&device.model);
+        Self {
+            surface_id: device.surface_id,
+            name: device.name,
+            host: device.host,
+            port: device.port,
+            serial_number: device.serial_number,
+            layout: device
+                .layout
+                .unwrap_or_else(|| model.map_or(STREAM_DECK.layout, |model| model.layout)),
+            capabilities: device.capabilities.unwrap_or_else(|| {
+                if model == Some(&STREAM_DECK_NETWORK_DOCK) {
+                    SurfaceCapabilities::default()
+                } else {
+                    stream_deck_capabilities()
+                }
+            }),
+            model: device.model,
+            active_panel_id: device.active_panel_id,
+            open_subpanels: Vec::new(),
+            is_enabled: device.is_enabled,
+            parent_surface_id: None,
+            status: NetworkSurfaceStatus::Connecting,
+            last_error: None,
+        }
+    }
+}
+
+fn stream_deck_capabilities() -> SurfaceCapabilities {
+    SurfaceCapabilities {
+        supports_color: true,
+        supports_images: true,
+        supports_text: true,
+        supports_brightness: true,
+        supports_haptics: false,
+    }
 }
 
 #[derive(Serialize)]
@@ -74,7 +131,7 @@ pub fn load(path: &Path) -> Result<Vec<ManagedNetworkSurface>> {
             config.version
         );
     }
-    Ok(config.devices)
+    Ok(config.devices.into_iter().map(ManagedNetworkSurface::from).collect())
 }
 
 fn load_legacy_surfaces(path: &Path) -> Result<Vec<ManagedNetworkSurface>> {
