@@ -18,5 +18,6 @@ pub fn registry() -> &'static [PluginFactory] {
         builtin::hass::FACTORY,
         builtin::discord::FACTORY,
         builtin::system::FACTORY,
+        builtin::prometheus::FACTORY,
     ]
 }
