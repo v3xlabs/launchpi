@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::atomic::Ordering};
 
 use crate::{
+    bindings::action::Action,
     events::ServerEvent,
     identifiers::{ControlId, PanelId},
     panels::{
@@ -185,7 +186,7 @@ fn supports(device: &SurfaceCapabilities, panel: &SurfaceCapabilities) -> bool {
         && (!panel.supports_haptics || device.supports_haptics)
 }
 
-fn validate_panel(panel: &Panel) -> Result<(), String> {
+pub(crate) fn validate_panel(panel: &Panel) -> Result<(), String> {
     if panel.name.trim().is_empty() || panel.layout.columns == 0 || panel.layout.rows == 0 {
         return Err("panel name and layout dimensions are required".to_string());
     }
@@ -208,6 +209,32 @@ fn validate_panel(panel: &Panel) -> Result<(), String> {
         {
             return Err("panel controls cannot share a position".to_string());
         }
+        for action in control
+            .action_bindings
+            .iter()
+            .flat_map(|binding| &binding.actions)
+        {
+            match action {
+                Action::SetSurfaceDisplay {
+                    surface_ids,
+                    include_triggering_surface,
+                    ..
+                }
+                | Action::SetSurfaceBrightness {
+                    surface_ids,
+                    include_triggering_surface,
+                    ..
+                } if surface_ids.is_empty() && !include_triggering_surface => {
+                    return Err("surface actions require at least one target".to_string());
+                }
+                Action::SetSurfaceBrightness { brightness, .. }
+                    if *brightness > crate::surfaces::display::MAX_BRIGHTNESS =>
+                {
+                    return Err("surface brightness must be between 0 and 100".to_string());
+                }
+                _ => {}
+            }
+        }
     }
     Ok(())
 }
@@ -215,7 +242,48 @@ fn validate_panel(panel: &Panel) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{identifiers::SurfaceId, surfaces::defaults::default_panel};
+    use crate::{
+        bindings::action::{ActionBinding, ActionTrigger},
+        identifiers::SurfaceId,
+        surfaces::defaults::default_panel,
+    };
+
+    fn panel_with_action(action: Action) -> Panel {
+        let mut panel = default_panel();
+        panel.controls[0].action_bindings = vec![ActionBinding {
+            gesture: ActionTrigger::Press,
+            actions: vec![action],
+        }];
+        panel
+    }
+
+    #[test]
+    fn rejects_a_surface_action_without_a_target() {
+        let panel = panel_with_action(Action::SetSurfaceDisplay {
+            surface_ids: Vec::new(),
+            include_triggering_surface: false,
+            is_display_off: true,
+        });
+
+        assert_eq!(
+            validate_panel(&panel),
+            Err("surface actions require at least one target".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_a_surface_brightness_above_one_hundred() {
+        let panel = panel_with_action(Action::SetSurfaceBrightness {
+            surface_ids: Vec::new(),
+            include_triggering_surface: true,
+            brightness: 101,
+        });
+
+        assert_eq!(
+            validate_panel(&panel),
+            Err("surface brightness must be between 0 and 100".to_string())
+        );
+    }
 
     #[test]
     fn rejects_assigning_a_panel_with_an_incompatible_layout() {

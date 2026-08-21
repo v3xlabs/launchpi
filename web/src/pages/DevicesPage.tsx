@@ -14,6 +14,7 @@ import {
   Panel,
 } from "../api/inventory";
 import { CopyTomlButton } from "../components/CopyTomlButton";
+import { DeviceDisplayControls } from "../components/DeviceDisplayControls";
 import { DeviceImage } from "../components/DeviceImage";
 import { DevicePresentation } from "../components/DevicePresentation";
 import { StatusDot, StatusLabel } from "../components/StatusDot";
@@ -260,6 +261,9 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
               </div>
             </div>
           </div>
+          <Show when={properties.device.capabilities.supports_brightness}>
+            <DeviceDisplayControls device={properties.device} />
+          </Show>
         </div>
       </div>
     </>

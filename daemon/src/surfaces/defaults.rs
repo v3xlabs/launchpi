@@ -1,4 +1,5 @@
 use crate::{
+    drivers::streamdeck::model::{StreamDeckModel, STREAM_DECK_STUDIO},
     identifiers::{ControlId, PanelId, SurfaceId},
     panels::{
         control::Control,
@@ -13,14 +14,18 @@ use crate::{
     },
 };
 
-pub fn studio_capabilities() -> SurfaceCapabilities {
+pub fn stream_deck_capabilities(model: &StreamDeckModel) -> SurfaceCapabilities {
     SurfaceCapabilities {
         supports_color: true,
         supports_images: true,
         supports_text: true,
-        supports_brightness: true,
+        supports_brightness: model.supports_brightness,
         supports_haptics: false,
     }
+}
+
+pub fn studio_capabilities() -> SurfaceCapabilities {
+    stream_deck_capabilities(&STREAM_DECK_STUDIO)
 }
 
 pub(super) fn default_device(
@@ -39,6 +44,8 @@ pub(super) fn default_device(
             rows: 2,
         },
         capabilities: studio_capabilities(),
+        brightness: 100,
+        is_display_off: false,
         active_panel_id,
         open_subpanels: Vec::new(),
         is_enabled: true,

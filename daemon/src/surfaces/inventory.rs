@@ -61,12 +61,15 @@ impl SurfaceRegistry {
             .iter()
             .cloned()
             .collect();
+        let consumed_keys = self.display_consumed_keys.read().unwrap();
         let key_states = self
             .key_states
             .read()
             .unwrap()
             .iter()
-            .filter(|(_, is_pressed)| **is_pressed)
+            .filter(|((surface_id, key_index), is_pressed)| {
+                **is_pressed && !consumed_keys.contains(&(surface_id.clone(), *key_index))
+            })
             .map(|((surface_id, key_index), is_pressed)| SurfaceKeyEvent {
                 surface_id: SurfaceId(surface_id.clone()),
                 key_index: *key_index,

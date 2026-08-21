@@ -7,6 +7,7 @@ use crate::{
     events::ServerEvent,
     identifiers::{PanelId, SurfaceId},
     surfaces::{
+        defaults::stream_deck_capabilities,
         layout::{SurfaceCapabilities, SurfaceLayout},
         logs::SurfaceLogLevel,
         registry::SurfaceRegistry,
@@ -58,6 +59,10 @@ pub struct ManagedNetworkSurface {
     #[serde(default = "default_stream_deck_capabilities")]
     pub capabilities: SurfaceCapabilities,
     pub active_panel_id: Option<PanelId>,
+    #[serde(default = "default_brightness")]
+    pub brightness: u8,
+    #[serde(skip_deserializing, default)]
+    pub is_display_off: bool,
     #[serde(skip_deserializing, default)]
     pub open_subpanels: Vec<OpenSubpanel>,
     pub is_enabled: bool,
@@ -67,6 +72,10 @@ pub struct ManagedNetworkSurface {
     pub status: NetworkSurfaceStatus,
     #[serde(skip_deserializing, default)]
     pub last_error: Option<String>,
+}
+
+pub const fn default_brightness() -> u8 {
+    100
 }
 
 fn default_stream_deck_layout() -> SurfaceLayout {
@@ -97,10 +106,6 @@ impl SurfaceKind {
             Self::Studio => &STREAM_DECK_STUDIO,
             Self::NetworkDock => &STREAM_DECK_NETWORK_DOCK,
         }
-    }
-
-    pub fn is_network_dock(self) -> bool {
-        matches!(self, Self::NetworkDock)
     }
 }
 
@@ -185,14 +190,18 @@ impl SurfaceRegistry {
             self.emit(ServerEvent::Changed);
         }
     }
-    pub fn set_identity(&self, surface_id: &SurfaceId, model: String, layout: SurfaceLayout) {
+    pub fn set_identity(&self, surface_id: &SurfaceId, model: &StreamDeckModel) {
         let changed = {
             let mut managed = self.managed.write().unwrap();
             match managed.get_mut(&surface_id.0) {
                 Some(surface) => {
-                    let changed = surface.model != model || surface.layout != layout;
-                    surface.model = model;
-                    surface.layout = layout;
+                    let capabilities = stream_deck_capabilities(model);
+                    let changed = surface.model != model.name
+                        || surface.layout != model.layout
+                        || surface.capabilities != capabilities;
+                    surface.model = model.name.to_string();
+                    surface.layout = model.layout;
+                    surface.capabilities = capabilities;
                     changed
                 }
                 None => false,
@@ -230,6 +239,7 @@ impl SurfaceRegistry {
         ))
     }
     pub fn remove_managed(&self, surface_id: &str) -> Option<ManagedNetworkSurface> {
+        self.deactivate_children_of(&SurfaceId(surface_id.to_string()));
         self.deactivate(surface_id);
         let removed = self.managed.write().unwrap().remove(surface_id);
         if removed.is_some() {
@@ -239,6 +249,7 @@ impl SurfaceRegistry {
     }
     pub fn set_enabled(&self, surface_id: &str, is_enabled: bool) -> Option<ManagedNetworkSurface> {
         if !is_enabled {
+            self.deactivate_children_of(&SurfaceId(surface_id.to_string()));
             self.deactivate(surface_id);
         }
         let surface = {

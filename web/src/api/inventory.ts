@@ -69,21 +69,18 @@ export type ActionTrigger
     | { hold: { duration_ms: number; }; };
 export type Action
   = | {
-    type: "invoke_integration";
-    integration_id: string;
-    action_name: string;
+    type: "invoke_integration"; integration_id: string; action_name: string;
     parameters: Record<string, unknown>;
   }
   | { type: "set_variable"; variable_name: string; value: unknown; }
   | { type: "change_panel"; panel_id: string; }
   | {
-    type: "open_subpanel";
-    panel_id: string;
-    placement: SubpanelPlacement;
-    offset_columns: number;
-    offset_rows: number;
+    type: "open_subpanel"; panel_id: string; placement: SubpanelPlacement;
+    offset_columns: number; offset_rows: number;
   }
   | { type: "close_subpanel"; }
+  | { type: "set_surface_display"; surface_ids: string[]; include_triggering_surface: boolean; is_display_off: boolean; }
+  | { type: "set_surface_brightness"; surface_ids: string[]; include_triggering_surface: boolean; brightness: number; }
   | { type: "wait"; duration_ms: number; };
 export type ActionBinding = { gesture: ActionTrigger; actions: Action[]; };
 export type Control = {
@@ -122,6 +119,8 @@ export type Device = {
   capabilities: Capabilities;
   dials: DialPlacement[];
   active_panel_id: string | null;
+  brightness: number;
+  is_display_off: boolean;
   open_subpanels: Array<{ panel_id: string; column: number; row: number; }>;
   is_enabled: boolean;
   parent_surface_id: string | null;
@@ -279,6 +278,8 @@ const isDevice = (value: unknown): value is Device =>
   && isCapabilities(value.capabilities)
   && (value.dials === undefined || (Array.isArray(value.dials) && value.dials.every(isDialPlacement)))
   && isOptionalString(value.active_panel_id)
+  && isNumber(value.brightness)
+  && typeof value.is_display_off === "boolean"
   && (value.open_subpanels === undefined || Array.isArray(value.open_subpanels))
   && typeof value.is_enabled === "boolean"
   && (value.parent_surface_id === undefined || isOptionalString(value.parent_surface_id))

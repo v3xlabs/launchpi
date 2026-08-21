@@ -49,6 +49,13 @@ impl SurfaceRegistry {
         let Some(device) = self.managed(surface_id) else {
             return Vec::new();
         };
+        if device.is_display_off {
+            return self
+                .surface_dials(surface_id)
+                .iter()
+                .map(|dial| (dial.index, RgbaColor::opaque(0, 0, 0), 0))
+                .collect();
+        }
         let Some(panel_id) = device.active_panel_id else {
             return Vec::new();
         };
@@ -73,7 +80,8 @@ impl SurfaceRegistry {
     /// Turning the knob moves the ring one segment per detent, clamped at both ends. The new
     /// position is runtime state: it is pushed back to the device and broadcast, never persisted.
     pub fn record_dial_turn(&self, surface_id: &SurfaceId, dial_index: u8, detents: i8) {
-        if detents == 0 || !self.has_dial(surface_id, dial_index) {
+        if detents == 0 || self.is_display_off(surface_id) || !self.has_dial(surface_id, dial_index)
+        {
             return;
         }
         let Some((color, current)) = self.dial_ring(surface_id, dial_index) else {
@@ -131,7 +139,7 @@ impl SurfaceRegistry {
         dial_index: u8,
         is_pressed: bool,
     ) -> bool {
-        if !self.has_dial(surface_id, dial_index) {
+        if self.is_display_off(surface_id) || !self.has_dial(surface_id, dial_index) {
             return false;
         }
         let previous = self

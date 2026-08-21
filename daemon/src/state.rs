@@ -19,6 +19,7 @@ pub struct AppState {
 impl AppState {
     pub async fn load() -> anyhow::Result<Self> {
         let (persistence, devices, mut panels) = Persistence::open().await?;
+        let persistence = Arc::new(persistence);
         if panels.is_empty() {
             panels.push(default_panel());
         }
@@ -40,6 +41,7 @@ impl AppState {
             surfaces.clone(),
             surfaces.variables(),
             directory,
+            persistence.clone(),
             config_directory.join("values.toml"),
             assets_for_engine,
             assets_ready_receiver,
@@ -50,7 +52,7 @@ impl AppState {
             surfaces,
             plugins,
             assets,
-            persistence: Arc::new(persistence),
+            persistence,
         })
     }
 

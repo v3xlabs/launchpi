@@ -39,6 +39,11 @@ pub enum ServerEvent {
         status: NetworkSurfaceStatus,
         last_error: Option<String>,
     },
+    DisplayState {
+        surface_id: SurfaceId,
+        brightness: u8,
+        is_display_off: bool,
+    },
     /// An image finished downloading. Carries which one, so a browser can redraw only the keys
     /// showing it rather than every key on screen.
     AssetReady {

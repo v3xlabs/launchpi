@@ -205,6 +205,9 @@ fn parse(contents: &str) -> Result<Vec<Panel>> {
         let legacy: LegacyLayersDocument = toml::from_str(contents)?;
         adopt_legacy_layers(&mut panels, legacy.panels);
     }
+    for panel in &panels {
+        crate::surfaces::panels::validate_panel(panel).map_err(anyhow::Error::msg)?;
+    }
     Ok(panels)
 }
 
@@ -283,7 +286,10 @@ fn document(panels: Vec<Panel>) -> PanelsDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::surfaces::defaults::default_panel;
+    use crate::{
+        bindings::action::{Action, ActionBinding, ActionTrigger},
+        surfaces::defaults::default_panel,
+    };
 
     const LEGACY_DOCUMENT: &str = r#"
 version = 3
@@ -480,6 +486,22 @@ scale_percent = 32
             parse(&rendered).expect("round trips"),
             parse(&version_four_state("text = \"Hello\"\nis_pressed = false")).expect("migrates")
         );
+    }
+
+    #[test]
+    fn rejects_an_invalid_surface_action_from_the_configuration_file() {
+        let mut panel = default_panel();
+        panel.controls[0].action_bindings = vec![ActionBinding {
+            gesture: ActionTrigger::Press,
+            actions: vec![Action::SetSurfaceDisplay {
+                surface_ids: Vec::new(),
+                include_triggering_surface: false,
+                is_display_off: true,
+            }],
+        }];
+        let rendered = render(vec![panel]).expect("the invalid data still has a TOML form");
+
+        assert!(parse(&rendered).is_err());
     }
 
     fn version_four_state(state: &str) -> String {

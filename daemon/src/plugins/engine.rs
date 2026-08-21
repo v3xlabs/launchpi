@@ -17,6 +17,7 @@ use crate::{
     bindings::action::{Action, ActionTrigger},
     config::{
         plugins::{export_document, InstanceFile, PluginDirectory},
+        store::Persistence,
         values::{self, UserValue},
     },
     events::ServerEvent,
@@ -93,9 +94,11 @@ fn interleave(sources: Vec<Vec<LookupOption>>, limit: usize) -> Vec<LookupOption
 pub enum InputEvent {
     Key {
         surface_id: SurfaceId,
-        key_index: u8,
         is_pressed: bool,
         control: Option<Control>,
+    },
+    CancelSurfaceInput {
+        surface_id: SurfaceId,
     },
 }
 
@@ -147,6 +150,7 @@ pub struct PluginEngine {
     variables: Arc<VariableStore>,
     presets: Arc<PresetStore>,
     directory: PluginDirectory,
+    persistence: Arc<Persistence>,
     values_path: PathBuf,
     user_values: RwLock<Vec<UserValue>>,
     http: reqwest::Client,
@@ -164,6 +168,7 @@ impl PluginEngine {
         surfaces: Arc<SurfaceRegistry>,
         variables: Arc<VariableStore>,
         directory: PluginDirectory,
+        persistence: Arc<Persistence>,
         values_path: PathBuf,
         assets: Arc<AssetStore>,
         assets_ready: mpsc::Receiver<String>,
@@ -175,6 +180,7 @@ impl PluginEngine {
             variables,
             presets: Arc::default(),
             directory,
+            persistence,
             values_path,
             user_values: RwLock::default(),
             http: reqwest::Client::new(),
@@ -766,12 +772,18 @@ impl PluginEngine {
     }
 
     async fn handle_input(self: &Arc<Self>, event: InputEvent) {
-        let InputEvent::Key {
-            surface_id,
-            is_pressed,
-            control,
-            ..
-        } = event;
+        let (surface_id, is_pressed, control) = match event {
+            InputEvent::Key {
+                surface_id,
+                is_pressed,
+                control,
+                ..
+            } => (surface_id, is_pressed, control),
+            InputEvent::CancelSurfaceInput { surface_id } => {
+                self.cancel_holds_for_surface(&surface_id);
+                return;
+            }
+        };
         let Some(control) = control else {
             return;
         };
@@ -794,7 +806,9 @@ impl PluginEngine {
             let surface_id = surface_id.clone();
             let actions = binding.actions.clone();
             let anchor = control.position.clone();
-            tokio::spawn(async move { engine.run_actions(surface_id, actions, Some(anchor)).await });
+            tokio::spawn(
+                async move { engine.run_actions(surface_id, actions, Some(anchor)).await },
+            );
         }
     }
 
@@ -833,6 +847,20 @@ impl PluginEngine {
             .remove(&(surface_id.clone(), control_id.clone()));
         for timer in timers.into_iter().flatten() {
             timer.abort();
+        }
+    }
+
+    fn cancel_holds_for_surface(&self, surface_id: &SurfaceId) {
+        let mut timers = self.hold_timers.lock().unwrap();
+        let keys = timers
+            .keys()
+            .filter(|(id, _)| id == surface_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in keys {
+            for timer in timers.remove(&key).into_iter().flatten() {
+                timer.abort();
+            }
         }
     }
 
@@ -902,6 +930,59 @@ impl PluginEngine {
                 }
                 Action::CloseSubpanel => {
                     self.surfaces.close_subpanel(&surface_id);
+                }
+                Action::SetSurfaceDisplay {
+                    mut surface_ids,
+                    include_triggering_surface,
+                    is_display_off,
+                } => {
+                    if include_triggering_surface
+                        && self.surfaces.effective_brightness(&surface_id).is_some()
+                    {
+                        surface_ids.push(surface_id.clone());
+                    }
+                    if let Err(reason) = self
+                        .surfaces
+                        .set_display_off_for(&surface_ids, is_display_off)
+                    {
+                        self.surfaces.log(
+                            &surface_id,
+                            SurfaceLogLevel::Warning,
+                            format!("could not change surface display state: {reason}"),
+                        );
+                    }
+                }
+                Action::SetSurfaceBrightness {
+                    mut surface_ids,
+                    include_triggering_surface,
+                    brightness,
+                } => {
+                    if include_triggering_surface
+                        && self.surfaces.effective_brightness(&surface_id).is_some()
+                    {
+                        surface_ids.push(surface_id.clone());
+                    }
+                    let result = self
+                        .surfaces
+                        .set_brightness_for(&surface_ids, brightness)
+                        .and_then(|_| {
+                            let devices = self
+                                .surfaces
+                                .managed_surfaces()
+                                .into_iter()
+                                .filter(|device| device.parent_surface_id.is_none())
+                                .collect();
+                            self.persistence
+                                .save_configuration(devices, self.surfaces.panels())
+                                .map_err(|error| error.to_string())
+                        });
+                    if let Err(reason) = result {
+                        self.surfaces.log(
+                            &surface_id,
+                            SurfaceLogLevel::Warning,
+                            format!("could not set surface brightness: {reason}"),
+                        );
+                    }
                 }
                 Action::Wait { duration_ms } => {
                     tokio::time::sleep(Duration::from_millis(duration_ms)).await

@@ -72,7 +72,9 @@ impl SurfaceRegistry {
                 let rendering = panel
                     .controls
                     .iter()
-                    .find(|control| control.position.column == column && control.position.row == row)
+                    .find(|control| {
+                        control.position.column == column && control.position.row == row
+                    })
                     .and_then(|control| {
                         rendering_for_control(
                             control,
@@ -281,7 +283,7 @@ mod tests {
         );
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
         let surface_id = SurfaceId("stream-deck-studio-1".to_string());
-        let (_is_active, mut commands) = registry.activate(&surface_id);
+        let (_is_active, mut commands, _brightness) = registry.activate(&surface_id);
 
         registry.variables().set(
             VariableRef::new("http.local", "value"),
@@ -305,7 +307,7 @@ mod tests {
         );
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
         let surface_id = SurfaceId("stream-deck-studio-1".to_string());
-        let (_is_active, mut commands) = registry.activate(&surface_id);
+        let (_is_active, mut commands, _brightness) = registry.activate(&surface_id);
         let reference = VariableRef::new("http.local", "value");
 
         registry
@@ -339,7 +341,7 @@ mod tests {
         }];
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![panel]);
         let surface_id = SurfaceId("stream-deck-studio-1".to_string());
-        let (_is_active, mut commands) = registry.activate(&surface_id);
+        let (_is_active, mut commands, _brightness) = registry.activate(&surface_id);
         let reference = VariableRef::new("hass.home", "light.kitchen.color");
 
         registry.refresh_key(&surface_id, 0);

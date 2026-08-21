@@ -1,10 +1,17 @@
 import { TbFillTrash as TbTrash } from "solid-icons/tb";
 import { Component, createMemo, For, Show } from "solid-js";
 
-import { Action, ActionBinding, ActionTrigger, Control, SubpanelPlacement } from "../api/inventory";
+import {
+  Action,
+  ActionBinding,
+  ActionTrigger,
+  Control,
+  SubpanelPlacement,
+} from "../api/inventory";
 import { ActionDefinition, coerceConfigValue, PluginInstance } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
 import { ConfigFieldInput, SelectField } from "./fields";
+import { SurfaceActionEditor } from "./SurfaceActionEditor";
 
 type Mutate = (mutate: (control: Control) => void) => void;
 
@@ -58,6 +65,13 @@ const ActionRow: Component<{
     return manifest?.actions.find(
       action => action.name === (properties.action as { action_name: string; }).action_name,
     ) ?? null;
+  });
+  const surfaceAction = createMemo(() => {
+    const action = properties.action;
+
+    return action.type === "set_surface_display" || action.type === "set_surface_brightness"
+      ? action
+      : null;
   });
 
   const editAction = (edit: (action: Action) => void): void =>
@@ -242,6 +256,19 @@ const ActionRow: Component<{
           </>
         )}
       </Show>
+
+      <Show when={surfaceAction()}>
+        {surface => (
+          <SurfaceActionEditor
+            action={surface()}
+            onMutate={mutate => editAction((action) => {
+              if (action.type === "set_surface_display" || action.type === "set_surface_brightness") {
+                mutate(action);
+              }
+            })}
+          />
+        )}
+      </Show>
     </div>
   );
 };
@@ -271,6 +298,22 @@ const newAction = (kind: Action["type"]): Action => {
     }
     case "close_subpanel": {
       return { type: "close_subpanel" };
+    }
+    case "set_surface_display": {
+      return {
+        type: "set_surface_display",
+        surface_ids: [],
+        include_triggering_surface: true,
+        is_display_off: true,
+      };
+    }
+    case "set_surface_brightness": {
+      return {
+        type: "set_surface_brightness",
+        surface_ids: [],
+        include_triggering_surface: true,
+        brightness: 100,
+      };
     }
     case "set_variable": {
       return { type: "set_variable", variable_name: "", value: "" };
@@ -348,7 +391,18 @@ const ActionBindingCard: Component<{
     </For>
 
     <div class="flex flex-wrap gap-1.5">
-      <For each={["invoke_integration", "set_variable", "change_panel", "open_subpanel", "close_subpanel", "wait"] as const}>
+      <For
+        each={[
+          "invoke_integration",
+          "set_variable",
+          "change_panel",
+          "open_subpanel",
+          "close_subpanel",
+          "set_surface_display",
+          "set_surface_brightness",
+          "wait",
+        ] as const}
+      >
         {kind => (
           <button
             type="button"

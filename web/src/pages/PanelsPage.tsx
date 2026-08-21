@@ -183,8 +183,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
 
     if (panel === null) return;
 
-    await store.savePanel(panel);
-    setDraft("dirty", false);
+    if (await store.savePanel(panel)) setDraft("dirty", false);
   };
 
   const copySelectedControl = () => {

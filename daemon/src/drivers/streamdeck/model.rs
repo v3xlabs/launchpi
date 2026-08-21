@@ -20,11 +20,19 @@ pub struct DialPlacement {
 /// Everything the rest of the daemon is allowed to assume about a piece of Stream Deck hardware.
 /// Written down once here; nothing else hardcodes a grid size or a dial count.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BrightnessProtocol {
+    Gen1,
+    Gen2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StreamDeckModel {
     pub name: &'static str,
     pub product_ids: &'static [u16],
     pub layout: SurfaceLayout,
     pub dials: &'static [DialPlacement],
+    pub supports_brightness: bool,
+    pub brightness_protocol: BrightnessProtocol,
 }
 
 impl StreamDeckModel {
@@ -35,12 +43,26 @@ impl StreamDeckModel {
 
 pub const STREAM_DECK: StreamDeckModel = StreamDeckModel {
     name: "Stream Deck",
-    product_ids: &[0x0060, 0x006d],
+    product_ids: &[0x0060],
     layout: SurfaceLayout::Grid {
         columns: 5,
         rows: 3,
     },
     dials: &[],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen1,
+};
+
+pub const STREAM_DECK_ORIGINAL_V2: StreamDeckModel = StreamDeckModel {
+    name: "Stream Deck Original V2",
+    product_ids: &[0x006d],
+    layout: SurfaceLayout::Grid {
+        columns: 5,
+        rows: 3,
+    },
+    dials: &[],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen2,
 };
 
 pub const STREAM_DECK_MINI: StreamDeckModel = StreamDeckModel {
@@ -51,6 +73,8 @@ pub const STREAM_DECK_MINI: StreamDeckModel = StreamDeckModel {
         rows: 2,
     },
     dials: &[],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen1,
 };
 
 pub const STREAM_DECK_XL: StreamDeckModel = StreamDeckModel {
@@ -61,6 +85,8 @@ pub const STREAM_DECK_XL: StreamDeckModel = StreamDeckModel {
         rows: 4,
     },
     dials: &[],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen2,
 };
 
 pub const STREAM_DECK_MK2: StreamDeckModel = StreamDeckModel {
@@ -71,6 +97,8 @@ pub const STREAM_DECK_MK2: StreamDeckModel = StreamDeckModel {
         rows: 3,
     },
     dials: &[],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen2,
 };
 
 pub const STREAM_DECK_PLUS: StreamDeckModel = StreamDeckModel {
@@ -106,6 +134,8 @@ pub const STREAM_DECK_PLUS: StreamDeckModel = StreamDeckModel {
             row_span: 1,
         },
     ],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen2,
 };
 
 /// The Neo's two extra buttons are touch contacts, not rotary encoders, so it declares no dials.
@@ -117,6 +147,8 @@ pub const STREAM_DECK_NEO: StreamDeckModel = StreamDeckModel {
         rows: 2,
     },
     dials: &[],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen2,
 };
 
 pub const STREAM_DECK_STUDIO: StreamDeckModel = StreamDeckModel {
@@ -140,6 +172,8 @@ pub const STREAM_DECK_STUDIO: StreamDeckModel = StreamDeckModel {
             row_span: 2,
         },
     ],
+    supports_brightness: true,
+    brightness_protocol: BrightnessProtocol::Gen2,
 };
 
 /// A hub rather than a surface: the Stream Deck plugged into it is registered as its own device.
@@ -148,10 +182,13 @@ pub const STREAM_DECK_NETWORK_DOCK: StreamDeckModel = StreamDeckModel {
     product_ids: &[NETWORK_DOCK_PRODUCT_ID],
     layout: SurfaceLayout::Freeform,
     dials: &[],
+    supports_brightness: false,
+    brightness_protocol: BrightnessProtocol::Gen2,
 };
 
 pub const MODELS: &[StreamDeckModel] = &[
     STREAM_DECK,
+    STREAM_DECK_ORIGINAL_V2,
     STREAM_DECK_MINI,
     STREAM_DECK_XL,
     STREAM_DECK_MK2,

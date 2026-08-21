@@ -15,7 +15,7 @@ use pangocairo::functions::{create_layout, show_layout};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
-    sync::mpsc,
+    sync::{mpsc, watch},
     time::{interval, sleep, timeout},
 };
 use tracing::{debug, info, info_span, trace, warn, Instrument};
@@ -23,8 +23,8 @@ use tracing::{debug, info, info_span, trace, warn, Instrument};
 use crate::{
     assets::AssetStore,
     drivers::streamdeck::model::{
-        model_for_product_id, DialPlacement, NETWORK_DOCK_PRODUCT_ID, STREAM_DECK_STUDIO,
-        STREAM_DECK_STUDIO_PRODUCT_ID,
+        model_by_name, model_for_product_id, BrightnessProtocol, DialPlacement,
+        NETWORK_DOCK_PRODUCT_ID, STREAM_DECK_STUDIO, STREAM_DECK_STUDIO_PRODUCT_ID,
     },
     identifiers::{AssetId, SurfaceId},
     panels::rendered_state::{Anchor9, Edge, Fit, ResolvedLayer, RgbaColor},
@@ -60,6 +60,7 @@ const MAX_CORA_PAYLOAD_SIZE: usize = 1024 * 1024;
 const CORA_ACK_NAK: u16 = 0x0200;
 const CORA_VERBATIM: u16 = 0x8000;
 const CORA_WRITE: u8 = 0x00;
+const CORA_SEND_REPORT: u8 = 0x01;
 const CORA_GET_REPORT: u8 = 0x02;
 const CORA_PRIMARY_INFO_MESSAGE_ID: u32 = 1;
 const CORA_CHILD_INFO_MESSAGE_ID: u32 = 4;
@@ -227,7 +228,7 @@ pub fn start_discovery(state: AppState) -> Result<(), mdns_sd::Error> {
 }
 
 pub fn start_connection_monitor(state: AppState, surface: ManagedNetworkSurface) {
-    let (is_active, mut commands) = state.surfaces.activate(&surface.surface_id);
+    let (is_active, mut commands, mut brightness) = state.surfaces.activate(&surface.surface_id);
     let is_child = surface.parent_surface_id.is_some();
     // Every log emitted while the connection task runs is tagged with this, so the low-level read
     // and write helpers do not have to carry the surface id around.
@@ -260,11 +261,16 @@ pub fn start_connection_monitor(state: AppState, surface: ManagedNetworkSurface)
                 {
                     Ok(Ok(stream)) => match stream.set_nodelay(true) {
                         Err(error) => Some(format!("unable to disable Nagle: {error}")),
-                        Ok(()) => {
-                            handle_connection(&state, &surface, stream, &is_active, &mut commands)
-                                .await
-                                .err()
-                        }
+                        Ok(()) => handle_connection(
+                            &state,
+                            &surface,
+                            stream,
+                            &is_active,
+                            &mut commands,
+                            &mut brightness,
+                        )
+                        .await
+                        .err(),
                     },
                     Ok(Err(error)) => Some(error.to_string()),
                     Err(_) => Some(format!(
@@ -272,6 +278,7 @@ pub fn start_connection_monitor(state: AppState, surface: ManagedNetworkSurface)
                         CONNECT_TIMEOUT.as_secs()
                     )),
                 };
+                state.surfaces.clear_input_state(&surface.surface_id);
 
                 match failure {
                     Some(error) => {
@@ -315,6 +322,7 @@ async fn handle_connection(
     mut stream: TcpStream,
     is_active: &AtomicBool,
     commands: &mut tokio::sync::mpsc::Receiver<SurfaceCommand>,
+    brightness: &mut watch::Receiver<u8>,
 ) -> Result<(), String> {
     let mut stats = ConnectionStats::new();
     let (reply_sender, mut replies) = mpsc::channel::<OutboundReport>(REPLY_QUEUE_SIZE);
@@ -377,6 +385,8 @@ async fn handle_connection(
             }
             let started = Instant::now();
             reset_device(&mut stream, transport).await?;
+            let effective_brightness = *brightness.borrow_and_update();
+            send_brightness(&mut stream, transport, surface, effective_brightness).await?;
             reset_key_stream(&mut stream, transport).await?;
             let renderings = state.surfaces.active_key_renderings(&surface.surface_id);
             let key_count = renderings.len();
@@ -419,7 +429,7 @@ async fn handle_connection(
     };
     let outcome = tokio::select! {
         result = read_loop(read_half, &mut stats, &reply_sender, &io) => result,
-        result = write_loop(write_half, is_network_dock, commands, &mut replies, &io) => result,
+        result = write_loop(write_half, is_network_dock, commands, brightness, &mut replies, &io) => result,
     };
 
     debug!(
@@ -472,6 +482,7 @@ async fn write_loop<W: AsyncWrite + Unpin>(
     mut writer: W,
     is_network_dock: bool,
     commands: &mut mpsc::Receiver<SurfaceCommand>,
+    brightness: &mut watch::Receiver<u8>,
     replies: &mut mpsc::Receiver<OutboundReport>,
     io: &ConnectionIo<'_>,
 ) -> Result<(), String> {
@@ -532,6 +543,19 @@ async fn write_loop<W: AsyncWrite + Unpin>(
                         ),
                     );
                 }
+            }
+            result = brightness.changed(), if !is_network_dock => {
+                if result.is_err() {
+                    return Ok(());
+                }
+                let brightness = *brightness.borrow_and_update();
+                send_brightness(
+                    &mut writer,
+                    transport,
+                    io.surface,
+                    brightness,
+                ).await?;
+                reports_written.fetch_add(1, Ordering::Relaxed);
             }
             _ = child_query_interval.tick(), if is_network_dock => {
                 let request = child_device_request(transport, CORA_CHILD_INFO_MESSAGE_ID);
@@ -891,7 +915,9 @@ fn register_network_dock_child(state: &AppState, parent_surface_id: &SurfaceId, 
         status: NetworkSurfaceStatus::Connecting,
         last_error: None,
         layout: model.layout,
-        capabilities: crate::surfaces::defaults::studio_capabilities(),
+        capabilities: crate::surfaces::defaults::stream_deck_capabilities(model),
+        brightness: parent.brightness,
+        is_display_off: false,
         active_panel_id,
         open_subpanels: Vec::new(),
         parent_surface_id: Some(parent_surface_id.clone()),
@@ -952,9 +978,7 @@ fn apply_probed_identity(state: &AppState, surface_id: &SurfaceId, is_dock: bool
     } else {
         model_for_product_id(product_id)
     };
-    state
-        .surfaces
-        .set_identity(surface_id, model.name.to_string(), model.layout);
+    state.surfaces.set_identity(surface_id, model);
 }
 
 /// Five header bytes, then one byte per dial, indexed by the dial's own wire index.
@@ -1147,6 +1171,50 @@ async fn reset_device<W: AsyncWrite + Unpin>(
     let mut report = vec![0_u8; 32];
     report[..2].copy_from_slice(&[0x03, 0x02]);
     send_report(stream, transport, &report).await
+}
+
+fn brightness_report(
+    transport: TransportMode,
+    is_primary: bool,
+    protocol: BrightnessProtocol,
+    brightness: u8,
+) -> Vec<u8> {
+    if !is_primary && protocol == BrightnessProtocol::Gen1 {
+        let report_size = if transport == TransportMode::Legacy {
+            LEGACY_RESPONSE_SIZE
+        } else {
+            17
+        };
+        let mut report = vec![0_u8; report_size];
+        report[..6].copy_from_slice(&[0x05, 0x55, 0xaa, 0xd1, 0x01, brightness.min(100)]);
+        return report;
+    }
+    let report_size = if transport == TransportMode::Legacy || is_primary {
+        LEGACY_RESPONSE_SIZE
+    } else {
+        32
+    };
+    let mut report = vec![0_u8; report_size];
+    report[..3].copy_from_slice(&[0x03, 0x08, brightness.min(100)]);
+    report
+}
+
+async fn send_brightness<W: AsyncWrite + Unpin>(
+    stream: &mut W,
+    transport: TransportMode,
+    surface: &ManagedNetworkSurface,
+    brightness: u8,
+) -> Result<(), String> {
+    let is_primary = surface.parent_surface_id.is_none();
+    let protocol = model_by_name(&surface.model)
+        .map_or(BrightnessProtocol::Gen2, |model| model.brightness_protocol);
+    let report = brightness_report(transport, is_primary, protocol, brightness);
+    match transport {
+        TransportMode::Legacy => write_all_timed(stream, &report, "brightness report").await,
+        TransportMode::Cora => {
+            write_cora_message(stream, CORA_VERBATIM, CORA_SEND_REPORT, 0, &report).await
+        }
+    }
 }
 
 /// Lights the knob's own LED. Independent of the ring, so it only needs sending when the colour
@@ -1666,13 +1734,14 @@ mod tests {
     use std::sync::atomic::AtomicU64;
 
     use super::{
-        anchored_origin, dial_report_size, draw_border, draw_fill, flip_pixels_180,
-        parse_child_device_info, parse_primary_device_info, render_key_image, text_vertical_bounds,
-        Anchor9, Edge, Fit, KeyRendering, PendingRenders, ResolvedLayer, RgbaColor, SurfaceCommand,
-        TransportMode, DIAL_RING_COMMAND, ELGATO_VENDOR_ID, LEGACY_RESPONSE_SIZE,
-        NETWORK_DOCK_PRODUCT_ID, OVERLAY_INSET, STREAM_DECK_STUDIO, STUDIO_KEY_IMAGE_SIZE,
+        anchored_origin, brightness_report, dial_report_size, draw_border, draw_fill,
+        flip_pixels_180, parse_child_device_info, parse_primary_device_info, render_key_image,
+        text_vertical_bounds, Anchor9, Edge, Fit, KeyRendering, PendingRenders, ResolvedLayer,
+        RgbaColor, SurfaceCommand, TransportMode, DIAL_RING_COMMAND, ELGATO_VENDOR_ID,
+        LEGACY_RESPONSE_SIZE, NETWORK_DOCK_PRODUCT_ID, OVERLAY_INSET, STREAM_DECK_STUDIO,
+        STUDIO_KEY_IMAGE_SIZE,
     };
-    use crate::drivers::streamdeck::model::STREAM_DECK_XL;
+    use crate::drivers::streamdeck::model::{BrightnessProtocol, STREAM_DECK_XL};
 
     fn label(text: &str) -> ResolvedLayer {
         ResolvedLayer::Text {
@@ -1784,6 +1853,27 @@ mod tests {
         };
 
         assert_eq!(wire, single);
+    }
+
+    #[test]
+    fn brightness_reports_use_the_network_transports_expected_size() {
+        let legacy = brightness_report(TransportMode::Legacy, false, BrightnessProtocol::Gen2, 0);
+        assert_eq!(legacy.len(), LEGACY_RESPONSE_SIZE);
+        assert_eq!(&legacy[..3], &[0x03, 0x08, 0]);
+
+        let primary_cora =
+            brightness_report(TransportMode::Cora, true, BrightnessProtocol::Gen2, 65);
+        assert_eq!(primary_cora.len(), LEGACY_RESPONSE_SIZE);
+        assert_eq!(&primary_cora[..3], &[0x03, 0x08, 65]);
+
+        let child_cora =
+            brightness_report(TransportMode::Cora, false, BrightnessProtocol::Gen2, 100);
+        assert_eq!(child_cora.len(), 32);
+        assert_eq!(&child_cora[..3], &[0x03, 0x08, 100]);
+
+        let mini_cora = brightness_report(TransportMode::Cora, false, BrightnessProtocol::Gen1, 25);
+        assert_eq!(mini_cora.len(), 17);
+        assert_eq!(&mini_cora[..6], &[0x05, 0x55, 0xaa, 0xd1, 0x01, 25]);
     }
 
     #[test]

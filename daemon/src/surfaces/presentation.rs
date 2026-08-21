@@ -109,7 +109,8 @@ impl SurfaceRegistry {
             return None;
         }
         panel.controls.into_iter().find_map(|mut control| {
-            (control.position.column == panel_column as u16 && control.position.row == panel_row as u16)
+            (control.position.column == panel_column as u16
+                && control.position.row == panel_row as u16)
                 .then(|| {
                     control.position = SurfacePosition { column, row };
                     control
@@ -148,7 +149,11 @@ impl SurfaceRegistry {
                 .filter_map(|mut control| {
                     let column = i32::from(layer.column) + i32::from(control.position.column);
                     let row = i32::from(layer.row) + i32::from(control.position.row);
-                    if column < 0 || row < 0 || column >= i32::from(columns) || row >= i32::from(rows) {
+                    if column < 0
+                        || row < 0
+                        || column >= i32::from(columns)
+                        || row >= i32::from(rows)
+                    {
                         return None;
                     }
                     control.position = SurfacePosition {
@@ -195,7 +200,9 @@ impl SurfaceRegistry {
                 let control = top_control.or_else(|| {
                     root.controls
                         .iter()
-                        .find(|control| control.position.column == column && control.position.row == row)
+                        .find(|control| {
+                            control.position.column == column && control.position.row == row
+                        })
                         .cloned()
                 })?;
                 Some(PresentationControl {
@@ -205,7 +212,11 @@ impl SurfaceRegistry {
                 })
             })
             .collect();
-        Some(SurfacePresentation { columns, rows, controls })
+        Some(SurfacePresentation {
+            columns,
+            rows,
+            controls,
+        })
     }
 }
 
@@ -225,9 +236,13 @@ fn subpanel_origin(
     let panel_rows = i32::from(panel_rows);
     let (column, row) = match placement {
         SubpanelPlacement::TopStart => (anchor_column, anchor_row - panel_rows),
-        SubpanelPlacement::TopCenter => (anchor_column - panel_columns / 2, anchor_row - panel_rows),
+        SubpanelPlacement::TopCenter => {
+            (anchor_column - panel_columns / 2, anchor_row - panel_rows)
+        }
         SubpanelPlacement::TopEnd => (anchor_column - panel_columns + 1, anchor_row - panel_rows),
-        SubpanelPlacement::StartCenter => (anchor_column - panel_columns, anchor_row - panel_rows / 2),
+        SubpanelPlacement::StartCenter => {
+            (anchor_column - panel_columns, anchor_row - panel_rows / 2)
+        }
         SubpanelPlacement::EndCenter => (anchor_column + 1, anchor_row - panel_rows / 2),
         SubpanelPlacement::BottomStart => (anchor_column, anchor_row + 1),
         SubpanelPlacement::BottomCenter => (anchor_column - panel_columns / 2, anchor_row + 1),

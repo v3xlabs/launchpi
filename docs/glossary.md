@@ -32,7 +32,7 @@ the specific one. Prefer *device* when talking about real hardware.
 One piece of hardware, identified by a `surface_id`. Written in `devices.toml`:
 
 ```toml
-version = 1
+version = 2
 
 [[devices]]
 surface_id = "stream-deck-studio-1"
@@ -41,11 +41,15 @@ host = "10.0.0.195"
 port = 5343
 model = "Stream Deck Studio"
 active_panel_id = "studio-panel-1"
+brightness = 65
 is_enabled = true
 ```
 
 `surface_id` is opaque. It begins `stream-deck-studio-` for every Stream Deck whatever the model,
 for historical reasons — never read a model out of it.
+
+`brightness` is the preferred awake backlight level. Manual display-off state is runtime-only and
+temporarily forces the hardware brightness to zero without changing this preference.
 
 ### Model
 What kind of hardware a device is, identified by its USB product id. The model table

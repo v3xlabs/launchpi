@@ -29,6 +29,7 @@ pub struct SurfaceRegistry {
     pub(super) key_states: RwLock<HashMap<(String, u8), bool>>,
     pub(super) pressed_controls: RwLock<HashMap<(String, u8), Control>>,
     pub(super) dismissed_overlay_keys: RwLock<HashSet<(String, u8)>>,
+    pub(super) display_consumed_keys: RwLock<HashSet<(String, u8)>>,
     pub(super) recent_key_events: RwLock<VecDeque<SurfaceKeyEvent>>,
     /// Lit ring segments per dial while a surface is connected, keyed by (surface, dial index).
     /// Absent means "wherever the active panel says the dial starts".
@@ -98,6 +99,7 @@ impl SurfaceRegistry {
             key_states: RwLock::default(),
             pressed_controls: RwLock::default(),
             dismissed_overlay_keys: RwLock::default(),
+            display_consumed_keys: RwLock::default(),
             recent_key_events: RwLock::default(),
             dial_positions: RwLock::default(),
             dial_presses: RwLock::default(),
@@ -121,7 +123,6 @@ impl SurfaceRegistry {
     pub fn variables(&self) -> Arc<VariableStore> {
         self.variables.clone()
     }
-
 
     /// Handed to the action engine at startup. Until something takes it the receiver stays here,
     /// so input queues rather than failing to send.

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::identifiers::{IntegrationId, PanelId};
+use crate::identifiers::{IntegrationId, PanelId, SurfaceId};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ActionBinding {
@@ -44,6 +44,20 @@ pub enum Action {
         offset_rows: i16,
     },
     CloseSubpanel,
+    SetSurfaceDisplay {
+        #[serde(default)]
+        surface_ids: Vec<SurfaceId>,
+        #[serde(default)]
+        include_triggering_surface: bool,
+        is_display_off: bool,
+    },
+    SetSurfaceBrightness {
+        #[serde(default)]
+        surface_ids: Vec<SurfaceId>,
+        #[serde(default)]
+        include_triggering_surface: bool,
+        brightness: u8,
+    },
     Wait {
         duration_ms: u64,
     },
@@ -134,6 +148,11 @@ mod tests {
                     },
                     Action::ChangePanel {
                         panel_id: PanelId("studio-panel-1".to_string()),
+                    },
+                    Action::SetSurfaceDisplay {
+                        surface_ids: vec![SurfaceId("studio-2".to_string())],
+                        include_triggering_surface: true,
+                        is_display_off: true,
                     },
                 ],
             }],

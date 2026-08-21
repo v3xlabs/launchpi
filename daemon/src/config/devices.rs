@@ -5,9 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::write_toml,
-    drivers::streamdeck::model::{model_by_name, STREAM_DECK, STREAM_DECK_NETWORK_DOCK},
+    drivers::streamdeck::model::{model_by_name, STREAM_DECK},
     identifiers::{PanelId, SurfaceId},
     surfaces::{
+        defaults::stream_deck_capabilities,
         layout::{SurfaceCapabilities, SurfaceLayout},
         managed::{ManagedNetworkSurface, NetworkSurfaceStatus},
     },
@@ -32,6 +33,8 @@ struct ConfiguredDevice {
     #[serde(default)]
     capabilities: Option<SurfaceCapabilities>,
     active_panel_id: Option<PanelId>,
+    #[serde(default = "crate::surfaces::managed::default_brightness")]
+    brightness: u8,
     is_enabled: bool,
 }
 
@@ -47,31 +50,19 @@ impl From<ConfiguredDevice> for ManagedNetworkSurface {
             layout: device
                 .layout
                 .unwrap_or_else(|| model.map_or(STREAM_DECK.layout, |model| model.layout)),
-            capabilities: device.capabilities.unwrap_or_else(|| {
-                if model == Some(&STREAM_DECK_NETWORK_DOCK) {
-                    SurfaceCapabilities::default()
-                } else {
-                    stream_deck_capabilities()
-                }
-            }),
+            capabilities: device
+                .capabilities
+                .unwrap_or_else(|| stream_deck_capabilities(model.unwrap_or(&STREAM_DECK))),
             model: device.model,
             active_panel_id: device.active_panel_id,
+            brightness: device.brightness,
+            is_display_off: false,
             open_subpanels: Vec::new(),
             is_enabled: device.is_enabled,
             parent_surface_id: None,
             status: NetworkSurfaceStatus::Connecting,
             last_error: None,
         }
-    }
-}
-
-fn stream_deck_capabilities() -> SurfaceCapabilities {
-    SurfaceCapabilities {
-        supports_color: true,
-        supports_images: true,
-        supports_text: true,
-        supports_brightness: true,
-        supports_haptics: false,
     }
 }
 
@@ -92,6 +83,7 @@ struct PersistedDevice {
     layout: SurfaceLayout,
     capabilities: SurfaceCapabilities,
     active_panel_id: Option<PanelId>,
+    brightness: u8,
     is_enabled: bool,
 }
 
@@ -107,6 +99,7 @@ impl From<ManagedNetworkSurface> for PersistedDevice {
             layout: device.layout,
             capabilities: device.capabilities,
             active_panel_id: device.active_panel_id,
+            brightness: device.brightness,
             is_enabled: device.is_enabled,
         }
     }
@@ -125,13 +118,24 @@ pub fn load(path: &Path) -> Result<Vec<ManagedNetworkSurface>> {
         fs::read_to_string(path).with_context(|| format!("unable to read {}", path.display()))?;
     let config: DevicesDocument =
         toml::from_str(&contents).with_context(|| format!("unable to parse {}", path.display()))?;
-    if config.version != 1 {
+    if !matches!(config.version, 1 | 2) {
         anyhow::bail!(
             "unsupported device configuration version {}",
             config.version
         );
     }
-    Ok(config.devices.into_iter().map(ManagedNetworkSurface::from).collect())
+    if let Some(device) = config.devices.iter().find(|device| device.brightness > 100) {
+        anyhow::bail!(
+            "device {} has brightness {}, expected 0 through 100",
+            device.surface_id.0,
+            device.brightness
+        );
+    }
+    Ok(config
+        .devices
+        .into_iter()
+        .map(ManagedNetworkSurface::from)
+        .collect())
 }
 
 fn load_legacy_surfaces(path: &Path) -> Result<Vec<ManagedNetworkSurface>> {
@@ -157,7 +161,7 @@ pub fn render(devices: Vec<ManagedNetworkSurface>) -> Result<String> {
 
 fn document(devices: Vec<ManagedNetworkSurface>) -> PersistedDevicesDocument {
     PersistedDevicesDocument {
-        version: 1,
+        version: 2,
         devices: devices.into_iter().map(PersistedDevice::from).collect(),
     }
 }

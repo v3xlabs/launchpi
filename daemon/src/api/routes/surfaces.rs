@@ -14,7 +14,7 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::{
     api::error::ApiError,
     drivers::streamdeck::{
-        model::{model_by_name, STREAM_DECK_NETWORK_DOCK, STREAM_DECK_STUDIO},
+        model::{model_by_name, STREAM_DECK_STUDIO},
         studio,
     },
     identifiers::{PanelId, SurfaceId},
@@ -25,7 +25,7 @@ use crate::{
     state::AppState,
     surfaces::{
         command::KeyRendering,
-        defaults::studio_capabilities,
+        defaults::stream_deck_capabilities,
         inventory::DeviceInventory,
         layout::{SurfaceCapabilities, SurfaceLayout},
         managed::{
@@ -52,6 +52,18 @@ struct AssignPanelRequest {
     panel_id: String,
 }
 
+#[derive(Deserialize)]
+struct SetSurfaceDisplayRequest {
+    surface_ids: Vec<SurfaceId>,
+    is_display_off: bool,
+}
+
+#[derive(Deserialize)]
+struct SetSurfaceBrightnessRequest {
+    surface_ids: Vec<SurfaceId>,
+    brightness: u8,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/devices", get(list_devices).post(add_device))
@@ -67,6 +79,8 @@ pub fn router() -> Router<AppState> {
             "/api/devices/:surface_id/presentation",
             get(device_presentation),
         )
+        .route("/api/surfaces/display", put(set_surface_display))
+        .route("/api/surfaces/brightness", put(set_surface_brightness))
         .route(
             "/api/discovered/:discovery_id/devices",
             post(add_discovered_device),
@@ -163,7 +177,6 @@ async fn add_device(
     State(state): State<AppState>,
     Json(request): Json<AddNetworkSurface>,
 ) -> Result<Json<ManagedNetworkSurface>, ApiError> {
-    let is_network_dock = request.kind.is_network_dock();
     let model = request.kind.model();
     let surface = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
@@ -173,12 +186,10 @@ async fn add_device(
         serial_number: request.serial_number,
         model: model.name.to_string(),
         layout: model.layout,
-        capabilities: if is_network_dock {
-            SurfaceCapabilities::default()
-        } else {
-            studio_capabilities()
-        },
+        capabilities: stream_deck_capabilities(model),
         active_panel_id: panel_for_layout(&state, model.layout),
+        brightness: 100,
+        is_display_off: false,
         open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
@@ -208,7 +219,6 @@ async fn add_discovered_device(
     // Discovery only advertises a model name. Anything it does not name is assumed to be a Studio,
     // which is what it was before probing existed; connecting corrects the identity either way.
     let model = model_by_name(&discovered.model).unwrap_or(&STREAM_DECK_STUDIO);
-    let is_network_dock = model.name == STREAM_DECK_NETWORK_DOCK.name;
     let surface = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
         name: discovered.name,
@@ -217,12 +227,10 @@ async fn add_discovered_device(
         serial_number: discovered.serial_number,
         model: discovered.model,
         layout: model.layout,
-        capabilities: if is_network_dock {
-            SurfaceCapabilities::default()
-        } else {
-            studio_capabilities()
-        },
+        capabilities: stream_deck_capabilities(model),
         active_panel_id: panel_for_layout(&state, model.layout),
+        brightness: 100,
+        is_display_off: false,
         open_subpanels: Vec::new(),
         is_enabled: true,
         parent_surface_id: None,
@@ -283,6 +291,29 @@ async fn device_presentation(
         .presentation(&SurfaceId(surface_id))
         .map(Json)
         .ok_or_else(|| ApiError::not_found("device presentation"))
+}
+
+async fn set_surface_display(
+    State(state): State<AppState>,
+    Json(request): Json<SetSurfaceDisplayRequest>,
+) -> Result<Json<Vec<ManagedNetworkSurface>>, ApiError> {
+    state
+        .surfaces
+        .set_display_off_for(&request.surface_ids, request.is_display_off)
+        .map(Json)
+        .map_err(ApiError::bad_request)
+}
+
+async fn set_surface_brightness(
+    State(state): State<AppState>,
+    Json(request): Json<SetSurfaceBrightnessRequest>,
+) -> Result<Json<Vec<ManagedNetworkSurface>>, ApiError> {
+    let surfaces = state
+        .surfaces
+        .set_brightness_for(&request.surface_ids, request.brightness)
+        .map_err(ApiError::bad_request)?;
+    state.persist_configuration().map_err(ApiError::internal)?;
+    Ok(Json(surfaces))
 }
 
 async fn create_panel(

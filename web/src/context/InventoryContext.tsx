@@ -11,6 +11,7 @@ import {
 } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 
+import * as displayApi from "../api/display";
 import {
   asAssetReadyEvent,
   asDeviceStatusEvent,
@@ -65,10 +66,12 @@ export type InventoryStore = {
   addDevice: (input: api.AddDeviceInput) => Promise<boolean>;
   addDiscovered: (discoveryId: string) => Promise<void>;
   setDeviceEnabled: (surfaceId: string, isEnabled: boolean) => Promise<void>;
+  setSurfaceDisplay: (surfaceIds: string[], isDisplayOff: boolean) => Promise<void>;
+  setSurfaceBrightness: (surfaceIds: string[], brightness: number) => Promise<boolean>;
   removeDevice: (surfaceId: string) => Promise<void>;
   assignPanel: (surfaceId: string, panelId: string) => Promise<void>;
   createPanel: (input: api.CreatePanelInput) => Promise<Panel | null>;
-  savePanel: (panel: Panel) => Promise<void>;
+  savePanel: (panel: Panel) => Promise<boolean>;
   deletePanel: (panelId: string) => Promise<boolean>;
   exportPanel: (panel: Panel) => Promise<void>;
   saveConfig: () => Promise<void>;
@@ -295,6 +298,8 @@ export const InventoryProvider: ParentComponent = (properties) => {
         return;
       }
 
+      if (parsed.type === "display_state") return scheduleResync();
+
       const asset = asAssetReadyEvent(parsed);
 
       if (asset !== null) return pluginStore.assetReady(asset.asset);
@@ -384,6 +389,21 @@ export const InventoryProvider: ParentComponent = (properties) => {
         await refetch();
       });
     },
+    setSurfaceDisplay: async (surfaceIds, isDisplayOff) => {
+      await run(async () => {
+        await displayApi.setSurfaceDisplay(surfaceIds, isDisplayOff);
+      });
+      await refetch();
+    },
+    setSurfaceBrightness: async (surfaceIds, brightness) => {
+      const isSaved = await run(async () => {
+        await displayApi.setSurfaceBrightness(surfaceIds, brightness);
+      });
+
+      await refetch();
+
+      return isSaved;
+    },
     removeDevice: async (surfaceId) => {
       await run(async () => {
         await api.removeDevice(surfaceId);
@@ -409,12 +429,11 @@ export const InventoryProvider: ParentComponent = (properties) => {
 
       return created;
     },
-    savePanel: async (panel) => {
-      await run(async () => {
+    savePanel: panel =>
+      run(async () => {
         await api.updatePanel(panel.panel_id, api.panelPayload(panel));
         await refetch();
-      });
-    },
+      }),
     deletePanel: panelId =>
       run(async () => {
         await api.deletePanel(panelId);

@@ -62,7 +62,7 @@ Physical hardware endpoints. Each device declares its layout and capabilities
 and may select one compatible active panel.
 
 ```toml
-version = 1
+version = 2
 
 [[devices]]
 surface_id = "stream-deck-studio-2"
@@ -72,6 +72,7 @@ port = 5343
 serial_number = "A9IJA541301ZUS"
 model = "Stream Deck Studio"
 active_panel_id = "studio-panel-1"
+brightness = 65
 is_enabled = true
 
 [devices.layout.Grid]
@@ -96,11 +97,14 @@ supports_haptics = false
 | `layout` | enum | `[devices.layout.Grid]` with `columns` and `rows`, or `layout = "Freeform"` for keyless surfaces such as the Network Dock. |
 | `capabilities` | table | Gates which panels may be assigned. |
 | `active_panel_id` | string, optional | Must name a panel whose layout and capabilities are compatible. |
+| `brightness` | integer | Preferred awake backlight brightness from `0` through `100`. Defaults to `100`. Manual display-off state is runtime-only. |
 | `is_enabled` | boolean | A disabled device is not connected to. |
 
 Connection status and last error are runtime state and never appear here.
 Network Dock children are enumerated from the dock at connect time and are not
-persisted either; adding one by hand has no effect.
+persisted either; adding one by hand has no effect. A child's preferred
+brightness is stored on its Network Dock parent and inherited when the child is
+enumerated again.
 
 ## panels.toml
 
@@ -218,7 +222,14 @@ A failing action logs and the chain continues.
 | `invoke_integration` | `integration_id`, `action_name`, `parameters` |
 | `set_variable` | `variable_name`, `value`. Unqualified names land in the `user` namespace, readable as `$(user:name)`. |
 | `change_panel` | `panel_id` |
+| `set_surface_display` | `surface_ids`, `include_triggering_surface`, `is_display_off` |
+| `set_surface_brightness` | `surface_ids`, `include_triggering_surface`, `brightness` from `0` through `100` |
 | `wait` | `duration_ms` |
+
+`surface_ids` may name direct Stream Decks or stable Network Dock parents. A
+dock target resolves to its attached Stream Deck at runtime. The daemon rejects
+the whole operation before changing any display if one target does not support
+display control. Launchpad and other MIDI surfaces never support these actions.
 
 ### Binding a field to a value
 

@@ -2,6 +2,7 @@ pub mod command;
 pub mod connection;
 pub mod defaults;
 pub mod dials;
+pub mod display;
 pub mod gesture;
 pub mod inventory;
 pub mod keys;

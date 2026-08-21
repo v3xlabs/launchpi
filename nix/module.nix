@@ -141,6 +141,7 @@
       model = lib.mkOption {
         type = types.enum [
           "Stream Deck"
+          "Stream Deck Original V2"
           "Stream Deck Mini"
           "Stream Deck XL"
           "Stream Deck Mk.2"
@@ -151,6 +152,7 @@
         ];
       };
       active_panel_id = lib.mkOption {type = types.nullOr types.str; default = null;};
+      brightness = lib.mkOption {type = types.ints.between 0 100; default = 100;};
       enable = lib.mkOption {type = types.bool; default = true;};
     };
   };
@@ -209,7 +211,7 @@
   settingsDir = pkgs.runCommand "launchpi-config" {} ''
     mkdir -p "$out/plugins"
     ln -s ${toml.generate "devices.toml" {
-      version = 1;
+      version = 2;
       devices = configuredDevices;
     }} "$out/devices.toml"
     ln -s ${toml.generate "panels.toml" {version = 5; panels = configuredPanels;}} "$out/panels.toml"

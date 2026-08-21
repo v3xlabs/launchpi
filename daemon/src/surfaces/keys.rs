@@ -55,7 +55,33 @@ impl SurfaceRegistry {
             return false;
         }
         drop(key_states);
-        if is_pressed && self.has_open_subpanel(surface_id) && self.top_subpanel_control_at(surface_id, key_index).is_none() {
+        if is_pressed && self.is_display_off(surface_id) {
+            self.display_consumed_keys
+                .write()
+                .unwrap()
+                .insert((surface_id.0.clone(), key_index));
+            let _ = self.set_display_off_for(std::slice::from_ref(surface_id), false);
+            return true;
+        }
+        if !is_pressed
+            && self
+                .display_consumed_keys
+                .write()
+                .unwrap()
+                .remove(&(surface_id.0.clone(), key_index))
+        {
+            self.pressed_controls
+                .write()
+                .unwrap()
+                .remove(&(surface_id.0.clone(), key_index));
+            return true;
+        }
+        if is_pressed
+            && self.has_open_subpanel(surface_id)
+            && self
+                .top_subpanel_control_at(surface_id, key_index)
+                .is_none()
+        {
             self.dismissed_overlay_keys
                 .write()
                 .unwrap()
@@ -63,11 +89,12 @@ impl SurfaceRegistry {
             self.close_subpanel(surface_id);
             return true;
         }
-        if !is_pressed && self
-            .dismissed_overlay_keys
-            .write()
-            .unwrap()
-            .remove(&(surface_id.0.clone(), key_index))
+        if !is_pressed
+            && self
+                .dismissed_overlay_keys
+                .write()
+                .unwrap()
+                .remove(&(surface_id.0.clone(), key_index))
         {
             return true;
         }
@@ -112,7 +139,6 @@ impl SurfaceRegistry {
         }
         self.dispatch_input(InputEvent::Key {
             surface_id: surface_id.clone(),
-            key_index,
             is_pressed,
             control,
         });
@@ -144,13 +170,12 @@ mod tests {
 
         match input.try_recv().expect("the press should be queued") {
             InputEvent::Key {
-                key_index,
                 is_pressed,
                 ..
             } => {
-                assert_eq!(key_index, 0);
                 assert!(is_pressed);
             }
+            InputEvent::CancelSurfaceInput { .. } => panic!("the key press should be queued"),
         }
     }
 
