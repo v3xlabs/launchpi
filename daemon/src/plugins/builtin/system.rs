@@ -15,10 +15,10 @@ use tokio::task::JoinHandle;
 
 use crate::{
     bindings::action::{Action, ActionBinding, ActionTrigger},
-    identifiers::{AssetId, IntegrationId},
+    identifiers::IntegrationId,
     panels::{
         control::ControlTemplate,
-        rendered_state::{Anchor9, Edge, Fit, Layer, RenderedState, RgbaColor, ValueBinding},
+        rendered_state::{Edge, Layer, RenderedState, RgbaColor, ValueBinding},
     },
     plugins::{
         instance::InstanceConfig,
@@ -330,7 +330,7 @@ fn presets() -> Vec<Preset> {
         description: Some("Shows the current local time.".to_string()),
         control: ControlTemplate {
             name: "Clock".to_string(),
-            default_state: face("mdi:clock-outline", "$(self:clock)"),
+            default_state: RenderedState::icon_and_label("mdi:clock-outline", "$(self:clock)"),
             pressed_state: None,
             action_bindings: Vec::new(),
         },
@@ -399,7 +399,7 @@ fn readout_preset(preset_id: &str, category: &str, name: &str, icon: &str, text:
         description: None,
         control: ControlTemplate {
             name: name.to_string(),
-            default_state: face(icon, text),
+            default_state: RenderedState::icon_and_label(icon, text),
             pressed_state: None,
             action_bindings: Vec::new(),
         },
@@ -436,7 +436,7 @@ fn timer_preset(duration_minutes: u64) -> Preset {
         )),
         control: ControlTemplate {
             name,
-            default_state: face("mdi:timer-sand", "$(self:timer)"),
+            default_state: RenderedState::icon_and_label("mdi:timer-sand", "$(self:timer)"),
             pressed_state: None,
             action_bindings: vec![ActionBinding {
                 gesture: ActionTrigger::Press,
@@ -447,31 +447,6 @@ fn timer_preset(duration_minutes: u64) -> Preset {
                 }],
             }],
         },
-    }
-}
-
-fn face(icon: &str, text: &str) -> RenderedState {
-    RenderedState {
-        layers: vec![
-            Layer::Fill {
-                color: RgbaColor::opaque(0, 0, 0).into(),
-            },
-            Layer::Image {
-                image: AssetId(icon.to_string()),
-                fit: Fit::Contain,
-                anchor: Anchor9::TopCenter,
-                scale_percent: 40,
-                tint: None,
-            },
-            Layer::Text {
-                text: text.to_string(),
-                color: RgbaColor::opaque(255, 255, 255).into(),
-                anchor: Anchor9::BottomCenter,
-                font_family: None,
-                font_size: None,
-            },
-        ],
-        is_pressed: false,
     }
 }
 

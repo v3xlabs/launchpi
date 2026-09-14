@@ -86,7 +86,11 @@ impl<'a> RenderContext<'a> {
 
     /// A layer that resolves to nothing drawable is dropped rather than drawn as a default, so a
     /// plugin that has not answered yet leaves the key as if the layer were not there.
-    fn resolve_layer(&self, layer: &Layer, panel_font_family: Option<&str>) -> Option<ResolvedLayer> {
+    fn resolve_layer(
+        &self,
+        layer: &Layer,
+        panel_font_family: Option<&str>,
+    ) -> Option<ResolvedLayer> {
         match layer {
             Layer::Fill { color } => Some(ResolvedLayer::Fill {
                 color: self.resolve_color(Some(color))?,
@@ -282,11 +286,7 @@ mod tests {
         *font_size = Some(24);
 
         assert_eq!(
-            only(context.resolve_with_font(
-                &control(vec![layer]),
-                false,
-                Some("Panel Font"),
-            )),
+            only(context.resolve_with_font(&control(vec![layer]), false, Some("Panel Font"),)),
             Some(ResolvedLayer::Text {
                 text: "Play".to_string(),
                 color: RgbaColor::opaque(255, 255, 255),

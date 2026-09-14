@@ -193,6 +193,25 @@ button, input, select, textarea { font: inherit; }
 .clipboard-banner { @apply flex items-center gap-2 border border-blue-900 bg-blue-950/40 px-3 py-2 text-xs text-blue-100; }
 .pressed-fields { @apply grid gap-3 bg-neutral-950 p-3; }
 
+/* What a key does, one gesture per card and one action per row inside it. */
+.binding-card { @apply grid gap-2 border border-neutral-800 bg-neutral-950 p-2; }
+.gesture-row { @apply flex items-center gap-2; }
+.segmented { @apply inline-flex h-8 border border-neutral-700 bg-neutral-950; }
+.segment { @apply inline-flex h-full items-center border-l border-neutral-800 px-2.5 text-xs font-semibold text-neutral-400 transition first:border-l-0 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400; }
+.segment[data-selected="true"] { @apply bg-neutral-800 text-neutral-50; }
+.hold-field { @apply flex items-center gap-1.5; }
+.hold-field .field-input { @apply w-20; }
+.action-card { @apply border border-neutral-800 bg-neutral-900; }
+.action-card-head { @apply flex items-center justify-between gap-2 border-b border-neutral-800 px-2 py-1.5; }
+.action-card-title { @apply min-w-0 truncate text-[0.82rem] font-medium text-neutral-100; }
+.action-card-head .danger-button { @apply h-6 w-6; }
+.action-card-body { @apply grid gap-2 p-2 empty:hidden; }
+.action-list { @apply max-h-[52vh] min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain p-2; }
+.action-group { @apply grid gap-1; }
+.action-option { @apply grid w-full gap-0.5 border border-transparent px-2 py-1.5 text-left transition hover:border-neutral-700 hover:bg-neutral-800/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-blue-400; }
+.action-option-name { @apply truncate text-[0.82rem] font-medium text-neutral-100; }
+.action-option-meta { @apply truncate text-xs text-neutral-500; }
+
 /* Device log */
 .log { @apply max-h-72 divide-y divide-neutral-800/60 overflow-y-auto; }
 .log-row { @apply flex items-baseline gap-2 px-3 py-1; }

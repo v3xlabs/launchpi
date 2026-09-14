@@ -36,9 +36,6 @@ export const DeviceDisplayControls: Component<{ device: Device; }> = (properties
             }}
           />
         </label>
-        <p class="hint">
-          Brightness 0 turns off the backlight. The device stays connected for wake input.
-        </p>
         <button
           type="button"
           classList={{
@@ -51,7 +48,7 @@ export const DeviceDisplayControls: Component<{ device: Device; }> = (properties
             !properties.device.is_display_off,
           )}
         >
-          {properties.device.is_display_off ? "Wake display" : "Turn display off"}
+          {properties.device.is_display_off ? "Wake" : "Sleep"}
         </button>
       </div>
     </div>

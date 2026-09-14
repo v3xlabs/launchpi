@@ -20,6 +20,7 @@ use crate::{
         preset::Preset,
     },
     state::AppState,
+    surfaces::presets::{display_presets, DISPLAY_PRESET_NAME, DISPLAY_PRESET_SOURCE},
     variables::{VariableRef, VariableValue},
 };
 
@@ -196,19 +197,27 @@ async fn list_plugins(State(state): State<AppState>) -> Json<PluginCatalogue> {
     })
 }
 
-/// Ready-made buttons, per running instance. Carries the display name and type alongside, because
-/// only the daemon knows them and the picker groups by them.
+/// Ready-made buttons, per source. Carries the display name and type alongside, because only the
+/// daemon knows them and the picker groups by them.
 #[derive(Serialize)]
-struct InstancePresets {
+struct PresetSection {
     integration_id: IntegrationId,
     display_name: String,
     plugin_type: String,
     presets: Vec<Preset>,
 }
 
-async fn list_presets(State(state): State<AppState>) -> Json<Vec<InstancePresets>> {
+/// The daemon's own display buttons come first: they need no plugin, so they are the one section
+/// every installation has.
+async fn list_presets(State(state): State<AppState>) -> Json<Vec<PresetSection>> {
     let instances = state.plugins.instances();
-    Json(
+    let mut sections = vec![PresetSection {
+        integration_id: IntegrationId(DISPLAY_PRESET_SOURCE.to_string()),
+        display_name: DISPLAY_PRESET_NAME.to_string(),
+        plugin_type: "builtin".to_string(),
+        presets: display_presets(),
+    }];
+    sections.extend(
         state
             .plugins
             .presets()
@@ -217,15 +226,15 @@ async fn list_presets(State(state): State<AppState>) -> Json<Vec<InstancePresets
                 let instance = instances
                     .iter()
                     .find(|instance| instance.integration_id == integration_id)?;
-                Some(InstancePresets {
+                Some(PresetSection {
                     integration_id,
                     display_name: instance.display_name.clone(),
                     plugin_type: instance.plugin_type.clone(),
                     presets,
                 })
-            })
-            .collect(),
-    )
+            }),
+    );
+    Json(sections)
 }
 
 /// Enough to scroll without shipping the whole pack to the browser on every keystroke.

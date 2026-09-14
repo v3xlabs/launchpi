@@ -35,6 +35,33 @@ impl RenderedState {
             is_pressed,
         }
     }
+
+    /// A glyph over a caption on a black key: what a ready-made button looks like before anyone
+    /// has styled it.
+    pub fn icon_and_label(icon: &str, text: impl Into<String>) -> Self {
+        Self {
+            layers: vec![
+                Layer::Fill {
+                    color: RgbaColor::opaque(0, 0, 0).into(),
+                },
+                Layer::Image {
+                    image: AssetId(icon.to_string()),
+                    fit: Fit::Contain,
+                    anchor: Anchor9::TopCenter,
+                    scale_percent: 40,
+                    tint: None,
+                },
+                Layer::Text {
+                    text: text.into(),
+                    color: RgbaColor::opaque(255, 255, 255).into(),
+                    anchor: Anchor9::BottomCenter,
+                    font_family: None,
+                    font_size: None,
+                },
+            ],
+            is_pressed: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

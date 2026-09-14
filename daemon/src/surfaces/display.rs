@@ -293,6 +293,33 @@ mod tests {
         assert!(registry.recent_key_events.read().unwrap().is_empty());
     }
 
+    /// The shape a `Sleep` preset takes once a second deck is ticked in the editor: one action,
+    /// two surfaces. Waking is per surface, because waking is a key press on one of them.
+    #[test]
+    fn one_action_sleeps_every_surface_it_names_and_each_wakes_on_its_own_key() {
+        let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![default_panel()]);
+        let first = registry.managed_surfaces()[0].surface_id.clone();
+        let mut second = registry.managed(&first).unwrap();
+        second.surface_id = SurfaceId("stream-deck-studio-2".to_string());
+        registry.add_managed(second.clone());
+        let second = second.surface_id;
+
+        registry
+            .set_display_off_for(&[first.clone(), second.clone()], true)
+            .expect("both Stream Decks can turn their displays off");
+
+        assert!(registry.is_display_off(&first));
+        assert!(registry.is_display_off(&second));
+
+        assert!(registry.record_key_state(&first, 0, true));
+
+        assert!(!registry.is_display_off(&first));
+        assert!(
+            registry.is_display_off(&second),
+            "a key press wakes the deck it was pressed on, not the pair"
+        );
+    }
+
     #[test]
     fn a_batch_is_validated_before_any_display_changes() {
         let registry = SurfaceRegistry::from_configuration(Vec::new(), vec![default_panel()]);
