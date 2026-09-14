@@ -20,6 +20,7 @@ import { DevicePresentation } from "../components/DevicePresentation";
 import { StatusDot, StatusLabel } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
 import { AddDeviceDialog } from "../dialogs/AddDeviceDialog";
+import { countOf } from "../utils/plural";
 
 export const DevicesPage: Component<{ surfaceId?: string; }> = (properties) => {
   const store = useInventory();
@@ -90,14 +91,6 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
             <h1 class="page-title mt-1">{displayName(properties.device.name)}</h1>
             <div class="meta-line">
               <StatusLabel status={properties.device.status} />
-              <span class="meta-sep">-</span>
-              <span>{layoutLabel(layout())}</span>
-              <span class="meta-sep">-</span>
-              <span class="mono">
-                {properties.device.host}
-                :
-                {properties.device.port}
-              </span>
             </div>
           </div>
         </div>
@@ -141,9 +134,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
                 <div class="card-head">
                   <p class="card-title">Active panel</p>
                 </div>
-                <p class="empty">
-                  This device has no keys of its own. Attached devices below carry the panels.
-                </p>
+                <p class="empty">No keys of its own.</p>
               </div>
             )}
           >
@@ -192,17 +183,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
                 </label>
                 <Show
                   when={activePanel()}
-                  fallback={(
-                    <p class="hint">
-                      {compatiblePanels().length}
-                      {" "}
-                      panel
-                      {compatiblePanels().length === 1 ? "" : "s"}
-                      {" "}
-                      match this layout and
-                      capability profile.
-                    </p>
-                  )}
+                  fallback={<p class="hint">{countOf(compatiblePanels().length, "match")}</p>}
                 >
                   <DevicePresentation device={properties.device} pressedKeys={pressedKeys()} />
                 </Show>
@@ -419,12 +400,7 @@ const DevicesOverview: Component = () => {
   return (
     <>
       <div class="page-head">
-        <div>
-          <h1 class="page-title">Devices</h1>
-          <p class="page-subtitle">
-            Surfaces the daemon connects to, and everything it currently sees on the network.
-          </p>
-        </div>
+        <h1 class="page-title">Devices</h1>
         <div class="flex items-center gap-2">
           <AddDeviceDialog
             trigger={(
@@ -446,7 +422,7 @@ const DevicesOverview: Component = () => {
         </div>
         <Show
           when={rootDevices().length > 0}
-          fallback={<p class="empty">No devices yet. Add one below or by address.</p>}
+          fallback={<p class="empty">None yet.</p>}
         >
           <div class="rows">
             <For each={rootDevices()}>
@@ -471,10 +447,7 @@ const DevicesOverview: Component = () => {
         <Show
           when={store.inventory().discovered.length > 0}
           fallback={(
-            <p class="empty">
-              Nothing announced over mDNS yet. Devices on another subnet have to be added by
-              address.
-            </p>
+            <p class="empty">Nothing announced over mDNS.</p>
           )}
         >
           <div class="rows">

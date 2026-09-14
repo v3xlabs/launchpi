@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/solid-router";
 import {
   TbFillCircleCheck as TbCheck,
   TbFillClipboard as TbCopy,
+  TbFillDeviceRemote as TbDeviceRemote,
   TbFillFileDownload as TbDownload,
   TbFillTrash as TbTrash,
 } from "solid-icons/tb";
@@ -254,30 +255,12 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
                   <span class="meta-sep">/</span>
                   <span class="text-neutral-400">{layoutLabel(panel().layout)}</span>
                 </p>
-                <h1 class="page-title mt-1">{panel().name}</h1>
-                <div class="meta-line">
-                  <span>
-                    {panel().controls.length}
-                    {" "}
-                    of
-                    {" "}
-                    {panel().layout.columns * panel().layout.rows}
-                    {" "}
-                    keys assigned
-                  </span>
-                  <Show when={panel().dials.length > 0}>
-                    <span class="meta-sep">-</span>
-                    <span>
-                      {panel().dials.length}
-                      {" "}
-                      dials
-                    </span>
-                  </Show>
+                <h1 class="page-title mt-1">
+                  {panel().name}
                   <Show when={draft.dirty}>
-                    <span class="meta-sep">-</span>
-                    <span class="text-amber-400">unsaved changes</span>
+                    <span class="unsaved-dot" title="Unsaved changes" />
                   </Show>
-                </div>
+                </h1>
               </div>
               <div class="flex gap-2">
                 <button
@@ -319,12 +302,8 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
               {clip => (
                 <div class="clipboard-banner">
                   <TbCopy class="h-3.5 w-3.5 shrink-0" />
-                  <span class="min-w-0 flex-1 truncate">
-                    Copied
-                    {" "}
-                    <strong>{clip().name}</strong>
-                    <span class="hidden sm:inline"> - click an empty key or use Ctrl/Cmd+V. Delete removes the selected key; Esc clears.</span>
-                  </span>
+                  <span class="min-w-0 flex-1 truncate">{clip().name}</span>
+                  <kbd class="kbd">Ctrl/Cmd+V</kbd>
                   <button
                     type="button"
                     class="link-button"
@@ -339,14 +318,6 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
             <div class="editor">
               <div class="grid gap-4">
                 <div class="card">
-                  <div class="card-head">
-                    <p class="card-title">Surface</p>
-                    <span class="chip chip-muted">
-                      {panel().layout.columns}
-                      {" x "}
-                      {panel().layout.rows}
-                    </span>
-                  </div>
                   <PanelStage
                     panel={panel()}
                     dials={dials()}
@@ -431,7 +402,15 @@ const PanelCard: Component<{ panel: Panel; }> = (properties) => {
     >
       <div class="card-head">
         <p class="row-title">{properties.panel.name}</p>
-        <span class="chip">{layoutLabel(properties.panel.layout)}</span>
+        <span class="flex items-center gap-1.5">
+          <Show when={assignedCount() > 0}>
+            <span class="chip chip-accent" title={`Running on ${assignedCount()} device${assignedCount() === 1 ? "" : "s"}`}>
+              <TbDeviceRemote class="h-3 w-3" />
+              {assignedCount()}
+            </span>
+          </Show>
+          <span class="chip">{layoutLabel(properties.panel.layout)}</span>
+        </span>
       </div>
       <PanelThumbnail
         panel={properties.panel}
@@ -440,23 +419,6 @@ const PanelCard: Component<{ panel: Panel; }> = (properties) => {
         dialLevels={dialLevels()}
         pressedDials={pressedDials()}
       />
-      <div class="flex items-center justify-between gap-3 border-t border-neutral-800 px-3 py-2 text-xs text-neutral-500">
-        <span>
-          {properties.panel.controls.length}
-          {" "}
-          controls
-        </span>
-        <Show when={assignedCount() > 0} fallback={<span>Unassigned</span>}>
-          <span class="text-neutral-400">
-            On
-            {" "}
-            {assignedCount()}
-            {" "}
-            device
-            {assignedCount() === 1 ? "" : "s"}
-          </span>
-        </Show>
-      </div>
     </Link>
   );
 };
@@ -467,12 +429,7 @@ const PanelsOverview: Component = () => {
   return (
     <>
       <div class="page-head">
-        <div>
-          <h1 class="page-title">Panels</h1>
-          <p class="page-subtitle">
-            Reusable key layouts. A panel runs on any device with a matching grid and capabilities.
-          </p>
-        </div>
+        <h1 class="page-title">Panels</h1>
         <CreatePanelDialog
           trigger={(
             <button type="button" class="primary-button">
@@ -485,7 +442,7 @@ const PanelsOverview: Component = () => {
         when={store.inventory().panels.length > 0}
         fallback={(
           <div class="card">
-            <p class="empty">No panels yet. Create one to begin.</p>
+            <p class="empty">None yet.</p>
           </div>
         )}
       >

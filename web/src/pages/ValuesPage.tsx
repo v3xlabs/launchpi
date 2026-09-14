@@ -9,7 +9,7 @@ import {
   parseUserValue,
   variableReference,
 } from "../api/plugins";
-import { ConfigFieldInput, TextField } from "../components/fields";
+import { ConfigFieldInput, SearchField, TextField } from "../components/fields";
 import { useInventory } from "../context/InventoryContext";
 
 const ActionRow: Component<{ action: AvailableAction; }> = (properties) => {
@@ -173,15 +173,10 @@ export const ValuesPage: Component = () => {
   return (
     <div class="page">
       <div class="page-head">
-        <div>
-          <h1 class="page-title">Values</h1>
-          <p class="page-subtitle">
-            Everything the daemon knows, and everything it can be asked to do.
-          </p>
-        </div>
+        <h1 class="page-title">Values</h1>
         <div class="w-64">
-          <TextField
-            label="Search"
+          <SearchField
+            label="Search values"
             value={search()}
             placeholder="light, title, toggle..."
             onChange={setSearch}
@@ -198,7 +193,7 @@ export const ValuesPage: Component = () => {
           <CreateUserValue />
           <Show
             when={userValues().length > 0}
-            fallback={<p class="empty">None yet. These persist in values.toml.</p>}
+            fallback={<p class="empty">None yet.</p>}
           >
             <div class="rows">
               <For each={userValues()}>
@@ -234,7 +229,7 @@ export const ValuesPage: Component = () => {
         <div class="card-body">
           <Show
             when={values().length > 0}
-            fallback={<p class="empty">No plugin has published anything yet.</p>}
+            fallback={<p class="empty">Nothing published yet.</p>}
           >
             <div class="rows">
               <For each={values()}>
@@ -264,7 +259,7 @@ export const ValuesPage: Component = () => {
         <div class="card-body">
           <Show
             when={actions().length > 0}
-            fallback={<p class="empty">Add a plugin to get some actions.</p>}
+            fallback={<p class="empty">None available.</p>}
           >
             <div class="rows">
               <For each={actions()}>{action => <ActionRow action={action} />}</For>

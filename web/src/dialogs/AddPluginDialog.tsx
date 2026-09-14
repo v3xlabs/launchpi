@@ -5,8 +5,9 @@ import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 
 import { coerceConfigValue, ConfigField, PluginManifest } from "../api/plugins";
-import { ConfigFieldInput, TextField } from "../components/fields";
+import { ConfigFieldInput, SearchField, TextField } from "../components/fields";
 import { useInventory } from "../context/InventoryContext";
+import { countOf } from "../utils/plural";
 
 /** Derived from the type, so `http` + `weather` reads back as `http.weather` before you commit. */
 const suggestedName = (existing: string[], pluginType: string): string => {
@@ -114,11 +115,8 @@ export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties
               when={chosen()}
               fallback={(
                 <div class="dialog-body">
-                  <Dialog.Description class="dialog-description">
-                    Pick what to connect to. Each one can be added more than once.
-                  </Dialog.Description>
-                  <TextField
-                    label="Search"
+                  <SearchField
+                    label="Search plugins"
                     value={search()}
                     placeholder="http, music, lights..."
                     onChange={setSearch}
@@ -142,9 +140,7 @@ export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties
                               </span>
                             </span>
                             <span class="chip chip-muted">
-                              {manifest.actions.length}
-                              {" "}
-                              actions
+                              {countOf(manifest.actions.length, "action")}
                             </span>
                           </button>
                         )}

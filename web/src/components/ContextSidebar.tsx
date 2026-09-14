@@ -16,6 +16,7 @@ import {
 import { statusTone } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
 import { AddPluginDialog } from "../dialogs/AddPluginDialog";
+import { countOf } from "../utils/plural";
 import { DeviceImage } from "./DeviceImage";
 import { PanelThumbnail } from "./PanelPreview";
 import { StatusDot } from "./StatusDot";
@@ -193,11 +194,7 @@ const ValueNav: Component = () => {
             <Link to="/values" class="nav-item">
               <span class="min-w-0 flex-1">
                 <span class="nav-item-title block mono">{source.integrationId}</span>
-                <span class="nav-item-meta block">
-                  {source.count}
-                  {" "}
-                  values
-                </span>
+                <span class="nav-item-meta block">{countOf(source.count, "value")}</span>
               </span>
             </Link>
           )}

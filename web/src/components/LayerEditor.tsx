@@ -401,7 +401,7 @@ export const LayersField: Component<{
       )}
     </For>
     <Show when={properties.layers.length === 0}>
-      <p class="hint">Nothing is drawn on this key yet.</p>
+      <p class="hint">No layers.</p>
     </Show>
     <div class="layer-add">
       <For each={kinds}>

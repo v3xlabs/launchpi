@@ -4,7 +4,7 @@ import { Component, createMemo, createSignal, For, JSX, onCleanup, onMount, Show
 
 import { Control } from "../api/inventory";
 import { ControlTemplate, Preset } from "../api/presets";
-import { TextField } from "../components/fields";
+import { SearchField } from "../components/fields";
 import { KeyImage } from "../components/KeyImage";
 import { useInventory } from "../context/InventoryContext";
 
@@ -132,8 +132,8 @@ export const PresetPickerDialog: Component<{
               <Dialog.Description class="dialog-description">
                 Replaces this key's label, image, colours and bindings.
               </Dialog.Description>
-              <TextField
-                label="Search"
+              <SearchField
+                label="Search presets"
                 value={search()}
                 placeholder="member, lights, channel..."
                 onChange={setSearch}

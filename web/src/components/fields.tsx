@@ -1,3 +1,4 @@
+import { TbFillZoom as TbSearch } from "solid-icons/tb";
 import { Component, createResource, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 
 import { fetchFontFamilies } from "../api/fonts";
@@ -25,6 +26,25 @@ export const TextField: Component<{
       onInput={event => properties.onChange(event.currentTarget.value)}
     />
   </label>
+);
+
+/** A search box needs no label: the magnifier and the placeholder already say what it is. */
+export const SearchField: Component<{
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}> = properties => (
+  <div class="search-field">
+    <TbSearch class="h-3.5 w-3.5" />
+    <input
+      type="search"
+      value={properties.value}
+      aria-label={properties.label}
+      placeholder={properties.placeholder}
+      onInput={event => properties.onChange(event.currentTarget.value)}
+    />
+  </div>
 );
 
 export const FontFamilyField: Component<{

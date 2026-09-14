@@ -23,13 +23,17 @@ import { ConfigFieldInput } from "../components/fields";
 import { StatusDot } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
 import { AddPluginDialog } from "../dialogs/AddPluginDialog";
+import { countOf } from "../utils/plural";
 
 const InstanceRow: Component<{ instance: PluginInstance; }> = (properties) => {
   const store = useInventory();
 
   return (
     <div class="row">
-      <StatusDot status={statusTone(properties.instance.status)} />
+      <StatusDot
+        status={statusTone(properties.instance.status)}
+        label={statusLabel(properties.instance.status)}
+      />
       <div class="row-main">
         <div class="min-w-0 flex-1">
           <Link to="/plugins/$integrationId" params={{ integrationId: properties.instance.integration_id }}>
@@ -37,8 +41,6 @@ const InstanceRow: Component<{ instance: PluginInstance; }> = (properties) => {
           </Link>
           <p class="row-meta">
             <span class="mono">{properties.instance.integration_id}</span>
-            <span class="meta-sep">-</span>
-            {statusLabel(properties.instance.status)}
             <Show when={statusReason(properties.instance.status)}>
               {reason => (
                 <>
@@ -71,15 +73,7 @@ const PluginsOverview: Component = () => {
   return (
     <div class="page">
       <div class="page-head">
-        <div>
-          <h1 class="page-title">Plugins</h1>
-          <p class="page-subtitle">
-            Each plugin can be configured more than once. An instance is one file under
-            {" "}
-            <span class="mono">plugins/</span>
-            .
-          </p>
-        </div>
+        <h1 class="page-title">Plugins</h1>
         <div class="flex gap-2">
           <AddPluginDialog
             trigger={(
@@ -127,8 +121,7 @@ const PluginsOverview: Component = () => {
                       <p class="row-meta">{manifest.description}</p>
                       <p class="row-meta">
                         <span class="chip chip-muted">
-                          {manifest.actions.length}
-                          {" actions"}
+                          {countOf(manifest.actions.length, "action")}
                         </span>
                       </p>
                     </div>

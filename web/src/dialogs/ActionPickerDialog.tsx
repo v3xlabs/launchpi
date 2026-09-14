@@ -4,7 +4,7 @@ import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
 
 import { Action } from "../api/inventory";
 import { PluginCatalogue, PluginInstance } from "../api/plugins";
-import { TextField } from "../components/fields";
+import { SearchField } from "../components/fields";
 import { useInventory } from "../context/InventoryContext";
 
 type Offer = { key: string; name: string; meta: string; build: () => Action; };
@@ -192,8 +192,8 @@ export const ActionPickerDialog: Component<{
               </Dialog.CloseButton>
             </div>
             <div class="dialog-body">
-              <TextField
-                label="Search"
+              <SearchField
+                label="Search actions"
                 value={search()}
                 placeholder="sleep, brightness, panel..."
                 onChange={setSearch}

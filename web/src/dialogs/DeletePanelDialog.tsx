@@ -5,6 +5,7 @@ import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
 import { displayName, Panel } from "../api/inventory";
 import { StatusDot } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
+import { countOf } from "../utils/plural";
 
 export const DeletePanelDialog: Component<{
   panel: Panel;
@@ -51,11 +52,7 @@ export const DeletePanelDialog: Component<{
             </div>
             <div class="dialog-body">
               <div class="flex flex-wrap items-center gap-1.5">
-                <span class="chip">
-                  {properties.panel.controls.length}
-                  {" "}
-                  controls
-                </span>
+                <span class="chip">{countOf(properties.panel.controls.length, "control")}</span>
                 <span class="chip chip-muted">
                   {properties.panel.layout.columns}
                   {" x "}

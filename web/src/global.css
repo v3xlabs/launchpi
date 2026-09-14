@@ -191,6 +191,11 @@ button, input, select, textarea { font: inherit; }
 /* Panel editor */
 .editor { @apply grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]; }
 .clipboard-banner { @apply flex items-center gap-2 border border-blue-900 bg-blue-950/40 px-3 py-2 text-xs text-blue-100; }
+.kbd { @apply shrink-0 border border-blue-900/80 bg-blue-950/60 px-1.5 py-0.5 font-mono text-[0.68rem] text-blue-200; }
+.unsaved-dot { @apply ml-2 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle; }
+.search-field { @apply relative flex h-8 items-center border border-neutral-700 bg-neutral-950 transition focus-within:border-blue-500; }
+.search-field svg { @apply ml-2 shrink-0 text-neutral-600; }
+.search-field input { @apply min-w-0 flex-1 bg-transparent px-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600; }
 .pressed-fields { @apply grid gap-3 bg-neutral-950 p-3; }
 
 /* What a key does, one gesture per card and one action per row inside it. */

@@ -9,7 +9,11 @@ const statusClass: Record<DeviceStatus, string> = {
   disabled: "bg-neutral-600",
 };
 
-export const StatusDot: Component<{ status: DeviceStatus; class?: string; }> = properties => (
+/**
+ * The dot carries its own label, so a status shown as a colour is still readable by hovering it or
+ * by a screen reader, and the row beside it does not have to spell the word out a second time.
+ */
+export const StatusDot: Component<{ status: DeviceStatus; label?: string; class?: string; }> = properties => (
   <span
     classList={{
       "status-dot": true,
@@ -17,7 +21,9 @@ export const StatusDot: Component<{ status: DeviceStatus; class?: string; }> = p
       [statusClass[properties.status]]: true,
       [properties.class ?? ""]: true,
     }}
-    aria-hidden="true"
+    role="img"
+    title={properties.label ?? properties.status}
+    aria-label={properties.label ?? properties.status}
   />
 );
 
