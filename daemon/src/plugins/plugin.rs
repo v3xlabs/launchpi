@@ -193,6 +193,18 @@ impl PluginContext {
         }
     }
 
+    /// Withdraws a value this instance published, so a key bound to something that no longer
+    /// exists reads empty rather than showing the last thing it was.
+    pub fn clear_value(&self, name: impl Into<String>) {
+        let reference = VariableRef {
+            integration_id: self.integration_id.clone(),
+            name: name.into(),
+        };
+        if self.variables.clear_one(&reference) {
+            self.signal(EngineSignal::VariableChanged(reference));
+        }
+    }
+
     /// The full set of buttons this instance recommends, not a delta.
     ///
     /// The store is authoritative and the signal is only a nudge, which is what makes it safe that

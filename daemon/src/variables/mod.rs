@@ -89,8 +89,9 @@ impl VariableStore {
         self.get(reference).map(|value| value.to_string())
     }
 
-    pub fn clear_one(&self, reference: &VariableRef) {
-        self.values.write().unwrap().remove(reference);
+    /// Answers whether there was a value to remove.
+    pub fn clear_one(&self, reference: &VariableRef) -> bool {
+        self.values.write().unwrap().remove(reference).is_some()
     }
 
     pub fn clear_instance(&self, integration_id: &IntegrationId) -> Vec<VariableRef> {

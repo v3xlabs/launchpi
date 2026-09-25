@@ -479,6 +479,54 @@ server-mute button per slot and the two channel readouts.
 | --- | --- |
 | Variables | Current channel metadata and indexed member names, IDs, avatar URLs and images |
 
+### missiond
+
+Watches and controls an information display run by
+[missiond](https://github.com/v3xlabs/missiond). The plugin holds one request
+open, missiond's `/api/events` stream, and sends nothing on a timer. The `state`
+frame carries what is on screen and the `catalogue` frame carries every playlist
+and its tabs. missiond sends both on connect and again on every change, so a key
+follows the display whoever changed it, and a playlist edited in the missiond web
+UI reaches the preset picker at once.
+
+```toml
+version = 1
+enabled = true
+
+[config]
+device_id = "lobby-display"
+key = { env = "LAUNCHPI_MISSIOND_KEY" }   # optional
+```
+
+`device_id` is a lookup field. A running instance browses the network for
+`_missiond._tcp` and offers every display it finds, and the instance follows the
+display to whatever address it announces. An instance with nothing set still
+starts, so the picker has something to come from. `url`, the address of the
+missiond web UI, takes priority over `device_id` and is for a network that mDNS
+does not reach.
+
+`key` is missiond's control key, or its admin key. The control key is enough for
+every action here and cannot edit missiond's configuration. When missiond requires
+a key and does not accept this one, the instance shows the display state and logs
+that every action will be refused.
+
+| Actions | `activate_playlist`, `activate_tab`, `next_tab`, `previous_tab`, `pause`, `resume`, `toggle_pause`, `sleep_screen`, `wake_screen`, `toggle_screen` |
+| --- | --- |
+| Variables | `connected`, `device_name`, `brightness`, `playlist_id`, `playlist_name`, `tab_id`, `tab_name`, `awake`, `screen_state`, `screen_color`, `paused`, `playback_state`, `playback_color`, `seconds_to_next_tab`, `next_tab_in`, and per item `playlists.<id>.name`, `.active`, `.color` and `tabs.<id>.name`, `.active`, `.color` |
+
+`activate_tab` takes only a `tab_id`: missiond holds the tab in the current
+playlist when that has it. The toggles ask missiond to decide the direction, so
+they work while this instance is reconnecting. The `*_color` values are green
+while the item is active and empty otherwise, which leaves the key unbordered.
+Values for a playlist or tab that an edit removes are withdrawn.
+
+`seconds_to_next_tab` and `next_tab_in` count down from missiond's
+`next_rotation_at` by the local clock, and assume both machines keep time.
+
+Presets are offered for pause, resume, a pause toggle, next and previous tab,
+sleep, wake, a screen toggle, the current playlist and tab, the time to the next
+tab, one key per playlist and one key per tab.
+
 ## References
 
 - `plugins.md` for the design and the render path
