@@ -1,38 +1,37 @@
 import { Outlet } from "@tanstack/solid-router";
-import { TbFillCircleX as TbX } from "solid-icons/tb";
+import { FiX } from "solid-icons/fi";
 import { Component, Show } from "solid-js";
 
-import { ContextSidebar } from "../components/ContextSidebar";
-import { IconRail } from "../components/IconRail";
+import { AppHeader } from "../components/AppHeader";
 import { useInventory } from "../context/InventoryContext";
 
 export const RootLayout: Component = () => {
   const store = useInventory();
 
   return (
-    <div class="app-shell">
-      <IconRail />
-      <ContextSidebar />
-      <main class="min-w-0">
-        <Show when={store.error()}>
-          {message => (
-            <div class="px-4 pt-4 sm:px-6">
-              <div role="alert" class="alert">
-                <span>{message()}</span>
-                <button
-                  type="button"
-                  onClick={() => store.setError(null)}
-                  aria-label="Dismiss error"
-                >
-                  <TbX class="h-4 w-4" />
-                </button>
-              </div>
+    <div class="min-h-screen">
+      <AppHeader />
+      <Show when={store.error()}>
+        {message => (
+          <div class="mx-auto max-w-5xl px-6 pt-4">
+            <div role="alert" class="alert">
+              <span class="flex-1">{message()}</span>
+              <button
+                type="button"
+                class="icon-button text-red-700 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-950/60"
+                onClick={() => store.setError(null)}
+                aria-label="Dismiss error"
+              >
+                <FiX class="size-4" />
+              </button>
             </div>
-          )}
-        </Show>
-        <Show when={store.isLoading()}>
-          <p class="px-4 pt-4 text-xs text-neutral-500 sm:px-6">Loading workspace...</p>
-        </Show>
+          </div>
+        )}
+      </Show>
+      <Show when={store.isLoading()}>
+        <p role="status" class="mx-auto max-w-5xl px-6 pt-8 text-muted">Loading...</p>
+      </Show>
+      <main>
         <Outlet />
       </main>
     </div>

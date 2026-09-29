@@ -1,11 +1,10 @@
 import * as Dialog from "@kobalte/core/dialog";
 import { useNavigate } from "@tanstack/solid-router";
-import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
+import { FiX } from "solid-icons/fi";
+import { createMemo, createSignal, For, ParentComponent, Show } from "solid-js";
 
 import {
   Capabilities,
-  capabilityLabels,
   Device,
   deviceGridLayout,
   DialPlacement,
@@ -17,11 +16,31 @@ import {
 } from "../api/inventory";
 import { dialSide, newDialColor } from "../components/DialEditor";
 import { DialIndicator } from "../components/DialIndicator";
+import { NeedsField } from "../components/PanelInspector";
 import { useInventory } from "../context/InventoryContext";
+import { countOf } from "../utils/plural";
 
 type DeviceLayout = { device: Device; layout: GridLayout; };
 
-export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properties) => {
+const SizeChoice: ParentComponent<{ isSelected: boolean; detail?: string; onSelect: () => void; }> = properties => (
+  <button
+    type="button"
+    class="flex items-center gap-2 rounded-control px-3 py-2 text-left transition-colors"
+    classList={{
+      "bg-raised text-slate-900 dark:text-slate-100": properties.isSelected,
+      "text-soft hover:bg-raised/60": !properties.isSelected,
+    }}
+    aria-pressed={properties.isSelected}
+    onClick={properties.onSelect}
+  >
+    <span class="min-w-0 flex-1 truncate font-medium">{properties.children}</span>
+    <Show when={properties.detail}>
+      {detail => <span class="shrink-0 text-muted tabular-nums">{detail()}</span>}
+    </Show>
+  </button>
+);
+
+export const CreatePanelDialog: ParentComponent<{ triggerClass: string; }> = (properties) => {
   const store = useInventory();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = createSignal(false);
@@ -63,6 +82,10 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
 
       return level === undefined ? [] : [{ index: placement.index, level, color: newDialColor }];
     });
+  const chooseSource = (surfaceId: string) => {
+    setSourceSurfaceId(surfaceId);
+    setDialLevels({});
+  };
 
   const reset = () => {
     setName("");
@@ -92,29 +115,21 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
 
   return (
     <Dialog.Root open={isOpen()} onOpenChange={setIsOpen}>
-      <Dialog.Trigger as="div" class="contents">
-        {properties.trigger}
-      </Dialog.Trigger>
+      <Dialog.Trigger class={properties.triggerClass}>{properties.children}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
           <Dialog.Content class="dialog-content">
             <div class="dialog-head">
-              <div>
-                <Dialog.Title class="dialog-title">Create panel</Dialog.Title>
-                <Dialog.Description class="dialog-description">
-                  Define the grid and the capabilities a device must support, or take both from a
-                  device you already have.
-                </Dialog.Description>
-              </div>
-              <Dialog.CloseButton class="icon-button" aria-label="Close create panel dialog">
-                <TbX class="h-4 w-4" />
+              <Dialog.Title class="dialog-title">New panel</Dialog.Title>
+              <Dialog.CloseButton class="icon-button ml-auto" aria-label="Close">
+                <FiX class="size-4" />
               </Dialog.CloseButton>
             </div>
             <form onSubmit={submit}>
               <div class="dialog-body">
                 <label class="field-label">
-                  Panel name
+                  Name
                   <input
                     class="field-input"
                     value={name()}
@@ -123,118 +138,103 @@ export const CreatePanelDialog: Component<{ trigger: JSX.Element; }> = (properti
                     required
                   />
                 </label>
-                <Show when={deviceLayouts().length > 0}>
-                  <label class="field-label">
-                    Layout
-                    <select
-                      class="field-input"
-                      value={sourceSurfaceId()}
-                      onChange={(event) => {
-                        setSourceSurfaceId(event.currentTarget.value);
-                        setDialLevels({});
-                      }}
-                    >
-                      <option value="">Custom</option>
-                      <For each={deviceLayouts()}>
-                        {entry => (
-                          <option value={entry.device.surface_id}>
-                            {displayName(entry.device.name)}
-                            {" - "}
-                            {layoutLabel(entry.layout)}
-                          </option>
+                <div class="grid gap-1.5">
+                  <span class="field-label">Size</span>
+                  <div class="grid gap-1" role="group" aria-label="Size">
+                    <For each={deviceLayouts()}>
+                      {entry => (
+                        <SizeChoice
+                          isSelected={sourceSurfaceId() === entry.device.surface_id}
+                          detail={entry.device.dials.length > 0
+                            ? `${layoutLabel(entry.layout)}, ${countOf(entry.device.dials.length, "dial")}`
+                            : layoutLabel(entry.layout)}
+                          onSelect={() => chooseSource(entry.device.surface_id)}
+                        >
+                          Match
+                          {" "}
+                          {displayName(entry.device.name)}
+                        </SizeChoice>
+                      )}
+                    </For>
+                    <SizeChoice isSelected={source() === null} onSelect={() => chooseSource("")}>
+                      Custom
+                    </SizeChoice>
+                  </div>
+                  <Show when={source() === null}>
+                    <div class="mt-1 grid grid-cols-2 gap-3">
+                      <label class="field-label">
+                        Columns
+                        <input
+                          class="field-input tabular-nums"
+                          type="number"
+                          min="1"
+                          value={columns()}
+                          onInput={event => setColumns(event.currentTarget.value)}
+                          required
+                        />
+                      </label>
+                      <label class="field-label">
+                        Rows
+                        <input
+                          class="field-input tabular-nums"
+                          type="number"
+                          min="1"
+                          value={rows()}
+                          onInput={event => setRows(event.currentTarget.value)}
+                          required
+                        />
+                      </label>
+                    </div>
+                  </Show>
+                </div>
+                <NeedsField
+                  value={required()}
+                  isDisabled={source() !== null}
+                  onToggle={(key, isNeeded) =>
+                    setCapabilities(current => ({ ...current, [key]: isNeeded }))}
+                />
+                <Show when={placements().length > 0}>
+                  <div class="grid gap-1.5">
+                    <span class="field-label">Dials</span>
+                    <div class="grid gap-1">
+                      <For each={placements()}>
+                        {placement => (
+                          <div class="flex items-center gap-3">
+                            <label class="check-tile min-w-0 flex-1">
+                              <input
+                                type="checkbox"
+                                checked={dialLevel(placement) !== undefined}
+                                onInput={event => toggleDial(placement, event.currentTarget.checked)}
+                              />
+                              Dial
+                              {" "}
+                              {placement.index + 1}
+                              <span class="ml-auto font-normal text-muted">{dialSide(placement, layout())}</span>
+                            </label>
+                            <Show when={dialLevel(placement) !== undefined}>
+                              <div class="w-8 shrink-0">
+                                <DialIndicator
+                                  index={placement.index}
+                                  color={newDialColor}
+                                  level={dialLevel(placement) ?? 0}
+                                />
+                              </div>
+                              <input
+                                class="range-input w-24"
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={dialLevel(placement) ?? 0}
+                                aria-label={`Dial ${placement.index + 1} ring level`}
+                                onInput={event =>
+                                  setDialLevel(placement, Number(event.currentTarget.value))}
+                              />
+                            </Show>
+                          </div>
                         )}
                       </For>
-                    </select>
-                  </label>
-                </Show>
-                <div class="grid grid-cols-2 gap-3">
-                  <label class="field-label">
-                    Columns
-                    <input
-                      class="field-input"
-                      type="number"
-                      min="1"
-                      value={layout().columns}
-                      onInput={event => setColumns(event.currentTarget.value)}
-                      disabled={source() !== null}
-                      required
-                    />
-                  </label>
-                  <label class="field-label">
-                    Rows
-                    <input
-                      class="field-input"
-                      type="number"
-                      min="1"
-                      value={layout().rows}
-                      onInput={event => setRows(event.currentTarget.value)}
-                      disabled={source() !== null}
-                      required
-                    />
-                  </label>
-                </div>
-                <fieldset class="grid gap-1">
-                  <legend class="field-label">Required capabilities</legend>
-                  <div class="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                    <For each={capabilityLabels}>
-                      {({ key, label }) => (
-                        <label class="check-tile">
-                          <input
-                            type="checkbox"
-                            checked={required()[key]}
-                            disabled={source() !== null}
-                            onInput={(event) => {
-                              const { checked } = event.currentTarget;
-
-                              setCapabilities(current => ({ ...current, [key]: checked }));
-                            }}
-                          />
-                          {label}
-                        </label>
-                      )}
-                    </For>
+                    </div>
                   </div>
-                </fieldset>
-                <Show when={placements().length > 0}>
-                  <fieldset class="grid gap-1.5">
-                    <legend class="field-label">Dials</legend>
-                    <For each={placements()}>
-                      {placement => (
-                        <div class="flex items-center gap-3">
-                          <label class="check-tile min-w-0 flex-1">
-                            <input
-                              type="checkbox"
-                              checked={dialLevel(placement) !== undefined}
-                              onInput={event => toggleDial(placement, event.currentTarget.checked)}
-                            />
-                            Dial
-                            {" "}
-                            {placement.index + 1}
-                            <span class="mono ml-auto">{dialSide(placement, layout())}</span>
-                          </label>
-                          <Show when={dialLevel(placement) !== undefined}>
-                            <div class="w-8 shrink-0">
-                              <DialIndicator
-                                index={placement.index}
-                                color={newDialColor}
-                                level={dialLevel(placement) ?? 0}
-                              />
-                            </div>
-                            <input
-                              class="range-input w-24"
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={dialLevel(placement) ?? 0}
-                              aria-label={`Dial ${placement.index + 1} ring level`}
-                              onInput={event =>
-                                setDialLevel(placement, Number(event.currentTarget.value))}
-                            />
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </fieldset>
                 </Show>
               </div>
               <div class="dialog-actions">

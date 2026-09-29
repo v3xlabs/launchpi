@@ -1,4 +1,6 @@
+pub mod changes;
 pub mod devices;
+pub mod nix;
 pub mod panels;
 pub mod plugins;
 pub mod runtime;
@@ -12,7 +14,15 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    #[default]
+    Toml,
+    Nix,
+}
 
 pub fn is_read_only() -> bool {
     env::var("LAUNCHPI_CONFIG_READ_ONLY")

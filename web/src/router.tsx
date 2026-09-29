@@ -4,7 +4,6 @@ import { DevicesPage } from "./pages/DevicesPage";
 import { PanelsPage } from "./pages/PanelsPage";
 import { PluginsPage } from "./pages/PluginsPage";
 import { RootLayout } from "./pages/RootLayout";
-import { SupportedDevicesPage } from "./pages/SupportedDevicesPage";
 import { ValuesPage } from "./pages/ValuesPage";
 
 const rootRoute = createRootRoute({ component: RootLayout });
@@ -21,12 +20,6 @@ const devicesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "devices",
   component: () => <DevicesPage />,
-});
-
-const supportedDevicesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "devices/supported",
-  component: () => <SupportedDevicesPage />,
 });
 
 const deviceRoute = createRoute({
@@ -80,7 +73,6 @@ const valuesRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   devicesRoute,
-  supportedDevicesRoute,
   deviceRoute,
   panelsRoute,
   panelRoute,

@@ -11,6 +11,7 @@ fn router(state: AppState) -> Router {
         .merge(routes::surfaces::router())
         .merge(routes::plugins::router())
         .merge(routes::fonts::router())
+        .merge(routes::config::router())
         .fallback(web::serve)
         .with_state(state)
 }

@@ -1,4 +1,4 @@
-import { TbFillTrash as TbTrash } from "solid-icons/tb";
+import { FiPlus, FiTrash2 } from "solid-icons/fi";
 import { Component, createMemo, For, Show } from "solid-js";
 
 import {
@@ -18,10 +18,10 @@ import { SurfaceActionEditor } from "./SurfaceActionEditor";
 type Mutate = (mutate: (control: Control) => void) => void;
 
 const DEFAULT_HOLD_MS = 800;
-const gestureOptions = [
-  { name: "press", label: "Press" },
-  { name: "hold", label: "Hold" },
-  { name: "release", label: "Release" },
+const gestureOptions: Array<{ name: "press" | "hold" | "release"; label: string; }> = [
+  { name: "press", label: "On press" },
+  { name: "hold", label: "On hold" },
+  { name: "release", label: "On release" },
 ];
 const placementOptions: Array<{ value: SubpanelPlacement; label: string; }> = [
   { value: "top_start", label: "Top left" },
@@ -39,8 +39,6 @@ const gestureName = (gesture: ActionTrigger): string =>
   (typeof gesture === "string" ? gesture : "hold");
 const holdDuration = (gesture: ActionTrigger): number =>
   (typeof gesture === "string" ? DEFAULT_HOLD_MS : gesture.hold.duration_ms);
-const asGesture = (name: string, durationMs: number): ActionTrigger =>
-  (name === "hold" ? { hold: { duration_ms: durationMs } } : (name as ActionTrigger));
 
 const parameterValue = (action: Action, key: string): unknown =>
   (action.type === "invoke_integration" ? action.parameters[key] : undefined);
@@ -54,19 +52,17 @@ const ActionRow: Component<{
 }> = (properties) => {
   const store = useInventory();
   const definition = createMemo((): ActionDefinition | null => {
-    if (properties.action.type !== "invoke_integration") return null;
+    const action = properties.action;
 
-    const instance = properties.instances.find(
-      entry => entry.integration_id === (properties.action as { integration_id: string; }).integration_id,
-    );
+    if (action.type !== "invoke_integration") return null;
+
+    const instance = properties.instances.find(entry => entry.integration_id === action.integration_id);
 
     if (instance === undefined) return null;
 
     const manifest = store.plugins().types.find(type => type.plugin_type === instance.plugin_type);
 
-    return manifest?.actions.find(
-      action => action.name === (properties.action as { action_name: string; }).action_name,
-    ) ?? null;
+    return manifest?.actions.find(entry => entry.name === action.action_name) ?? null;
   });
   const surfaceAction = createMemo(() => {
     const action = properties.action;
@@ -84,13 +80,14 @@ const ActionRow: Component<{
     });
 
   return (
-    <div class="action-card">
-      <div class="action-card-head">
-        <span class="action-card-title">{actionTitle(properties.action, store.plugins())}</span>
+    <div class="action-row">
+      <div class="action-row-head">
+        <span class="action-row-title">{actionTitle(properties.action, store.plugins())}</span>
         <button
           type="button"
           class="danger-button"
           aria-label="Remove action"
+          title="Remove action"
           onClick={() =>
             properties.onMutate((control) => {
               control.action_bindings[properties.bindingIndex]?.actions.splice(
@@ -99,11 +96,11 @@ const ActionRow: Component<{
               );
             })}
         >
-          <TbTrash class="h-3.5 w-3.5" />
+          <FiTrash2 class="size-4" />
         </button>
       </div>
 
-      <div class="action-card-body">
+      <div class="grid gap-2">
         <Show when={properties.action.type === "invoke_integration" && properties.action}>
           {invoke => (
             <SelectField
@@ -288,110 +285,101 @@ const ActionRow: Component<{
   );
 };
 
-const GestureField: Component<{
-  binding: ActionBinding;
-  index: number;
-  onMutate: Mutate;
-}> = properties => (
-  <div class="gesture-row">
-    <div class="segmented" role="group" aria-label="Gesture">
-      <For each={gestureOptions}>
-        {option => (
-          <button
-            type="button"
-            class="segment"
-            data-selected={gestureName(properties.binding.gesture) === option.name}
-            onClick={() =>
-              properties.onMutate((control) => {
-                const binding = control.action_bindings[properties.index];
-
-                if (binding !== undefined) {
-                  binding.gesture = asGesture(option.name, holdDuration(binding.gesture));
-                }
-              })}
-          >
-            {option.label}
-          </button>
-        )}
-      </For>
-    </div>
-    <Show when={gestureName(properties.binding.gesture) === "hold"}>
-      <label class="hold-field">
-        <input
-          class="field-input"
-          type="number"
-          min="0"
-          step="100"
-          aria-label="Hold duration in milliseconds"
-          value={holdDuration(properties.binding.gesture)}
-          onInput={(event) => {
-            const durationMs = Number(event.currentTarget.value);
-
-            properties.onMutate((control) => {
-              const binding = control.action_bindings[properties.index];
-
-              if (binding !== undefined) binding.gesture = { hold: { duration_ms: durationMs } };
-            });
-          }}
-        />
-        <span class="chip chip-muted">ms</span>
-      </label>
-    </Show>
-    <button
-      type="button"
-      class="danger-button ml-auto"
-      aria-label="Remove gesture"
-      onClick={() =>
-        properties.onMutate((control) => {
-          control.action_bindings.splice(properties.index, 1);
-        })}
-    >
-      <TbTrash class="h-3.5 w-3.5" />
-    </button>
-  </div>
-);
-
-const ActionBindingCard: Component<{
+/** A gesture's heading is its kind: changing the select rewrites the trigger and keeps the actions. */
+const GestureSection: Component<{
   binding: ActionBinding;
   index: number;
   instances: PluginInstance[];
   onMutate: Mutate;
-}> = properties => (
-  <div class="binding-card">
-    <GestureField
-      binding={properties.binding}
-      index={properties.index}
-      onMutate={properties.onMutate}
-    />
+}> = (properties) => {
+  const name = () => gestureName(properties.binding.gesture);
+  const setGesture = (next: ActionTrigger) =>
+    properties.onMutate((control) => {
+      const binding = control.action_bindings[properties.index];
 
-    <For each={properties.binding.actions}>
-      {(action, actionIndex) => (
-        <ActionRow
-          bindingIndex={properties.index}
-          action={action}
-          actionIndex={actionIndex()}
-          instances={properties.instances}
-          onMutate={properties.onMutate}
-        />
-      )}
-    </For>
+      if (binding !== undefined) binding.gesture = next;
+    });
 
-    <ActionPickerDialog
-      trigger={<button type="button" class="secondary-button">+ Action</button>}
-      onChoose={action =>
-        properties.onMutate((control) => {
-          control.action_bindings[properties.index]?.actions.push(action);
-        })}
-    />
-  </div>
-);
+  return (
+    <section class="grid gap-2">
+      <div class="flex items-center gap-2">
+        <select
+          class="-ml-1 rounded-control bg-transparent px-1 py-1 font-medium text-soft outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-slate-400/60"
+          aria-label="Gesture"
+          value={name()}
+          onInput={(event) => {
+            const { value } = event.currentTarget;
+            const option = gestureOptions.find(entry => entry.name === value);
+
+            if (option === undefined) return;
+
+            setGesture(option.name === "hold"
+              ? { hold: { duration_ms: holdDuration(properties.binding.gesture) } }
+              : option.name);
+          }}
+        >
+          <For each={gestureOptions}>{option => <option value={option.name}>{option.label}</option>}</For>
+          <Show when={gestureOptions.every(option => option.name !== name())}>
+            <option value={name()}>{`On ${name().replaceAll("_", " ")}`}</option>
+          </Show>
+        </select>
+        <Show when={name() === "hold"}>
+          <label class="hold-field text-muted">
+            <input
+              class="field-input tabular-nums"
+              type="number"
+              min="0"
+              step="100"
+              aria-label="Hold duration in milliseconds"
+              value={holdDuration(properties.binding.gesture)}
+              onInput={event => setGesture({ hold: { duration_ms: Number(event.currentTarget.value) } })}
+            />
+            ms
+          </label>
+        </Show>
+        <button
+          type="button"
+          class="danger-button ml-auto"
+          aria-label="Remove gesture"
+          title="Remove gesture"
+          onClick={() =>
+            properties.onMutate((control) => {
+              control.action_bindings.splice(properties.index, 1);
+            })}
+        >
+          <FiTrash2 class="size-4" />
+        </button>
+      </div>
+
+      <For each={properties.binding.actions}>
+        {(action, actionIndex) => (
+          <ActionRow
+            bindingIndex={properties.index}
+            action={action}
+            actionIndex={actionIndex()}
+            instances={properties.instances}
+            onMutate={properties.onMutate}
+          />
+        )}
+      </For>
+
+      <ActionPickerDialog
+        triggerClass="secondary-button justify-self-start"
+        onChoose={action =>
+          properties.onMutate((control) => {
+            control.action_bindings[properties.index]?.actions.push(action);
+          })}
+      >
+        <FiPlus class="size-4" />
+        Add action
+      </ActionPickerDialog>
+    </section>
+  );
+};
 
 /**
- * What a key does when pressed. How it *looks* is no longer edited here: a style field binds to a
- * value directly, so there is nothing to configure beyond the reference itself.
- *
- * The header button is the whole flow for a one-action key: it appends to the press gesture and
- * creates it if the key has none, so nothing has to be set up before an action can be chosen.
+ * What a key does. How it *looks* is not edited here: a style field binds to a value directly, so
+ * there is nothing to configure beyond the reference itself.
  */
 export const BindingsEditor: Component<{ control: Control; onMutate: Mutate; }> = (properties) => {
   const store = useInventory();
@@ -399,32 +387,30 @@ export const BindingsEditor: Component<{ control: Control; onMutate: Mutate; }> 
     store.plugins().instances.filter(instance => instance.status.state === "running"),
   );
 
-  const addOnPress = (action: Action) =>
-    properties.onMutate((control) => {
-      const binding = control.action_bindings.find(entry => entry.gesture === "press");
-
-      if (binding === undefined) {
-        control.action_bindings.push({ gesture: "press", actions: [action] });
-
-        return;
-      }
-
-      binding.actions.push(action);
-    });
-
   return (
-    <>
-      <div class="mt-2 flex items-center justify-between">
-        <p class="field-label">Actions</p>
-        <ActionPickerDialog
-          trigger={<button type="button" class="primary-button">+ Action</button>}
-          onChoose={addOnPress}
-        />
-      </div>
-      <Show when={properties.control.action_bindings.length > 0}>
+    <div class="grid gap-5">
+      <Show
+        when={properties.control.action_bindings.length > 0}
+        fallback={(
+          <section class="grid gap-2">
+            <p class="py-1 font-medium text-soft">On press</p>
+            <p class="text-muted">Nothing happens yet.</p>
+            <ActionPickerDialog
+              triggerClass="secondary-button justify-self-start"
+              onChoose={action =>
+                properties.onMutate((control) => {
+                  control.action_bindings.push({ gesture: "press", actions: [action] });
+                })}
+            >
+              <FiPlus class="size-4" />
+              Add action
+            </ActionPickerDialog>
+          </section>
+        )}
+      >
         <For each={properties.control.action_bindings}>
           {(binding, index) => (
-            <ActionBindingCard
+            <GestureSection
               binding={binding}
               index={index()}
               instances={instances()}
@@ -432,20 +418,23 @@ export const BindingsEditor: Component<{ control: Control; onMutate: Mutate; }> 
             />
           )}
         </For>
-        <button
-          type="button"
-          class="secondary-button"
-          onClick={() =>
-            properties.onMutate((control) => {
-              control.action_bindings.push({
-                gesture: { hold: { duration_ms: DEFAULT_HOLD_MS } },
-                actions: [],
-              });
-            })}
-        >
-          + Gesture
-        </button>
       </Show>
-    </>
+      <button
+        type="button"
+        class="link-button justify-self-start"
+        onClick={() =>
+          properties.onMutate((control) => {
+            const hasHold = control.action_bindings.some(binding => gestureName(binding.gesture) === "hold");
+
+            control.action_bindings.push({
+              gesture: hasHold ? "release" : { hold: { duration_ms: DEFAULT_HOLD_MS } },
+              actions: [],
+            });
+          })}
+      >
+        <FiPlus class="size-4" />
+        Add gesture
+      </button>
+    </div>
   );
 };

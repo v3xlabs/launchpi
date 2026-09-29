@@ -73,7 +73,6 @@ export type InventoryStore = {
   createPanel: (input: api.CreatePanelInput) => Promise<Panel | null>;
   savePanel: (panel: Panel) => Promise<boolean>;
   deletePanel: (panelId: string) => Promise<boolean>;
-  exportPanel: (panel: Panel) => Promise<void>;
   saveConfig: () => Promise<void>;
   clipboard: Accessor<ControlClipboard | null>;
   copyControl: (control: Control) => void;
@@ -439,27 +438,6 @@ export const InventoryProvider: ParentComponent = (properties) => {
         await api.deletePanel(panelId);
         await refetch();
       }),
-    exportPanel: async (panel) => {
-      try {
-        const content = await api.fetchPanelConfig(panel.panel_id);
-        const url = URL.createObjectURL(new Blob([content], { type: "application/toml" }));
-        const link = document.createElement("a");
-        const slug = panel.name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")
-          .replaceAll(/(^-|-$)/g, "");
-
-        link.href = url;
-        link.download = `${slug || "panel"}.toml`;
-        link.click();
-        URL.revokeObjectURL(url);
-      }
-      catch (exportError) {
-        setError(
-          exportError instanceof Error
-            ? exportError.message
-            : "Unable to export panel configuration.",
-        );
-      }
-    },
     saveConfig: async () => {
       await run(async () => {
         await api.saveConfig();

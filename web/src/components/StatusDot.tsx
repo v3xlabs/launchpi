@@ -5,31 +5,31 @@ import { DeviceStatus } from "../api/inventory";
 const statusClass: Record<DeviceStatus, string> = {
   connected: "bg-emerald-500",
   connecting: "bg-amber-500",
-  unavailable: "bg-rose-500",
-  disabled: "bg-neutral-600",
+  unavailable: "bg-red-500",
+  disabled: "bg-slate-400 dark:bg-slate-600",
 };
 
-/**
- * The dot carries its own label, so a status shown as a colour is still readable by hovering it or
- * by a screen reader, and the row beside it does not have to spell the word out a second time.
- */
-export const StatusDot: Component<{ status: DeviceStatus; label?: string; class?: string; }> = properties => (
+export const statusWord: Record<DeviceStatus, string> = {
+  connected: "Connected",
+  connecting: "Connecting",
+  unavailable: "Unavailable",
+  disabled: "Disabled",
+};
+
+export const StatusDot: Component<{ status: DeviceStatus; label?: string; }> = properties => (
   <span
-    classList={{
-      "status-dot": true,
-      "h-2 w-2": properties.class === undefined,
-      [statusClass[properties.status]]: true,
-      [properties.class ?? ""]: true,
-    }}
+    class="status-dot size-2"
+    classList={{ [statusClass[properties.status]]: true }}
     role="img"
-    title={properties.label ?? properties.status}
-    aria-label={properties.label ?? properties.status}
+    title={properties.label ?? statusWord[properties.status]}
+    aria-label={properties.label ?? statusWord[properties.status]}
   />
 );
 
-export const StatusLabel: Component<{ status: DeviceStatus; }> = properties => (
+/** A status shown as a dot next to its word, so colour is never the only signal. */
+export const StatusLabel: Component<{ status: DeviceStatus; label?: string; }> = properties => (
   <span class="status-label">
-    <StatusDot status={properties.status} />
-    {properties.status}
+    <span class="status-dot size-2" classList={{ [statusClass[properties.status]]: true }} aria-hidden="true" />
+    {properties.label ?? statusWord[properties.status]}
   </span>
 );

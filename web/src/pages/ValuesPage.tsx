@@ -1,102 +1,13 @@
-import { TbFillCirclePlus as TbPlus, TbFillTrash as TbTrash } from "solid-icons/tb";
+import { FiPlus, FiTag, FiTrash2 } from "solid-icons/fi";
 import { Component, createMemo, createSignal, For, Show } from "solid-js";
-import { createStore } from "solid-js/store";
 
-import {
-  AvailableAction,
-  coerceConfigValue,
-  ConfigField,
-  parseUserValue,
-  variableReference,
-} from "../api/plugins";
-import { ConfigFieldInput, SearchField, TextField } from "../components/fields";
+import { parseUserValue, variableReference } from "../api/plugins";
+import { SearchField } from "../components/fields";
+import { InfoTip } from "../components/InfoTip";
+import { PageHeader } from "../components/PageHeader";
 import { useInventory } from "../context/InventoryContext";
-
-const ActionRow: Component<{ action: AvailableAction; }> = (properties) => {
-  const store = useInventory();
-  const [parameters, setParameters] = createStore<Record<string, unknown>>({});
-  const [isOpen, setIsOpen] = createSignal(false);
-  const setField = (field: ConfigField, raw: string | boolean) =>
-    setParameters(field.key, coerceConfigValue(field, raw));
-
-  return (
-    <div class="row flex-col items-stretch gap-2">
-      <div class="flex items-center gap-3">
-        <div class="row-main">
-          <div class="min-w-0 flex-1">
-            <p class="row-title">{properties.action.label}</p>
-            <p class="row-meta">
-              <span class="mono">
-                {properties.action.integration_id}
-                {" - "}
-                {properties.action.name}
-              </span>
-              <Show when={properties.action.description}>
-                {description => (
-                  <>
-                    <span class="meta-sep">-</span>
-                    {description()}
-                  </>
-                )}
-              </Show>
-            </p>
-          </div>
-        </div>
-        <Show
-          when={properties.action.parameters.length > 0}
-          fallback={(
-            <button
-              type="button"
-              class="secondary-button"
-              disabled={store.isSaving()}
-              onClick={() =>
-                void store.runPluginAction(
-                  properties.action.integration_id,
-                  properties.action.name,
-                  {},
-                )}
-            >
-              Run
-            </button>
-          )}
-        >
-          <button type="button" class="secondary-button" onClick={() => setIsOpen(!isOpen())}>
-            {isOpen() ? "Close" : "Run..."}
-          </button>
-        </Show>
-      </div>
-
-      <Show when={isOpen() && properties.action.parameters.length > 0}>
-        <div class="pressed-fields">
-          <For each={properties.action.parameters}>
-            {field => (
-              <ConfigFieldInput
-                field={field}
-                supportsReferences
-                integrationId={properties.action.integration_id}
-                value={parameters[field.key]}
-                onChange={raw => setField(field, raw)}
-              />
-            )}
-          </For>
-          <button
-            type="button"
-            class="primary-button"
-            disabled={store.isSaving()}
-            onClick={() =>
-              void store.runPluginAction(
-                properties.action.integration_id,
-                properties.action.name,
-                { ...parameters },
-              )}
-          >
-            Run now
-          </button>
-        </div>
-      </Show>
-    </div>
-  );
-};
+import { countOf } from "../utils/plural";
+import { instanceTitle } from "./PluginsPage";
 
 const CreateUserValue: Component = () => {
   const store = useInventory();
@@ -121,21 +32,23 @@ const CreateUserValue: Component = () => {
   };
 
   return (
-    <form class="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end" onSubmit={event => void submit(event)}>
-      <TextField
-        label="Name"
+    <form class="flex items-center gap-2 px-4 py-2.5" onSubmit={event => void submit(event)}>
+      <input
+        class="field-input w-48"
+        aria-label="Name"
+        placeholder="Name"
         value={name()}
-        placeholder="mode"
-        onChange={setName}
+        onInput={event => setName(event.currentTarget.value)}
       />
-      <TextField
-        label="Value"
+      <input
+        class="field-input flex-1"
+        aria-label="Value"
+        placeholder="Value"
         value={value()}
-        placeholder="day"
-        onChange={setValue}
+        onInput={event => setValue(event.currentTarget.value)}
       />
-      <button type="submit" class="primary-button" disabled={store.isSaving()}>
-        <TbPlus class="h-3.5 w-3.5" />
+      <button type="submit" class="secondary-button" disabled={store.isSaving()}>
+        <FiPlus class="size-4" />
         Add
       </button>
     </form>
@@ -151,122 +64,116 @@ export const ValuesPage: Component = () => {
   const matchesSearch = (...haystack: string[]) =>
     needle() === "" || haystack.some(text => text.toLowerCase().includes(needle()));
 
-  // Live where the event stream has published one, falling back to what the snapshot fetched.
-  const values = createMemo(() =>
-    store
-      .values()
-      .values.map(entry => ({
-        ...entry,
-        rendered: store.variables[`${entry.integration_id}:${entry.name}`] ?? entry.rendered,
-      }))
-      .filter(entry => matchesSearch(entry.integration_id, entry.name)),
-  );
-  const actions = createMemo(() =>
-    store.values().actions.filter(action =>
-      matchesSearch(action.integration_id, action.name, action.label),
-    ),
+  const publishedValues = createMemo(() =>
+    store.values().values.filter(entry => entry.integration_id !== "user"),
   );
   const userValues = createMemo(() =>
     store.values().user_values.filter(value => matchesSearch("user", value.name)),
   );
+  // Live where the event stream has published one, falling back to what the snapshot fetched.
+  const groups = createMemo(() => {
+    const byInstance = new Map<string, Array<{ name: string; rendered: string; }>>();
+
+    for (const entry of publishedValues()) {
+      if (!matchesSearch(entry.integration_id, entry.name)) continue;
+
+      const entries = byInstance.get(entry.integration_id) ?? [];
+
+      entries.push({
+        name: entry.name,
+        rendered: store.variables[`${entry.integration_id}:${entry.name}`] ?? entry.rendered,
+      });
+      byInstance.set(entry.integration_id, entries);
+    }
+
+    return [...byInstance].map(([integrationId, entries]) => {
+      const instance = store.plugins().instances.find(found => found.integration_id === integrationId);
+
+      return {
+        integrationId,
+        title: instance === undefined ? integrationId : instanceTitle(instance, store.plugins().types),
+        entries,
+      };
+    });
+  });
 
   return (
     <div class="page">
-      <div class="page-head">
-        <h1 class="page-title">Values</h1>
-        <div class="w-64">
-          <SearchField
-            label="Search values"
-            value={search()}
-            placeholder="light, title, toggle..."
-            onChange={setSearch}
-          />
-        </div>
-      </div>
+      <PageHeader
+        mark={<FiTag class="size-5" />}
+        title="Values"
+        meta={(
+          <span class="tabular-nums">
+            {countOf(store.values().user_values.length + publishedValues().length, "value")}
+          </span>
+        )}
+        actions={(
+          <div class="w-64">
+            <SearchField
+              label="Search values"
+              value={search()}
+              placeholder="Search values"
+              onChange={setSearch}
+            />
+          </div>
+        )}
+      />
 
-      <div class="card">
-        <div class="card-head">
-          <p class="card-title">Your values</p>
-          <span class="chip chip-muted">{userValues().length}</span>
+      <section>
+        <div class="section-head">
+          <h2 class="label-sm">Yours</h2>
+          <InfoTip>Set by you or by a key's Set value action. Use them anywhere as $(user:name).</InfoTip>
         </div>
-        <div class="card-body">
+        <div class="surface rows">
+          <For each={userValues()}>
+            {value => (
+              <div class="row py-2">
+                <code class="mono min-w-0 flex-1 truncate">{variableReference("user", value.name)}</code>
+                <span class="truncate text-right tabular-nums">{String(value.value)}</span>
+                <button
+                  type="button"
+                  class="danger-button"
+                  aria-label={`Remove ${value.name}`}
+                  title={`Remove ${value.name}`}
+                  disabled={store.isSaving()}
+                  onClick={() => void store.removeUserValue(value.name)}
+                >
+                  <FiTrash2 class="size-4" />
+                </button>
+              </div>
+            )}
+          </For>
           <CreateUserValue />
-          <Show
-            when={userValues().length > 0}
-            fallback={<p class="empty">None yet.</p>}
-          >
-            <div class="rows">
-              <For each={userValues()}>
-                {value => (
-                  <div class="row">
-                    <div class="row-main">
-                      <div class="min-w-0 flex-1">
-                        <p class="row-title mono">{variableReference("user", value.name)}</p>
-                        <p class="row-meta">{String(value.value)}</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      class="danger-button"
-                      aria-label={`Remove ${value.name}`}
-                      onClick={() => void store.removeUserValue(value.name)}
-                    >
-                      <TbTrash class="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
         </div>
-      </div>
+      </section>
 
-      <div class="card">
-        <div class="card-head">
-          <p class="card-title">Published by plugins</p>
-          <span class="chip chip-muted">{values().length}</span>
-        </div>
-        <div class="card-body">
-          <Show
-            when={values().length > 0}
-            fallback={<p class="empty">Nothing published yet.</p>}
-          >
-            <div class="rows">
-              <For each={values()}>
+      <Show when={needle() !== "" && userValues().length === 0 && groups().length === 0}>
+        <p class="surface empty">Nothing matches that.</p>
+      </Show>
+
+      <For each={groups()}>
+        {group => (
+          <section>
+            <div class="section-head">
+              <h2 class="label-sm">{group.title}</h2>
+              <code class="mono">{group.integrationId}</code>
+              <span class="ml-auto text-muted tabular-nums">{group.entries.length}</span>
+            </div>
+            <div class="surface rows">
+              <For each={group.entries}>
                 {entry => (
-                  <div class="row">
-                    <div class="row-main">
-                      <div class="min-w-0 flex-1">
-                        <p class="row-title mono">
-                          {variableReference(entry.integration_id, entry.name)}
-                        </p>
-                        <p class="row-meta">{entry.rendered}</p>
-                      </div>
-                    </div>
+                  <div class="row py-2">
+                    <code class="mono min-w-0 flex-1 truncate">
+                      {variableReference(group.integrationId, entry.name)}
+                    </code>
+                    <span class="max-w-[50%] truncate text-right tabular-nums">{entry.rendered}</span>
                   </div>
                 )}
               </For>
             </div>
-          </Show>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <p class="card-title">Actions</p>
-          <span class="chip chip-muted">{actions().length}</span>
-        </div>
-        <div class="card-body">
-          <Show
-            when={actions().length > 0}
-            fallback={<p class="empty">None available.</p>}
-          >
-            <div class="rows">
-              <For each={actions()}>{action => <ActionRow action={action} />}</For>
-            </div>
-          </Show>
-        </div>
-      </div>
+          </section>
+        )}
+      </For>
     </div>
   );
 };

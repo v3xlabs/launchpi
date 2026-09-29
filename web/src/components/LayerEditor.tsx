@@ -1,14 +1,13 @@
-import {
-  TbFillArrowBigDown as TbDown,
-  TbFillArrowBigUp as TbUp,
-  TbFillTrash as TbTrash,
-} from "solid-icons/tb";
+import * as DropdownMenu from "@kobalte/core/dropdown-menu";
+import { FiArrowDown, FiArrowUp, FiChevronDown, FiPlus, FiTrash2 } from "solid-icons/fi";
 import { Component, createSignal, For, Match, Show, Switch } from "solid-js";
 
 import { Anchor9, ColorBinding, Edge, Fit, Layer, LayerKind, ValueBinding } from "../api/inventory";
 import { isReference, newLayer } from "../utils/rendered";
 import { ColorField, FontFamilyField, NumberField, SelectField } from "./fields";
 import { IconPicker } from "./IconPicker";
+import { MenuItem } from "./Menu";
+import { ReferenceInput } from "./ReferenceInput";
 import { ValueField } from "./ValueField";
 
 const anchors: Anchor9[] = [
@@ -36,9 +35,9 @@ const AnchorField: Component<{
   value: Anchor9;
   onChange: (anchor: Anchor9) => void;
 }> = properties => (
-  <div class="grid gap-1">
+  <div class="grid gap-1.5">
     <span class="field-label">{properties.label}</span>
-    <div class="anchor-grid">
+    <div class="anchor-grid" role="group" aria-label={properties.label}>
       <For each={anchors}>
         {anchor => (
           <button
@@ -56,12 +55,12 @@ const AnchorField: Component<{
   </div>
 );
 
-const fitOptions = [
+const fitOptions: Array<{ value: Fit; label: string; }> = [
   { value: "cover", label: "Cover the key" },
   { value: "contain", label: "Fit inside" },
 ];
 
-const edgeOptions = [
+const edgeOptions: Array<{ value: Edge; label: string; }> = [
   { value: "bottom", label: "Bottom" }, { value: "top", label: "Top" },
   { value: "start", label: "Left" }, { value: "end", label: "Right" },
 ];
@@ -104,7 +103,7 @@ const LayerFields: Component<{
     <Switch>
       <Match when={properties.layer.kind === "fill" ? properties.layer : null}>
         {fill => (
-          <div class="grid grid-cols-2 gap-2">
+          <>
             <ColorField
               label="Colour"
               value={fill().color}
@@ -115,7 +114,7 @@ const LayerFields: Component<{
                 })}
             />
             <NumberField
-              label="Opacity %"
+              label="Opacity"
               value={opacityOf(fill().color)}
               onChange={value =>
                 properties.onMutate((layer) => {
@@ -131,13 +130,13 @@ const LayerFields: Component<{
                   };
                 })}
             />
-          </div>
+          </>
         )}
       </Match>
 
       <Match when={properties.layer.kind === "border" ? properties.layer : null}>
         {border => (
-          <div class="grid grid-cols-2 gap-2">
+          <>
             <ColorField
               label="Colour"
               value={border().color}
@@ -157,50 +156,50 @@ const LayerFields: Component<{
                   if (width !== undefined && layer.kind === "border") layer.width = width;
                 })}
             />
-          </div>
+          </>
         )}
       </Match>
 
       <Match when={properties.layer.kind === "text" ? properties.layer : null}>
         {text => (
           <>
-            <ValueField
-              label="Text"
-              value={text().text}
-              placeholder="Shown on the key"
-              onChange={value =>
+            <label class="col-span-2 grid min-w-0">
+              <span class="sr-only">Text</span>
+              <ReferenceInput
+                value={text().text}
+                placeholder="Shown on the key"
+                onChange={value =>
+                  properties.onMutate((layer) => {
+                    if (layer.kind === "text") layer.text = value;
+                  })}
+              />
+            </label>
+            <ColorField
+              label="Colour"
+              value={text().color}
+              fallback="#ffffff"
+              onChange={color =>
                 properties.onMutate((layer) => {
-                  if (layer.kind === "text") layer.text = value;
+                  if (layer.kind === "text") layer.color = color;
+                })}
+            />
+            <AnchorField
+              label="Position"
+              value={text().anchor}
+              onChange={anchor =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "text") layer.anchor = anchor;
                 })}
             />
             <FontFamilyField
-              label="Font family"
+              label="Font"
               value={text().font_family ?? ""}
-              placeholder="Panel default"
+              placeholder="Panel font"
               onChange={value =>
                 properties.onMutate((layer) => {
                   if (layer.kind === "text") layer.font_family = value.trim() || undefined;
                 })}
             />
-            <div class="grid grid-cols-2 gap-2">
-              <ColorField
-                label="Colour"
-                value={text().color}
-                fallback="#ffffff"
-                onChange={color =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "text") layer.color = color;
-                  })}
-              />
-              <AnchorField
-                label="Position"
-                value={text().anchor}
-                onChange={anchor =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "text") layer.anchor = anchor;
-                  })}
-              />
-            </div>
             <NumberField
               label="Font size"
               value={text().font_size ?? null}
@@ -223,23 +222,28 @@ const LayerFields: Component<{
       <Match when={properties.layer.kind === "image" ? properties.layer : null}>
         {image => (
           <>
-            <ValueField
-              label="Image"
-              value={image().image}
-              placeholder="mdi:lightbulb, a URL, or $(mpris.default:art_url)"
-              onChange={value =>
-                properties.onMutate((layer) => {
-                  if (layer.kind === "image") layer.image = value;
-                })}
-            />
-            <Show
-              when={isBrowsing()}
-              fallback={(
-                <button type="button" class="link-button justify-self-start" onClick={() => setIsBrowsing(true)}>
-                  browse icons
-                </button>
-              )}
-            >
+            <div class="col-span-2 flex min-w-0 items-start gap-2">
+              <label class="grid min-w-0 flex-1">
+                <span class="sr-only">Image</span>
+                <ReferenceInput
+                  value={image().image}
+                  placeholder="mdi:lightbulb, a URL, or $(mpris.default:art_url)"
+                  onChange={value =>
+                    properties.onMutate((layer) => {
+                      if (layer.kind === "image") layer.image = value;
+                    })}
+                />
+              </label>
+              <button
+                type="button"
+                class="secondary-button"
+                aria-expanded={isBrowsing()}
+                onClick={() => setIsBrowsing(current => !current)}
+              >
+                Browse
+              </button>
+            </div>
+            <Show when={isBrowsing()}>
               <IconPicker
                 onChoose={(icon) => {
                   setIsBrowsing(false);
@@ -249,46 +253,44 @@ const LayerFields: Component<{
                 }}
               />
             </Show>
-            <div class="grid grid-cols-2 gap-2">
-              <SelectField
-                label="Fit"
-                value={image().fit}
-                options={fitOptions}
-                onChange={value =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "image") layer.fit = value as Fit;
-                  })}
-              />
-              <NumberField
-                label="Size %"
-                value={image().scale_percent}
-                onChange={value =>
-                  properties.onMutate((layer) => {
-                    const scale = toCount(value);
+            <SelectField
+              label="Fit"
+              value={image().fit}
+              options={fitOptions}
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  const fit = fitOptions.find(option => option.value === value)?.value;
 
-                    if (scale !== undefined && layer.kind === "image") layer.scale_percent = scale;
-                  })}
-              />
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <AnchorField
-                label="Position"
-                value={image().anchor}
-                onChange={anchor =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "image") layer.anchor = anchor;
-                  })}
-              />
-              <ColorField
-                label="Tint"
-                value={image().tint}
-                fallback="#ffffff"
-                onChange={color =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "image") layer.tint = color;
-                  })}
-              />
-            </div>
+                  if (fit !== undefined && layer.kind === "image") layer.fit = fit;
+                })}
+            />
+            <NumberField
+              label="Size"
+              value={image().scale_percent}
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  const scale = toCount(value);
+
+                  if (scale !== undefined && layer.kind === "image") layer.scale_percent = scale;
+                })}
+            />
+            <AnchorField
+              label="Position"
+              value={image().anchor}
+              onChange={anchor =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "image") layer.anchor = anchor;
+                })}
+            />
+            <ColorField
+              label="Tint"
+              value={image().tint}
+              fallback="#ffffff"
+              onChange={color =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "image") layer.tint = color;
+                })}
+            />
           </>
         )}
       </Match>
@@ -296,44 +298,42 @@ const LayerFields: Component<{
       <Match when={properties.layer.kind === "bar" ? properties.layer : null}>
         {bar => (
           <>
-            <div class="grid grid-cols-2 gap-2">
-              <ValueField
-                label="Value"
-                value={String(bar().value)}
-                onChange={value =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "bar") layer.value = toValueBinding(value);
-                  })}
-              />
-              <ValueField
-                label="Maximum"
-                value={String(bar().maximum)}
-                onChange={value =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "bar") layer.maximum = toValueBinding(value);
-                  })}
-              />
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <ColorField
-                label="Colour"
-                value={bar().color}
-                fallback="#ffffff"
-                onChange={color =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "bar") layer.color = color;
-                  })}
-              />
-              <SelectField
-                label="Edge"
-                value={bar().edge}
-                options={edgeOptions}
-                onChange={value =>
-                  properties.onMutate((layer) => {
-                    if (layer.kind === "bar") layer.edge = value as Edge;
-                  })}
-              />
-            </div>
+            <ValueField
+              label="Value"
+              value={String(bar().value)}
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "bar") layer.value = toValueBinding(value);
+                })}
+            />
+            <ValueField
+              label="Maximum"
+              value={String(bar().maximum)}
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "bar") layer.maximum = toValueBinding(value);
+                })}
+            />
+            <ColorField
+              label="Colour"
+              value={bar().color}
+              fallback="#ffffff"
+              onChange={color =>
+                properties.onMutate((layer) => {
+                  if (layer.kind === "bar") layer.color = color;
+                })}
+            />
+            <SelectField
+              label="Edge"
+              value={bar().edge}
+              options={edgeOptions}
+              onChange={value =>
+                properties.onMutate((layer) => {
+                  const edge = edgeOptions.find(option => option.value === value)?.value;
+
+                  if (edge !== undefined && layer.kind === "bar") layer.edge = edge;
+                })}
+            />
           </>
         )}
       </Match>
@@ -341,85 +341,98 @@ const LayerFields: Component<{
   );
 };
 
+export const AddLayerMenu: Component<{ onMutate: (mutate: (layers: Layer[]) => void) => void; }> = properties => (
+  <DropdownMenu.Root>
+    <DropdownMenu.Trigger class="secondary-button">
+      <FiPlus class="size-4" />
+      Add layer
+      <FiChevronDown class="size-4 text-muted" />
+    </DropdownMenu.Trigger>
+    <DropdownMenu.Portal>
+      <DropdownMenu.Content class="popover min-w-36">
+        <For each={kinds}>
+          {({ kind, label }) => (
+            <MenuItem
+              onSelect={() =>
+                properties.onMutate((layers) => {
+                  layers.push(newLayer(kind));
+                })}
+            >
+              {label}
+            </MenuItem>
+          )}
+        </For>
+      </DropdownMenu.Content>
+    </DropdownMenu.Portal>
+  </DropdownMenu.Root>
+);
+
 /**
- * A key's face as an ordered stack. The list reads bottom-up the way the key is drawn, so moving a
- * layer up in the editor moves it nearer the viewer.
+ * A key's face as an ordered stack, listed top layer first the way design tools list layers. The
+ * stored array stays bottom first, the order the daemon draws, so moving a layer up raises its index.
  */
 export const LayersField: Component<{
   layers: Layer[];
   onMutate: (mutate: (layers: Layer[]) => void) => void;
 }> = properties => (
-  <div class="grid gap-2">
-    <span class="field-label">Layers</span>
-    <For each={properties.layers}>
-      {(layer, index) => (
-        <div class="layer-card">
-          <div class="layer-head">
-            <span class="layer-kind">{labelFor(layer.kind)}</span>
-            <div class="flex gap-1">
-              <button
-                type="button"
-                class="icon-button"
-                aria-label="Move layer up"
-                disabled={index() === properties.layers.length - 1}
-                onClick={() => properties.onMutate(layers => swap(layers, index(), index() + 1))}
-              >
-                <TbUp class="h-3 w-3" />
-              </button>
-              <button
-                type="button"
-                class="icon-button"
-                aria-label="Move layer down"
-                disabled={index() === 0}
-                onClick={() => properties.onMutate(layers => swap(layers, index(), index() - 1))}
-              >
-                <TbDown class="h-3 w-3" />
-              </button>
-              <button
-                type="button"
-                class="danger-button"
-                aria-label="Remove layer"
-                onClick={() => properties.onMutate(layers => layers.splice(index(), 1))}
-              >
-                <TbTrash class="h-3 w-3" />
-              </button>
-            </div>
-          </div>
-          <div class="layer-body">
-            <LayerFields
-              layer={layer}
-              onMutate={(mutate) => {
-                properties.onMutate((layers) => {
-                  const target = layers[index()];
+  <Show when={properties.layers.length > 0} fallback={<p class="empty">No layers.</p>}>
+    <div class="rows">
+      <For each={properties.layers.map((_, position, layers) => layers[layers.length - 1 - position])}>
+        {(layer, displayIndex) => {
+          const index = () => properties.layers.length - 1 - displayIndex();
 
-                  if (target !== undefined) mutate(target);
-                });
-              }}
-            />
-          </div>
-        </div>
-      )}
-    </For>
-    <Show when={properties.layers.length === 0}>
-      <p class="hint">No layers.</p>
-    </Show>
-    <div class="layer-add">
-      <For each={kinds}>
-        {({ kind, label }) => (
-          <button
-            type="button"
-            class="secondary-button"
-            onClick={() =>
-              properties.onMutate((layers) => {
-                layers.push(newLayer(kind));
-              })}
-          >
-            {`+ ${label}`}
-          </button>
-        )}
+          return (
+            <div class="layer-row">
+              <span class="layer-kind">{labelFor(layer.kind)}</span>
+              <div class="layer-fields">
+                <LayerFields
+                  layer={layer}
+                  onMutate={(mutate) => {
+                    properties.onMutate((layers) => {
+                      const target = layers[index()];
+
+                      if (target !== undefined) mutate(target);
+                    });
+                  }}
+                />
+              </div>
+              <div class="flex shrink-0">
+                <button
+                  type="button"
+                  class="icon-button"
+                  aria-label="Move layer up"
+                  title="Move up"
+                  disabled={index() === properties.layers.length - 1}
+                  onClick={() => properties.onMutate(layers => swap(layers, index(), index() + 1))}
+                >
+                  <FiArrowUp class="size-4" />
+                </button>
+                <button
+                  type="button"
+                  class="icon-button"
+                  aria-label="Move layer down"
+                  title="Move down"
+                  disabled={index() === 0}
+                  onClick={() => properties.onMutate(layers => swap(layers, index(), index() - 1))}
+                >
+                  <FiArrowDown class="size-4" />
+                </button>
+                <button
+                  type="button"
+                  class="danger-button"
+                  aria-label="Remove layer"
+                  title="Remove layer"
+                  onClick={() => properties.onMutate(layers => layers.splice(index(), 1))}
+                >
+                  <FiTrash2 class="size-4" />
+                </button>
+              </div>
+            </div>
+          );
+        }}
       </For>
     </div>
-  </div>
+  </Show>
 );
 
 const swap = (layers: Layer[], from: number, to: number): void => {

@@ -1,18 +1,19 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State,
+        Path, Query, State,
     },
     http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post, put},
     Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::{
-    api::error::ApiError,
+    api::{error::ApiError, routes::config::ExportQuery},
+    config::{device_discovery_enabled, is_read_only},
     drivers::streamdeck::{
         model::{model_by_name, STREAM_DECK_STUDIO},
         studio,
@@ -64,6 +65,27 @@ struct SetSurfaceBrightnessRequest {
     brightness: u8,
 }
 
+#[derive(Serialize)]
+struct InventoryResponse {
+    #[serde(flatten)]
+    inventory: DeviceInventory,
+    config: ConfigurationStatus,
+}
+
+#[derive(Serialize)]
+struct ConfigurationStatus {
+    mode: ConfigurationMode,
+    discovery: bool,
+    changes: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ConfigurationMode {
+    Declarative,
+    Writable,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/devices", get(list_devices).post(add_device))
@@ -99,10 +121,21 @@ pub fn router() -> Router<AppState> {
         .route("/api/config", post(save_configuration))
 }
 
-async fn list_devices(State(state): State<AppState>) -> Json<DeviceInventory> {
+async fn list_devices(State(state): State<AppState>) -> Result<Json<InventoryResponse>, ApiError> {
     let mut inventory = state.surfaces.inventory();
     inventory.plugin_instances = state.plugins.instances();
-    Json(inventory)
+    let config = ConfigurationStatus {
+        mode: if is_read_only() {
+            ConfigurationMode::Declarative
+        } else {
+            ConfigurationMode::Writable
+        },
+        discovery: device_discovery_enabled(),
+        changes: state
+            .configuration_change_count()
+            .map_err(ApiError::internal)?,
+    };
+    Ok(Json(InventoryResponse { inventory, config }))
 }
 
 async fn events(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> impl IntoResponse {
@@ -376,9 +409,10 @@ async fn delete_panel(
 async fn export_panel_configuration(
     State(state): State<AppState>,
     Path(panel_id): Path<String>,
+    Query(query): Query<ExportQuery>,
 ) -> Result<String, ApiError> {
     state
-        .export_panel_configuration(&panel_id)
+        .export_panel_configuration(&panel_id, query.format)
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("panel"))
 }

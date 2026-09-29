@@ -1,12 +1,13 @@
 import * as Dialog from "@kobalte/core/dialog";
-import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createSignal, For, JSX, Show } from "solid-js";
+import { FiCheck, FiX } from "solid-icons/fi";
+import { Component, createSignal, For, Show } from "solid-js";
 
 import { DeviceKind, deviceKindLabels } from "../api/inventory";
 import { DeviceImage } from "../components/DeviceImage";
+import { InfoTip } from "../components/InfoTip";
 import { useInventory } from "../context/InventoryContext";
 
-export const AddDeviceDialog: Component<{ trigger: JSX.Element; }> = (properties) => {
+export const AddDeviceDialog: Component = () => {
   const store = useInventory();
   const [isOpen, setIsOpen] = createSignal(false);
   const [name, setName] = createSignal("");
@@ -27,7 +28,7 @@ export const AddDeviceDialog: Component<{ trigger: JSX.Element; }> = (properties
     const created = await store.addDevice({
       name: name().trim() || "Network device",
       host: host().trim(),
-      port: Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : undefined,
+      port: Number.isSafeInteger(parsedPort) && parsedPort > 0 ? parsedPort : undefined,
       serial_number: null,
       kind: kind(),
     });
@@ -38,31 +39,55 @@ export const AddDeviceDialog: Component<{ trigger: JSX.Element; }> = (properties
     }
   };
 
-  const activeHint = () => deviceKindLabels.find(entry => entry.value === kind())?.hint;
-
   return (
     <Dialog.Root open={isOpen()} onOpenChange={setIsOpen}>
-      <Dialog.Trigger as="div" class="contents">
-        {properties.trigger}
-      </Dialog.Trigger>
+      <Dialog.Trigger class="secondary-button">Add</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
           <Dialog.Content class="dialog-content">
             <div class="dialog-head">
-              <div>
-                <Dialog.Title class="dialog-title">Add device by address</Dialog.Title>
-                <Dialog.Description class="dialog-description">
-                  Connect a device that discovery cannot reach - for example a dock on another
-                  subnet.
-                </Dialog.Description>
-              </div>
-              <Dialog.CloseButton class="icon-button" aria-label="Close add device dialog">
-                <TbX class="h-4 w-4" />
+              <Dialog.Title class="dialog-title">Add by address</Dialog.Title>
+              <InfoTip>For a device that discovery cannot reach, for example a dock on another subnet.</InfoTip>
+              <Dialog.CloseButton class="icon-button ml-auto" aria-label="Close">
+                <FiX class="size-4" />
               </Dialog.CloseButton>
             </div>
             <form onSubmit={submit}>
               <div class="dialog-body">
+                <div class="grid gap-1.5" role="group" aria-labelledby="add-device-model">
+                  <span id="add-device-model" class="font-medium text-soft">Model</span>
+                  <div class="flex gap-1">
+                    <For each={deviceKindLabels}>
+                      {entry => (
+                        <button
+                          type="button"
+                          aria-pressed={kind() === entry.value}
+                          classList={{
+                            "flex flex-1 items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors": true,
+                            "bg-raised": kind() === entry.value,
+                            "hover:bg-raised/60": kind() !== entry.value,
+                          }}
+                          onClick={() => setKind(entry.value)}
+                        >
+                          <DeviceImage model={entry.label} class="h-8 w-12" />
+                          <span
+                            classList={{
+                              "flex-1 font-medium": true,
+                              "text-slate-900 dark:text-slate-100": kind() === entry.value,
+                              "text-soft": kind() !== entry.value,
+                            }}
+                          >
+                            {entry.label}
+                          </span>
+                          <Show when={kind() === entry.value}>
+                            <FiCheck class="size-4 shrink-0" />
+                          </Show>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
                 <label class="field-label">
                   Name
                   <input
@@ -72,33 +97,7 @@ export const AddDeviceDialog: Component<{ trigger: JSX.Element; }> = (properties
                     placeholder="Control room dock"
                   />
                 </label>
-                <label class="field-label">
-                  Device type
-                  <select
-                    class="field-input"
-                    value={kind()}
-                    onChange={event => setKind(event.currentTarget.value as DeviceKind)}
-                  >
-                    <For each={deviceKindLabels}>
-                      {entry => <option value={entry.value}>{entry.label}</option>}
-                    </For>
-                  </select>
-                </label>
-                <Show when={activeHint()}>
-                  {hint => (
-                    <div class="flex items-center gap-3">
-                      <DeviceImage
-                        model={
-                          deviceKindLabels.find(entry => entry.value === kind())
-                            ?.label ?? ""
-                        }
-                        class="h-10 w-16"
-                      />
-                      <p class="hint">{hint()}</p>
-                    </div>
-                  )}
-                </Show>
-                <div class="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
+                <div class="grid grid-cols-[minmax(0,1fr)_6rem] gap-3">
                   <label class="field-label">
                     Host
                     <input
@@ -112,7 +111,7 @@ export const AddDeviceDialog: Component<{ trigger: JSX.Element; }> = (properties
                   <label class="field-label">
                     Port
                     <input
-                      class="field-input"
+                      class="field-input tabular-nums"
                       value={port()}
                       onInput={event => setPort(event.currentTarget.value)}
                       inputMode="numeric"

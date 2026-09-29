@@ -1,6 +1,6 @@
 import * as Dialog from "@kobalte/core/dialog";
-import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createMemo, createSignal, For, JSX, onCleanup, onMount, Show } from "solid-js";
+import { FiX } from "solid-icons/fi";
+import { Component, createMemo, createSignal, For, onCleanup, onMount, ParentComponent, Show } from "solid-js";
 
 import { Control } from "../api/inventory";
 import { ControlTemplate, Preset } from "../api/presets";
@@ -48,8 +48,8 @@ const PresetKey: Component<{ control: Control; }> = (properties) => {
   );
 };
 
-export const PresetPickerDialog: Component<{
-  trigger: JSX.Element;
+export const PresetPickerDialog: ParentComponent<{
+  triggerClass: string;
   onChoose: (template: ControlTemplate) => void;
 }> = (properties) => {
   const store = useInventory();
@@ -57,6 +57,7 @@ export const PresetPickerDialog: Component<{
   const [search, setSearch] = createSignal("");
   const [selectedIntegrationId, setSelectedIntegrationId] = createSignal<string | null>(null);
   let presetList: HTMLDivElement | undefined;
+  const holdPresetList = (element: HTMLDivElement) => (presetList = element);
 
   const sections = createMemo<Section[]>(() => {
     const needle = search().trim()
@@ -113,19 +114,19 @@ export const PresetPickerDialog: Component<{
       onOpenChange={(open) => {
         setIsOpen(open);
 
-        if (!open) setSearch("");
-        else setSelectedIntegrationId(sections()[0]?.integrationId ?? null);
+        if (open) setSelectedIntegrationId(sections()[0]?.integrationId ?? null);
+        else setSearch("");
       }}
     >
-      <Dialog.Trigger as="div" class="contents">{properties.trigger}</Dialog.Trigger>
+      <Dialog.Trigger class={properties.triggerClass}>{properties.children}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
           <Dialog.Content class="dialog-content" data-size="wide" data-preset-picker>
             <div class="dialog-head">
               <Dialog.Title class="dialog-title">Presets</Dialog.Title>
-              <Dialog.CloseButton class="icon-button" aria-label="Close">
-                <TbX class="h-3.5 w-3.5" />
+              <Dialog.CloseButton class="icon-button ml-auto" aria-label="Close">
+                <FiX class="size-4" />
               </Dialog.CloseButton>
             </div>
             <div class="dialog-body">
@@ -153,13 +154,13 @@ export const PresetPickerDialog: Component<{
                             data-selected={section.integrationId === selectedSection()?.integrationId}
                             onClick={() => selectIntegration(section.integrationId)}
                           >
-                            <span class="preset-integration-name">{section.integrationId}</span>
+                            <span class="preset-integration-name">{section.title}</span>
                             <span class="preset-integration-count">{section.presetCount}</span>
                           </button>
                         )}
                       </For>
                     </nav>
-                    <div class="preset-list" ref={presetList}>
+                    <div class="preset-list" ref={holdPresetList}>
                       <Show when={selectedSection()}>
                         {section => (
                           <section class="preset-section">

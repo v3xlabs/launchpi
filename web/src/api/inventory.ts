@@ -1,5 +1,5 @@
+import { ConfigState, isConfigState } from "./config";
 import {
-  fetchText,
   getErrorMessage,
   isNumber,
   isOptionalString,
@@ -154,6 +154,7 @@ export type LogEntry = {
   message: string;
 };
 export type Inventory = {
+  config: ConfigState;
   discovered: DiscoveredDevice[];
   devices: Device[];
   panels: Panel[];
@@ -189,6 +190,7 @@ export const emptyCapabilities: Capabilities = {
 };
 export const defaultContentLayout: ContentLayout = { text_anchor: "center" };
 export const emptyInventory: Inventory = {
+  config: { mode: "writable", discovery: true, changes: 0 },
   discovered: [],
   devices: [],
   panels: [],
@@ -317,6 +319,7 @@ export const isLogEntry = (value: unknown): value is LogEntry =>
   && isString(value.message);
 const isInventory = (value: unknown): value is Inventory =>
   isRecord(value)
+  && isConfigState(value.config)
   && Array.isArray(value.discovered)
   && value.discovered.every(isDiscoveredDevice)
   && Array.isArray(value.devices)
@@ -354,7 +357,7 @@ export const dialSlotCount = (dials: DialPlacement[]): number =>
   dials.reduce((count, dial) => Math.max(count, dial.index + 1), 0);
 
 export const layoutLabel = (layout: GridLayout | null): string =>
-  (layout === null ? "Freeform" : `${layout.columns}x${layout.rows}`);
+  (layout === null ? "Freeform" : `${layout.columns} x ${layout.rows}`);
 // Discovery names arrive as raw mDNS instance names; the service suffix is noise in the UI.
 export const displayName = (name: string): string => name.replace(/\._elg\._tcp\.local\.?/i, "").trim();
 
@@ -393,13 +396,9 @@ export const dialsForPanel = (devices: Device[], layout: GridLayout): DialPlacem
 };
 
 export type DeviceKind = "studio" | "network_dock";
-export const deviceKindLabels: Array<{ value: DeviceKind; label: string; hint: string; }> = [
-  { value: "studio", label: "Stream Deck Studio", hint: "16 x 2 keys, connects directly over the network." },
-  {
-    value: "network_dock",
-    label: "Stream Deck Network Dock",
-    hint: "Keyless dock - the attached Stream Deck appears as a child device once connected.",
-  },
+export const deviceKindLabels: Array<{ value: DeviceKind; label: string; }> = [
+  { value: "studio", label: "Stream Deck Studio" },
+  { value: "network_dock", label: "Stream Deck Network Dock" },
 ];
 export type AddDeviceInput = {
   name: string;
@@ -489,11 +488,5 @@ export const updatePanel = (panelId: string, payload: PanelPayload): Promise<Res
 export const deletePanel = (panelId: string): Promise<Response> =>
   request(`/api/panels/${encodeURIComponent(panelId)}`, "DELETE");
 export const saveConfig = (): Promise<Response> => request("/api/config", "POST");
-
-export const fetchPanelConfig = (panelId: string): Promise<string> =>
-  fetchText(`/api/panels/${encodeURIComponent(panelId)}/config`);
-export const fetchDeviceConfig = (surfaceId: string): Promise<string> =>
-  fetchText(`/api/devices/${encodeURIComponent(surfaceId)}/config`);
-export const fetchFullConfig = (): Promise<string> => fetchText("/api/config/export");
 
 export { getErrorMessage, isNumber, isOptionalString, isRecord, isString, request } from "./guards";
