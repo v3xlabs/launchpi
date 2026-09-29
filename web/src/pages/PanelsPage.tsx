@@ -1,35 +1,55 @@
 import { Link, useNavigate } from "@tanstack/solid-router";
-import {
-  TbFillCircleCheck as TbCheck,
-  TbFillClipboard as TbCopy,
-  TbFillDeviceRemote as TbDeviceRemote,
-  TbFillFileDownload as TbDownload,
-  TbFillTrash as TbTrash,
-} from "solid-icons/tb";
+import { FiCheck, FiGrid, FiPlus } from "solid-icons/fi";
 import { Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { createStore, produce } from "solid-js/store";
+import { createStore, produce, unwrap } from "solid-js/store";
 
 import {
   Control,
   Device,
   dialsForPanel,
   displayName,
-  fetchPanelConfig,
   layoutLabel,
   Panel,
   PanelDial,
   RgbaColor,
 } from "../api/inventory";
-import { CopyTomlButton } from "../components/CopyTomlButton";
+import { InfoTip } from "../components/InfoTip";
+import { CopyConfigItems, MenuItem, MenuSeparator, OverflowMenu } from "../components/Menu";
+import { MetaSeparator, PageHeader } from "../components/PageHeader";
 import { PanelInspector, PanelSelection } from "../components/PanelInspector";
 import { PanelStage, PanelThumbnail } from "../components/PanelPreview";
-import { StatusDot } from "../components/StatusDot";
+import { StatusLabel } from "../components/StatusDot";
 import { ControlClipboard, useInventory } from "../context/InventoryContext";
 import { CreatePanelDialog } from "../dialogs/CreatePanelDialog";
 import { DeletePanelDialog } from "../dialogs/DeletePanelDialog";
+import { countOf } from "../utils/plural";
 import { newState } from "../utils/rendered";
 
-const cloneState = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+// Store proxies cannot be structured-cloned, so the draft copies the underlying object.
+const cloneState = <T,>(value: T): T => structuredClone(unwrap(value));
+
+const DeviceNames: Component<{ devices: Device[]; }> = properties => (
+  <Show when={properties.devices[0]}>
+    {first => (
+      <span class="inline-flex min-w-0 items-center gap-1.5">
+        <StatusLabel status={first().status} label={displayName(first().name)} />
+        <Show when={properties.devices.length > 1}>
+          <span class="text-muted tabular-nums">{`+${properties.devices.length - 1}`}</span>
+        </Show>
+      </span>
+    )}
+  </Show>
+);
+
+const PanelSize: Component<{ panel: Panel; }> = properties => (
+  <>
+    <span class="tabular-nums">{layoutLabel(properties.panel.layout)}</span>
+    <Show when={properties.panel.dials.length > 0}>
+      <MetaSeparator />
+      <span class="tabular-nums">{countOf(properties.panel.dials.length, "dial")}</span>
+    </Show>
+  </>
+);
 
 export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   const store = useInventory();
@@ -40,6 +60,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   });
   const [selection, setSelection] = createSignal<PanelSelection | null>(null);
   const [pasteTarget, setPasteTarget] = createSignal<{ column: number; row: number; } | null>(null);
+  const [isDeleting, setIsDeleting] = createSignal(false);
   const serverPanel = createMemo(
     () => store.inventory().panels.find(panel => panel.panel_id === properties.panelId) ?? null,
   );
@@ -64,7 +85,7 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       return;
     }
 
-    if (draft.panel === null && server) setDraft("panel", cloneState(server));
+    if (server && draft.panel === null) setDraft("panel", cloneState(server));
   });
   const selectedControlId = () => {
     const current = selection();
@@ -248,104 +269,101 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
       <Show when={draft.panel} fallback={<PanelsOverview />}>
         {panel => (
           <>
-            <div class="page-head">
-              <div class="min-w-0">
-                <p class="breadcrumb">
-                  <Link to="/panels">Panels</Link>
-                  <span class="meta-sep">/</span>
-                  <span class="text-neutral-400">{layoutLabel(panel().layout)}</span>
-                </p>
-                <h1 class="page-title mt-1">
-                  {panel().name}
+            <PageHeader
+              mark={<FiGrid class="size-5" />}
+              title={(
+                <>
+                  <span class="truncate">{panel().name}</span>
                   <Show when={draft.dirty}>
-                    <span class="unsaved-dot" title="Unsaved changes" />
+                    <span class="unsaved">
+                      <span class="status-dot size-2 bg-amber-500" aria-hidden="true" />
+                      Unsaved
+                    </span>
                   </Show>
-                </h1>
-              </div>
-              <div class="flex gap-2">
-                <button
-                  type="button"
-                  class="secondary-button"
-                  onClick={() => void store.exportPanel(panel())}
-                >
-                  <TbDownload class="h-3.5 w-3.5" />
-                  Export TOML
-                </button>
-                <CopyTomlButton load={() => fetchPanelConfig(panel().panel_id)} />
-                <button
-                  type="button"
-                  class="primary-button"
-                  onClick={() => void savePanel()}
-                  disabled={store.isSaving() || !draft.dirty}
-                >
-                  <TbCheck class="h-3.5 w-3.5" />
-                  {store.isSaving() ? "Saving..." : "Save panel"}
-                </button>
-                <DeletePanelDialog
-                  panel={panel()}
-                  onDeleted={() => navigate({ to: "/panels" })}
-                  trigger={(
-                    <button
-                      type="button"
-                      class="danger-button"
-                      aria-label={`Delete ${panel().name}`}
-                      title="Delete panel"
-                    >
-                      <TbTrash class="h-4 w-4" />
-                    </button>
-                  )}
-                />
-              </div>
-            </div>
-
-            <Show when={store.clipboard()}>
-              {clip => (
-                <div class="clipboard-banner">
-                  <TbCopy class="h-3.5 w-3.5 shrink-0" />
-                  <span class="min-w-0 flex-1 truncate">{clip().name}</span>
-                  <kbd class="kbd">Ctrl/Cmd+V</kbd>
+                </>
+              )}
+              meta={(
+                <>
+                  <PanelSize panel={panel()} />
+                  <Show when={assignedDevices().length > 0}>
+                    <MetaSeparator />
+                    <span class="inline-flex min-w-0 items-center gap-1.5">
+                      On
+                      <DeviceNames devices={assignedDevices()} />
+                    </span>
+                  </Show>
+                </>
+              )}
+              actions={(
+                <>
                   <button
                     type="button"
-                    class="link-button"
-                    onClick={() => store.clearClipboard()}
+                    class="primary-button"
+                    onClick={() => void savePanel()}
+                    disabled={store.isSaving() || !draft.dirty}
                   >
-                    Clear
+                    <FiCheck class="size-4" />
+                    {store.isSaving() ? "Saving..." : "Save"}
                   </button>
-                </div>
-              )}
-            </Show>
-
-            <div class="editor">
-              <div class="grid gap-4">
-                <div class="card">
-                  <PanelStage
+                  <OverflowMenu label={`More actions for ${panel().name}`}>
+                    <CopyConfigItems path={`/api/panels/${encodeURIComponent(panel().panel_id)}/config`} />
+                    <MenuSeparator />
+                    <MenuItem isDanger onSelect={() => setIsDeleting(true)}>Delete panel</MenuItem>
+                  </OverflowMenu>
+                  <DeletePanelDialog
                     panel={panel()}
-                    dials={dials()}
-                    pressedKeys={pressedKeys()}
-                    dialLevels={dialLevels()}
-                    pressedDials={pressedDials()}
-                    activeControlId={selectedControlId()}
-                    activeDialIndex={selectedDialIndex()}
-                    pasteMode={store.clipboard() !== null}
-                    onCellClick={handleCellClick}
-                    onCellFocus={handleCellFocus}
-                    onDialClick={index => setSelection({ kind: "dial", index })}
+                    isOpen={isDeleting()}
+                    onOpenChange={setIsDeleting}
+                    onDeleted={() => navigate({ to: "/panels" })}
                   />
-                </div>
+                </>
+              )}
+            />
 
-                <Show when={assignedDevices().length > 0}>
-                  <div class="card">
-                    <div class="card-head">
-                      <p class="card-title">In use by</p>
-                      <span class="chip chip-muted">{assignedDevices().length}</span>
-                    </div>
-                    <div class="rows">
-                      <For each={assignedDevices()}>
-                        {device => <AssignedDeviceRow device={device} />}
-                      </For>
-                    </div>
-                  </div>
-                </Show>
+            <div class="grid gap-4">
+              <div class="surface">
+                <PanelStage
+                  panel={panel()}
+                  dials={dials()}
+                  pressedKeys={pressedKeys()}
+                  dialLevels={dialLevels()}
+                  pressedDials={pressedDials()}
+                  activeControlId={selectedControlId()}
+                  activeDialIndex={selectedDialIndex()}
+                  pasteMode={store.clipboard() !== null}
+                  onCellClick={handleCellClick}
+                  onCellFocus={handleCellFocus}
+                  onDialClick={index => setSelection({ kind: "dial", index })}
+                />
+                <div class="flex items-center gap-2 border-t border-hairline px-4 py-2 text-muted">
+                  <Show
+                    when={store.clipboard()}
+                    fallback={(
+                      <>
+                        <span class="flex-1">Click an empty key to add one.</span>
+                        <InfoTip label="Keyboard shortcuts">
+                          Ctrl/Cmd+C copies the selected key, Ctrl/Cmd+V pastes on the focused key, Delete
+                          removes it, Esc clears the selection.
+                        </InfoTip>
+                      </>
+                    )}
+                  >
+                    {clip => (
+                      <>
+                        <span class="flex min-w-0 flex-1 items-center gap-2" role="status">
+                          <span class="truncate">{`Copied ${clip().name}`}</span>
+                          <span class="flex shrink-0 items-center gap-1">
+                            <kbd class="kbd">Ctrl+V</kbd>
+                            to paste
+                          </span>
+                        </span>
+                        <button type="button" class="link-button" onClick={() => store.clearClipboard()}>
+                          Clear
+                        </button>
+                      </>
+                    )}
+                  </Show>
+                </div>
               </div>
 
               <PanelInspector
@@ -368,57 +386,45 @@ export const PanelsPage: Component<{ panelId?: string; }> = (properties) => {
   );
 };
 
-const AssignedDeviceRow: Component<{ device: Device; }> = properties => (
-  <Link
-    to="/devices/$surfaceId"
-    params={{ surfaceId: properties.device.surface_id }}
-    class="row row-main no-underline"
-  >
-    <StatusDot status={properties.device.status} />
-    <span class="min-w-0 flex-1">
-      <span class="row-title block">{displayName(properties.device.name)}</span>
-      <span class="row-meta block">
-        {properties.device.model}
-        {" - "}
-        {properties.device.host}
-      </span>
-    </span>
-  </Link>
-);
-
-const PanelCard: Component<{ panel: Panel; }> = (properties) => {
+const PanelTile: Component<{ panel: Panel; }> = (properties) => {
   const store = useInventory();
   const pressedKeys = createMemo(() => store.pressedKeysForPanel(properties.panel.panel_id));
   const dialLevels = createMemo(() => store.dialLevelsForPanel(properties.panel.panel_id));
   const pressedDials = createMemo(() => store.pressedDialsForPanel(properties.panel.panel_id));
-  const assignedCount = () =>
-    store.inventory().devices.filter(device => device.active_panel_id === properties.panel.panel_id).length;
+  const assignedDevices = createMemo(() =>
+    store.inventory().devices.filter(device => device.active_panel_id === properties.panel.panel_id));
 
   return (
     <Link
       to="/panels/$panelId"
       params={{ panelId: properties.panel.panel_id }}
-      class="card no-underline transition hover:border-neutral-700"
+      class="surface grid gap-3 p-4"
     >
-      <div class="card-head">
-        <p class="row-title">{properties.panel.name}</p>
-        <span class="flex items-center gap-1.5">
-          <Show when={assignedCount() > 0}>
-            <span class="chip chip-accent" title={`Running on ${assignedCount()} device${assignedCount() === 1 ? "" : "s"}`}>
-              <TbDeviceRemote class="h-3 w-3" />
-              {assignedCount()}
-            </span>
-          </Show>
-          <span class="chip">{layoutLabel(properties.panel.layout)}</span>
-        </span>
+      <div class="grid h-40 place-items-center">
+        <div class="w-full">
+          <PanelThumbnail
+            panel={properties.panel}
+            dials={dialsForPanel(store.inventory().devices, properties.panel.layout)}
+            pressedKeys={pressedKeys()}
+            dialLevels={dialLevels()}
+            pressedDials={pressedDials()}
+          />
+        </div>
       </div>
-      <PanelThumbnail
-        panel={properties.panel}
-        dials={dialsForPanel(store.inventory().devices, properties.panel.layout)}
-        pressedKeys={pressedKeys()}
-        dialLevels={dialLevels()}
-        pressedDials={pressedDials()}
-      />
+      <div class="flex items-center gap-3">
+        <span class="min-w-0 flex-1">
+          <span class="row-title block">{properties.panel.name}</span>
+          <span class="flex items-center gap-2 text-muted">
+            <PanelSize panel={properties.panel} />
+          </span>
+        </span>
+        <Show
+          when={assignedDevices().length > 0}
+          fallback={<span class="shrink-0 text-muted">Not on a device</span>}
+        >
+          <DeviceNames devices={assignedDevices()} />
+        </Show>
+      </div>
     </Link>
   );
 };
@@ -428,26 +434,27 @@ const PanelsOverview: Component = () => {
 
   return (
     <>
-      <div class="page-head">
-        <h1 class="page-title">Panels</h1>
-        <CreatePanelDialog
-          trigger={(
-            <button type="button" class="primary-button">
-              New panel
-            </button>
-          )}
-        />
-      </div>
+      <PageHeader
+        mark={<FiGrid class="size-5" />}
+        title="Panels"
+        meta={<span class="tabular-nums">{countOf(store.inventory().panels.length, "panel")}</span>}
+        actions={(
+          <CreatePanelDialog triggerClass="primary-button">
+            <FiPlus class="size-4" />
+            New panel
+          </CreatePanelDialog>
+        )}
+      />
       <Show
         when={store.inventory().panels.length > 0}
         fallback={(
-          <div class="card">
-            <p class="empty">None yet.</p>
+          <div class="surface">
+            <p class="empty">No panels yet.</p>
           </div>
         )}
       >
-        <div class="grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-          <For each={store.inventory().panels}>{panel => <PanelCard panel={panel} />}</For>
+        <div class="grid items-start gap-4 sm:grid-cols-2">
+          <For each={store.inventory().panels}>{panel => <PanelTile panel={panel} />}</For>
         </div>
       </Show>
     </>

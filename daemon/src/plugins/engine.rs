@@ -16,7 +16,7 @@ use crate::{
     assets::AssetStore,
     bindings::action::{Action, ActionTrigger},
     config::{
-        plugins::{export_document, InstanceFile, PluginDirectory},
+        plugins::{InstanceFile, PluginDirectory},
         store::Persistence,
         values::{self, UserValue},
     },
@@ -303,18 +303,24 @@ impl PluginEngine {
         self.publish(VariableRef::user(name), value);
     }
 
-    pub fn export_instance(
+    pub fn instance_document(
         &self,
         integration_id: &IntegrationId,
-    ) -> Option<Result<String, String>> {
-        let instances = self.instances.read().unwrap();
-        let instance = instances.get(integration_id)?;
-        let manifest = manifest_for(&instance.identity.plugin_type)?;
-        Some(export_document(
-            integration_id,
-            &instance.document,
-            &manifest,
-        ))
+    ) -> Option<(InstanceIdentity, InstanceDocument)> {
+        self.instances
+            .read()
+            .unwrap()
+            .get(integration_id)
+            .map(|instance| (instance.identity.clone(), instance.document.clone()))
+    }
+
+    pub fn instance_documents(&self) -> Vec<(InstanceIdentity, InstanceDocument)> {
+        self.instances
+            .read()
+            .unwrap()
+            .values()
+            .map(|instance| (instance.identity.clone(), instance.document.clone()))
+            .collect()
     }
 
     /// What every running instance currently recommends, already rewritten to name real instances.
@@ -1005,7 +1011,7 @@ fn secret_keys(plugin_type: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn manifest_for(plugin_type: &str) -> Option<PluginManifest> {
+pub fn manifest_for(plugin_type: &str) -> Option<PluginManifest> {
     registry()
         .iter()
         .find(|factory| factory.plugin_type == plugin_type)

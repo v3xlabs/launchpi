@@ -1,4 +1,4 @@
-import { TbFillClipboard as TbCopy } from "solid-icons/tb";
+import { FiClipboard, FiPlus } from "solid-icons/fi";
 import { Component, createMemo, For, JSX, Show } from "solid-js";
 
 import { Control, DialPlacement, Panel, PanelDial, panelDial } from "../api/inventory";
@@ -23,14 +23,14 @@ const controlAt = (panel: Panel, cell: Cell): Control | undefined =>
 // both states along with whether the key is down and lets it decide.
 
 // A live level from the hardware wins over the level the panel declares.
-const dialLevel = (dial: PanelDial, liveLevels?: Array<number | null>): number =>
+export const dialLevel = (dial: PanelDial, liveLevels?: Array<number | null>): number =>
   liveLevels?.[dial.index] ?? dial.level;
 
 // The knobs are placed in key-grid coordinates, which can be negative or past the last column, so
 // the drawn grid is the key grid grown to cover them and every cell is positioned explicitly.
-type SurfaceGrid = { columns: number; rows: number; originColumn: number; originRow: number; };
+export type SurfaceGrid = { columns: number; rows: number; originColumn: number; originRow: number; };
 
-const surfaceGrid = (panel: Panel, dials: DialPlacement[]): SurfaceGrid => {
+export const surfaceGrid = (panel: Panel, dials: DialPlacement[]): SurfaceGrid => {
   const columns = [0, panel.layout.columns - 1, ...dials.map(dial => dial.column)];
   const rows = [
     0,
@@ -51,7 +51,7 @@ const surfaceGrid = (panel: Panel, dials: DialPlacement[]): SurfaceGrid => {
 // A column with no keys in it holds a knob, which is wider than a key on every model that has one.
 const gutterWidth = 1.5;
 
-const gridStyle = (panel: Panel, grid: SurfaceGrid): JSX.CSSProperties => {
+export const gridStyle = (panel: Panel, grid: SurfaceGrid): JSX.CSSProperties => {
   const columns = Array.from({ length: grid.columns }, (_, index) => index + grid.originColumn);
   const isKeyColumn = (column: number) => column >= 0 && column < panel.layout.columns;
 
@@ -66,7 +66,7 @@ const gridStyle = (panel: Panel, grid: SurfaceGrid): JSX.CSSProperties => {
   };
 };
 
-const cellStyle = (grid: SurfaceGrid, column: number, row: number, rowSpan = 1): JSX.CSSProperties => ({
+export const cellStyle = (grid: SurfaceGrid, column: number, row: number, rowSpan = 1): JSX.CSSProperties => ({
   "grid-column": String(column - grid.originColumn + 1),
   "grid-row": `${row - grid.originRow + 1} / span ${rowSpan}`,
 });
@@ -116,7 +116,7 @@ export const PanelThumbnail: Component<{
 
             return (
               <div
-                classList={{ "key": true, "key-pressed": isPressed() }}
+                classList={{ "key": true, "bg-raised": keyed() === undefined, "key-pressed": isPressed() }}
                 style={cellStyle(grid(), cell.column, cell.row)}
               >
                 <Show when={keyed()}>
@@ -227,8 +227,8 @@ export const PanelStage: Component<PanelStageProperties> = (properties) => {
                 <Show
                   when={control()}
                   fallback={properties.pasteMode
-                    ? <TbCopy class="h-3 w-3" />
-                    : <span class="text-xs">+</span>}
+                    ? <FiClipboard class="size-3.5" />
+                    : <FiPlus class="size-3.5" />}
                 >
                   {keyed => <KeyImage control={keyed()} isPressed={isPressed()} />}
                 </Show>

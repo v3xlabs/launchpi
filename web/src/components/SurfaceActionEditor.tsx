@@ -63,7 +63,7 @@ export const SurfaceActionEditor: Component<SurfaceActionEditorProperties> = (pr
   return (
     <>
       <Show when={properties.action.type === "set_surface_display"}>
-        <div class="segmented" role="group" aria-label="Display state">
+        <div class="flex gap-1" role="group" aria-label="Display state">
           <For
             each={[
               { isDisplayOff: true, label: "Sleep" },
@@ -73,8 +73,8 @@ export const SurfaceActionEditor: Component<SurfaceActionEditorProperties> = (pr
             {option => (
               <button
                 type="button"
-                class="segment"
-                data-selected={properties.action.type === "set_surface_display"
+                class="toggle-chip"
+                aria-pressed={properties.action.type === "set_surface_display"
                   && properties.action.is_display_off === option.isDisplayOff}
                 onClick={() => properties.onMutate((action) => {
                   if (action.type === "set_surface_display") {
@@ -94,7 +94,7 @@ export const SurfaceActionEditor: Component<SurfaceActionEditorProperties> = (pr
           <label class="field-label">
             <span class="flex items-center justify-between gap-2">
               Brightness
-              <span class="chip">
+              <span class="font-normal text-muted tabular-nums">
                 {brightness().type === "set_surface_brightness" ? brightness().brightness : 100}
                 %
               </span>

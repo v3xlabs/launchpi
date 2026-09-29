@@ -1,19 +1,20 @@
 import * as AlertDialog from "@kobalte/core/alert-dialog";
-import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
+import { FiX } from "solid-icons/fi";
+import { Component, createMemo, For, Show } from "solid-js";
 
-import { displayName, Panel } from "../api/inventory";
-import { StatusDot } from "../components/StatusDot";
+import { displayName, layoutLabel, Panel } from "../api/inventory";
+import { StatusLabel } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
 import { countOf } from "../utils/plural";
 
+/** Opened from a menu item, so the caller owns the open state rather than a trigger living in here. */
 export const DeletePanelDialog: Component<{
   panel: Panel;
-  trigger: JSX.Element;
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
   onDeleted?: () => void;
 }> = (properties) => {
   const store = useInventory();
-  const [isOpen, setIsOpen] = createSignal(false);
 
   const assignedDevices = createMemo(() =>
     store.inventory().devices.filter(device => device.active_panel_id === properties.panel.panel_id),
@@ -24,56 +25,40 @@ export const DeletePanelDialog: Component<{
 
     if (!isDeleted) return;
 
-    setIsOpen(false);
+    properties.onOpenChange(false);
     properties.onDeleted?.();
   };
 
   return (
-    <AlertDialog.Root open={isOpen()} onOpenChange={setIsOpen}>
-      <AlertDialog.Trigger as="div" class="contents">
-        {properties.trigger}
-      </AlertDialog.Trigger>
+    <AlertDialog.Root open={properties.isOpen} onOpenChange={properties.onOpenChange}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
           <AlertDialog.Content class="dialog-content">
             <div class="dialog-head">
               <AlertDialog.Title class="dialog-title">
-                Delete
-                {" "}
-                {properties.panel.name}
+                {`Delete ${properties.panel.name}?`}
               </AlertDialog.Title>
-              <AlertDialog.CloseButton
-                class="icon-button"
-                aria-label="Close delete panel dialog"
-              >
-                <TbX class="h-4 w-4" />
+              <AlertDialog.CloseButton class="icon-button ml-auto" aria-label="Close">
+                <FiX class="size-4" />
               </AlertDialog.CloseButton>
             </div>
             <div class="dialog-body">
-              <div class="flex flex-wrap items-center gap-1.5">
-                <span class="chip">{countOf(properties.panel.controls.length, "control")}</span>
-                <span class="chip chip-muted">
-                  {properties.panel.layout.columns}
-                  {" x "}
-                  {properties.panel.layout.rows}
-                </span>
-              </div>
+              <AlertDialog.Description class="text-muted tabular-nums">
+                {`${countOf(properties.panel.controls.length, "control")}, ${layoutLabel(properties.panel.layout)}.`}
+              </AlertDialog.Description>
               <Show when={assignedDevices().length > 0}>
-                <div class="grid gap-1">
-                  <p class="field-label">Devices losing this panel</p>
-                  <div class="rows">
+                <div class="grid gap-1.5">
+                  <p>Devices showing it switch to no panel:</p>
+                  <ul class="grid gap-1">
                     <For each={assignedDevices()}>
                       {device => (
-                        <div class="row row-main">
-                          <StatusDot status={device.status} />
-                          <span class="row-title min-w-0 flex-1">
-                            {displayName(device.name)}
-                          </span>
-                        </div>
+                        <li>
+                          <StatusLabel status={device.status} label={displayName(device.name)} />
+                        </li>
                       )}
                     </For>
-                  </div>
+                  </ul>
                 </div>
               </Show>
             </div>

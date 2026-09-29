@@ -2,10 +2,20 @@ use std::sync::Arc;
 
 use crate::{
     assets::AssetStore,
-    config::{plugins::PluginDirectory, store::Persistence},
+    config::{
+        changes::{ConfigurationChanges, Entry, Snapshot},
+        devices::PersistedDevice,
+        plugins::PluginDirectory,
+        store::Persistence,
+        ExportFormat,
+    },
     identifiers::SurfaceId,
     plugins::engine::PluginEngine,
-    surfaces::{defaults::default_panel, managed::NetworkSurfaceStatus, registry::SurfaceRegistry},
+    surfaces::{
+        defaults::default_panel,
+        managed::{ManagedNetworkSurface, NetworkSurfaceStatus},
+        registry::SurfaceRegistry,
+    },
 };
 
 #[derive(Clone)]
@@ -14,6 +24,9 @@ pub struct AppState {
     pub plugins: Arc<PluginEngine>,
     pub assets: Arc<AssetStore>,
     persistence: Arc<Persistence>,
+    /// The configuration as it stood once loading finished, which is what a declarative setup
+    /// already describes. Everything since is what the user would have to carry over by hand.
+    baseline: Arc<Snapshot>,
 }
 
 impl AppState {
@@ -48,49 +61,95 @@ impl AppState {
             input,
         )
         .await;
+        let baseline = Arc::new(Snapshot::new(&Self::entries(&surfaces, &plugins))?);
         Ok(Self {
             surfaces,
             plugins,
             assets,
             persistence,
+            baseline,
         })
     }
 
-    pub fn persist_configuration(&self) -> anyhow::Result<()> {
-        let devices = self
-            .surfaces
+    /// Child devices are discovered behind a dock on every connect, so they are never persisted.
+    fn root_devices(surfaces: &SurfaceRegistry) -> Vec<ManagedNetworkSurface> {
+        surfaces
             .managed_surfaces()
             .into_iter()
             .filter(|device| device.parent_surface_id.is_none())
-            .collect();
-        self.persistence
-            .save_configuration(devices, self.surfaces.panels())
+            .collect()
     }
 
-    pub fn export_panel_configuration(&self, panel_id: &str) -> anyhow::Result<Option<String>> {
+    fn entries(surfaces: &SurfaceRegistry, plugins: &PluginEngine) -> Vec<Entry> {
+        let devices = Self::root_devices(surfaces)
+            .into_iter()
+            .map(|device| Entry::Device(PersistedDevice::from(device)));
+        let panels = surfaces.panels().into_iter().map(Entry::Panel);
+        let instances = plugins
+            .instance_documents()
+            .into_iter()
+            .map(|(identity, document)| Entry::Plugin(identity, document));
+        let values = plugins.user_values().into_iter().map(Entry::Value);
+        devices
+            .chain(panels)
+            .chain(instances)
+            .chain(values)
+            .collect()
+    }
+
+    fn configuration_entries(&self) -> Vec<Entry> {
+        Self::entries(&self.surfaces, &self.plugins)
+    }
+
+    pub fn configuration_changes(&self) -> anyhow::Result<ConfigurationChanges> {
+        ConfigurationChanges::new(&self.baseline, &self.configuration_entries())
+    }
+
+    pub fn configuration_change_count(&self) -> anyhow::Result<usize> {
+        Ok(Snapshot::new(&self.configuration_entries())?
+            .changes_since(&self.baseline)
+            .len())
+    }
+
+    pub fn persist_configuration(&self) -> anyhow::Result<()> {
+        self.persistence
+            .save_configuration(Self::root_devices(&self.surfaces), self.surfaces.panels())
+    }
+
+    pub fn export_panel_configuration(
+        &self,
+        panel_id: &str,
+        format: ExportFormat,
+    ) -> anyhow::Result<Option<String>> {
         let Some(panel) = self.surfaces.panel(panel_id) else {
             return Ok(None);
         };
-        self.persistence.render_panel(panel).map(Some)
+        match format {
+            ExportFormat::Toml => self.persistence.render_panel(panel),
+            ExportFormat::Nix => Entry::Panel(panel).nix(),
+        }
+        .map(Some)
     }
 
-    pub fn export_device_configuration(&self, surface_id: &str) -> anyhow::Result<Option<String>> {
+    pub fn export_device_configuration(
+        &self,
+        surface_id: &str,
+        format: ExportFormat,
+    ) -> anyhow::Result<Option<String>> {
         let Some(device) = self.surfaces.managed(&SurfaceId(surface_id.to_string())) else {
             return Ok(None);
         };
-        self.persistence.render_device(device).map(Some)
+        match format {
+            ExportFormat::Toml => self.persistence.render_device(device),
+            ExportFormat::Nix => Entry::Device(PersistedDevice::from(device)).nix(),
+        }
+        .map(Some)
     }
 
     pub fn export_configuration(&self) -> anyhow::Result<String> {
-        let devices = self
-            .surfaces
-            .managed_surfaces()
-            .into_iter()
-            .filter(|device| device.parent_surface_id.is_none())
-            .collect();
         let configuration = self
             .persistence
-            .render_configuration(devices, self.surfaces.panels())?;
+            .render_configuration(Self::root_devices(&self.surfaces), self.surfaces.panels())?;
         let values = self
             .plugins
             .export_user_values()

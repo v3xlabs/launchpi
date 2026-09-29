@@ -45,6 +45,7 @@ export const KeyImage: Component<{ control: Control; isPressed: boolean; }> = (p
 
     activeUrl = nextUrl;
     setUrl(nextUrl);
+
     if (previousUrl !== undefined) URL.revokeObjectURL(previousUrl);
   });
 

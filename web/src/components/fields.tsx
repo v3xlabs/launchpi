@@ -1,4 +1,4 @@
-import { TbFillZoom as TbSearch } from "solid-icons/tb";
+import { FiSearch } from "solid-icons/fi";
 import { Component, createResource, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 
 import { fetchFontFamilies } from "../api/fonts";
@@ -7,18 +7,28 @@ import { ConfigField, fetchLookup } from "../api/plugins";
 import { useInventory } from "../context/InventoryContext";
 import { fromHex, isReference, parseHex, rgbHex, toHex } from "../utils/rendered";
 import { interpolateVariables } from "../utils/variables";
+import { InfoTip } from "./InfoTip";
 import { ReferenceInput } from "./ReferenceInput";
 import { optionRows, suggestionKeyDown, SuggestionList, SuggestionRow } from "./SuggestionList";
-import { ValueField } from "./ValueField";
+
+const secretNote = "Stored on the server and never sent back to the browser. Leave blank to keep it.";
+
+const FieldCaption: Component<{ label: string; help?: string | null; }> = properties => (
+  <span class="flex items-center gap-1.5">
+    {properties.label}
+    <Show when={properties.help}>{help => <InfoTip>{help()}</InfoTip>}</Show>
+  </span>
+);
 
 export const TextField: Component<{
   label: string;
   value: string;
   placeholder?: string;
+  help?: string | null;
   onChange: (value: string) => void;
 }> = properties => (
   <label class="field-label">
-    {properties.label}
+    <FieldCaption label={properties.label} help={properties.help} />
     <input
       class="field-input"
       value={properties.value}
@@ -36,7 +46,7 @@ export const SearchField: Component<{
   onChange: (value: string) => void;
 }> = properties => (
   <div class="search-field">
-    <TbSearch class="h-3.5 w-3.5" />
+    <FiSearch class="size-4" />
     <input
       type="search"
       value={properties.value}
@@ -52,7 +62,7 @@ export const FontFamilyField: Component<{
   value: string;
   placeholder: string;
   onChange: (value: string) => void;
-}> = properties => {
+}> = (properties) => {
   const [families] = createResource(fetchFontFamilies);
   const listId = createUniqueId();
 
@@ -67,7 +77,7 @@ export const FontFamilyField: Component<{
         onInput={event => properties.onChange(event.currentTarget.value)}
       />
       <datalist id={listId}>
-        <For each={families() ?? []}>{(family) => <option value={family} />}</For>
+        <For each={families() ?? []}>{family => <option value={family} />}</For>
       </datalist>
     </label>
   );
@@ -147,10 +157,11 @@ export const NumberField: Component<{
   label: string;
   value: number | null;
   placeholder?: string;
+  help?: string | null;
   onChange: (value: string) => void;
 }> = properties => (
   <label class="field-label">
-    {properties.label}
+    <FieldCaption label={properties.label} help={properties.help} />
     <input
       class="field-input"
       type="number"
@@ -165,10 +176,11 @@ export const SelectField: Component<{
   label: string;
   value: string;
   options: Array<{ value: string; label: string; }>;
+  help?: string | null;
   onChange: (value: string) => void;
 }> = properties => (
   <label class="field-label">
-    {properties.label}
+    <FieldCaption label={properties.label} help={properties.help} />
     <select
       class="field-input"
       value={properties.value}
@@ -193,6 +205,7 @@ export const LookupField: Component<{
   value: string;
   integrationId: string;
   source: string;
+  help?: string | null;
   onChange: (value: string) => void;
 }> = (properties) => {
   const [query, setQuery] = createSignal<string | null>(null);
@@ -238,7 +251,7 @@ export const LookupField: Component<{
   return (
     <div class="completing-field">
       <label class="field-label">
-        {properties.label}
+        <FieldCaption label={properties.label} help={properties.help} />
         <input
           class="field-input"
           value={properties.value}
@@ -288,83 +301,89 @@ export const ConfigFieldInput: Component<{
   const lookupSource = () => (properties.field.kind.type === "lookup" ? properties.field.kind.source : null);
 
   return (
-    <div class="grid gap-1">
-      <Switch
-        fallback={(
-          <Show
-            when={properties.supportsReferences}
-            fallback={(
-              <TextField
-                label={label()}
-                value={text()}
-                placeholder={properties.field.placeholder ?? undefined}
-                onChange={properties.onChange}
-              />
-            )}
-          >
-            <ValueField
+    <Switch
+      fallback={(
+        <Show
+          when={properties.supportsReferences}
+          fallback={(
+            <TextField
               label={label()}
+              value={text()}
+              placeholder={properties.field.placeholder ?? undefined}
+              help={properties.field.help}
+              onChange={properties.onChange}
+            />
+          )}
+        >
+          <label class="field-label">
+            <FieldCaption label={label()} help={properties.field.help} />
+            <ReferenceInput
               value={text()}
               placeholder={properties.field.placeholder ?? undefined}
               onChange={properties.onChange}
             />
-          </Show>
-        )}
-      >
-        <Match when={properties.field.kind.type === "number"}>
-          <NumberField
+          </label>
+        </Show>
+      )}
+    >
+      <Match when={properties.field.kind.type === "number"}>
+        <NumberField
+          label={label()}
+          value={typeof properties.value === "number" ? properties.value : null}
+          placeholder={properties.field.placeholder ?? undefined}
+          help={properties.field.help}
+          onChange={properties.onChange}
+        />
+      </Match>
+      <Match when={properties.field.kind.type === "boolean"}>
+        <label class="check-tile">
+          <input
+            type="checkbox"
+            checked={properties.value === true}
+            onInput={event => properties.onChange(event.currentTarget.checked)}
+          />
+          <FieldCaption label={properties.field.label} help={properties.field.help} />
+        </label>
+      </Match>
+      <Match when={properties.field.kind.type === "secret"}>
+        <label class="field-label">
+          <FieldCaption
             label={label()}
-            value={typeof properties.value === "number" ? properties.value : null}
-            placeholder={properties.field.placeholder ?? undefined}
+            help={properties.field.help === null ? secretNote : `${properties.field.help} ${secretNote}`}
+          />
+          <input
+            class="field-input"
+            type="password"
+            value={text()}
+            placeholder="Not set"
+            autocomplete="off"
+            onInput={event => properties.onChange(event.currentTarget.value)}
+          />
+        </label>
+      </Match>
+      <Match when={lookupSource()}>
+        {source => (
+          <LookupField
+            label={label()}
+            value={text()}
+            integrationId={properties.integrationId ?? ""}
+            source={source()}
+            help={properties.field.help}
             onChange={properties.onChange}
           />
-        </Match>
-        <Match when={properties.field.kind.type === "boolean"}>
-          <label class="check-tile">
-            <input
-              type="checkbox"
-              checked={properties.value === true}
-              onInput={event => properties.onChange(event.currentTarget.checked)}
-            />
-            {properties.field.label}
-          </label>
-        </Match>
-        <Match when={properties.field.kind.type === "secret"}>
-          <label class="field-label">
-            {label()}
-            <input
-              class="field-input"
-              type="password"
-              value={text()}
-              placeholder="unchanged"
-              autocomplete="off"
-              onInput={event => properties.onChange(event.currentTarget.value)}
-            />
-          </label>
-        </Match>
-        <Match when={lookupSource()}>
-          {source => (
-            <LookupField
-              label={label()}
-              value={text()}
-              integrationId={properties.integrationId ?? ""}
-              source={source()}
-              onChange={properties.onChange}
-            />
-          )}
-        </Match>
-        <Match when={selectOptions()}>
-          {options => (
-            <SelectField
-              label={label()}
-              value={text()}
-              options={options()}
-              onChange={properties.onChange}
-            />
-          )}
-        </Match>
-      </Switch>
-      <Show when={properties.field.help}>{help => <p class="hint">{help()}</p>}</Show>
-    </div>
+        )}
+      </Match>
+      <Match when={selectOptions()}>
+        {options => (
+          <SelectField
+            label={label()}
+            value={text()}
+            options={options()}
+            help={properties.field.help}
+            onChange={properties.onChange}
+          />
+        )}
+      </Match>
+    </Switch>
   );
 };

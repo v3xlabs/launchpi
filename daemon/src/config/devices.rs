@@ -73,9 +73,9 @@ struct PersistedDevicesDocument {
 }
 
 #[derive(Serialize)]
-struct PersistedDevice {
-    surface_id: SurfaceId,
-    name: String,
+pub struct PersistedDevice {
+    pub surface_id: SurfaceId,
+    pub name: String,
     host: String,
     port: u16,
     serial_number: Option<String>,
@@ -102,6 +102,22 @@ impl From<ManagedNetworkSurface> for PersistedDevice {
             brightness: device.brightness,
             is_enabled: device.is_enabled,
         }
+    }
+}
+
+impl PersistedDevice {
+    /// The shape of one `services.launchpi.settings.devices` entry. A known model derives its
+    /// layout and capabilities on load, so the entry leaves them out.
+    pub fn nix_settings(&self) -> Result<toml::Table> {
+        let mut table = toml::Table::try_from(self)?;
+        if let Some(is_enabled) = table.remove("is_enabled") {
+            table.insert("enable".to_string(), is_enabled);
+        }
+        if model_by_name(&self.model).is_some() {
+            table.remove("layout");
+            table.remove("capabilities");
+        }
+        Ok(table)
     }
 }
 

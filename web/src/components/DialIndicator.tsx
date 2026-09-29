@@ -15,8 +15,7 @@ const segmentGapAngle = 2.5;
 const ringStartAngle = 180 + segmentAngle / 2;
 
 // Same integer maths as the daemon uses when it lights the ring.
-export const litRingSegments = (level: number): number => Math.floor((level * ringSegments) / 100);
-export const totalRingSegments = ringSegments;
+const litRingSegments = (level: number): number => Math.floor((level * ringSegments) / 100);
 
 const ringBackground = (color: string, level: number): string => {
   const lit = litRingSegments(level);
@@ -54,9 +53,9 @@ export const DialIndicator: Component<DialIndicatorProperties> = (properties) =>
       class="dial-ring"
       data-pressed={properties.isPressed === true}
       style={{ "background": ringBackground(hex(), level()), "--dial-color": hex() }}
-      title={`Dial ${properties.index + 1} - ${level()}% - ${litRingSegments(level())}/${ringSegments} segments - ${
+      title={`Dial ${properties.index + 1}, ${level()}%, ${litRingSegments(level())}/${ringSegments} segments, ${
         properties.color === null ? "no colour" : hex()
-      }${properties.isPressed === true ? " - pressed" : ""}`}
+      }${properties.isPressed === true ? ", pressed" : ""}`}
     >
       <div class="dial-hub" />
     </div>

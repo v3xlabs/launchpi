@@ -1,6 +1,6 @@
 import * as Dialog from "@kobalte/core/dialog";
-import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
+import { FiX } from "solid-icons/fi";
+import { createMemo, createSignal, For, ParentComponent, Show } from "solid-js";
 
 import { Action } from "../api/inventory";
 import { PluginCatalogue, PluginInstance } from "../api/plugins";
@@ -132,8 +132,8 @@ const instanceGroup = (instance: PluginInstance, plugins: PluginCatalogue): Grou
   };
 };
 
-export const ActionPickerDialog: Component<{
-  trigger: JSX.Element;
+export const ActionPickerDialog: ParentComponent<{
+  triggerClass: string;
   onChoose: (action: Action) => void;
 }> = (properties) => {
   const store = useInventory();
@@ -180,15 +180,15 @@ export const ActionPickerDialog: Component<{
         if (open) setSelectedGroupKey(groups()[0]?.key ?? null);
       }}
     >
-      <Dialog.Trigger as="div" class="contents">{properties.trigger}</Dialog.Trigger>
+      <Dialog.Trigger class={properties.triggerClass}>{properties.children}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
           <Dialog.Content class="dialog-content" data-size="wide">
             <div class="dialog-head">
-              <Dialog.Title class="dialog-title">Action</Dialog.Title>
-              <Dialog.CloseButton class="icon-button" aria-label="Close">
-                <TbX class="h-3.5 w-3.5" />
+              <Dialog.Title class="dialog-title">Add action</Dialog.Title>
+              <Dialog.CloseButton class="icon-button ml-auto" aria-label="Close">
+                <FiX class="size-4" />
               </Dialog.CloseButton>
             </div>
             <div class="dialog-body">

@@ -1,4 +1,4 @@
-import { fetchText, isBoolean, isNumber, isRecord, isString, request } from "./guards";
+import { isBoolean, isNumber, isRecord, isString, request } from "./guards";
 // Type-only, so this does not create a runtime cycle with inventory.ts importing PluginInstance.
 import type { DeviceStatus } from "./inventory";
 
@@ -226,31 +226,15 @@ export const fetchSuggestions = async (
 };
 
 export type UserValue = { name: string; value: unknown; description: string | null; };
-export type AvailableAction = {
-  integration_id: string;
-  instance_name: string;
-  name: string;
-  label: string;
-  description: string | null;
-  parameters: ConfigField[];
-};
 export type ValueCatalogue = {
   values: VariableEntry[];
   user_values: UserValue[];
-  actions: AvailableAction[];
 };
 
-export const emptyValueCatalogue: ValueCatalogue = { values: [], user_values: [], actions: [] };
+export const emptyValueCatalogue: ValueCatalogue = { values: [], user_values: [] };
 
 const isUserValue = (value: unknown): value is UserValue =>
   isRecord(value) && isString(value.name);
-const isAvailableAction = (value: unknown): value is AvailableAction =>
-  isRecord(value)
-  && isString(value.integration_id)
-  && isString(value.name)
-  && isString(value.label)
-  && Array.isArray(value.parameters)
-  && value.parameters.every(isConfigField);
 
 export const fetchValues = async (): Promise<ValueCatalogue> => {
   const response = await fetch("/api/values");
@@ -265,13 +249,11 @@ export const fetchValues = async (): Promise<ValueCatalogue> => {
     || !data.values.every(isVariableEntry)
     || !Array.isArray(data.user_values)
     || !data.user_values.every(isUserValue)
-    || !Array.isArray(data.actions)
-    || !data.actions.every(isAvailableAction)
   ) {
     throw new Error("The daemon returned an invalid value catalogue.");
   }
 
-  return { values: data.values, user_values: data.user_values, actions: data.actions };
+  return { values: data.values, user_values: data.user_values };
 };
 
 export const upsertUserValue = (value: UserValue): Promise<Response> =>
@@ -323,8 +305,6 @@ export const runAction = (
     "POST",
     parameters,
   );
-export const fetchInstanceConfig = (integrationId: string): Promise<string> =>
-  fetchText(`/api/plugins/${encodeURIComponent(integrationId)}/config`);
 
 /**
  * A secret is never sent back to the browser, so a form starts blank. Sending the blank back would

@@ -1,18 +1,15 @@
-import { Link } from "@tanstack/solid-router";
-import {
-  TbFillCirclePlus as TbPlus,
-  TbFillClipboard as TbCopy,
-  TbFillTrash as TbTrash,
-} from "solid-icons/tb";
+import * as Dialog from "@kobalte/core/dialog";
+import { Link, useNavigate } from "@tanstack/solid-router";
+import { FiPackage, FiPlay } from "solid-icons/fi";
 import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
-import { fetchFullConfig as fetchFullConfig } from "../api/inventory";
 import {
+  ActionDefinition,
   coerceConfigValue,
   ConfigField,
-  fetchInstanceConfig,
   PluginInstance,
+  PluginManifest,
   statusLabel,
   statusReason,
   statusTone,
@@ -20,49 +17,71 @@ import {
   withoutUntouchedSecrets,
 } from "../api/plugins";
 import { ConfigFieldInput } from "../components/fields";
-import { StatusDot } from "../components/StatusDot";
+import { CopyConfigItems, MenuItem, MenuSeparator, OverflowMenu } from "../components/Menu";
+import { MetaSeparator, PageHeader } from "../components/PageHeader";
+import { StatusLabel } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
 import { AddPluginDialog } from "../dialogs/AddPluginDialog";
-import { countOf } from "../utils/plural";
+
+/** An instance left at its default name reads as its id, so the plugin's own name says more. */
+export const instanceTitle = (instance: PluginInstance, types: PluginManifest[]): string =>
+  (instance.display_name === instance.integration_id
+    ? types.find(type => type.plugin_type === instance.plugin_type)?.display_name ?? instance.display_name
+    : instance.display_name);
 
 const InstanceRow: Component<{ instance: PluginInstance; }> = (properties) => {
   const store = useInventory();
+  const title = () => instanceTitle(properties.instance, store.plugins().types);
 
   return (
-    <div class="row">
-      <StatusDot
-        status={statusTone(properties.instance.status)}
-        label={statusLabel(properties.instance.status)}
-      />
-      <div class="row-main">
-        <div class="min-w-0 flex-1">
-          <Link to="/plugins/$integrationId" params={{ integrationId: properties.instance.integration_id }}>
-            <p class="row-title">{properties.instance.display_name}</p>
-          </Link>
-          <p class="row-meta">
-            <span class="mono">{properties.instance.integration_id}</span>
-            <Show when={statusReason(properties.instance.status)}>
-              {reason => (
-                <>
-                  <span class="meta-sep">-</span>
-                  {reason()}
-                </>
-              )}
-            </Show>
-          </p>
-        </div>
-      </div>
-      <button
-        type="button"
-        class="secondary-button"
-        disabled={store.isSaving()}
-        onClick={() =>
-          void store.updatePluginInstance(properties.instance.integration_id, {
-            is_enabled: !properties.instance.is_enabled,
-          })}
+    <div class="row transition-colors hover:bg-raised/60">
+      <Link
+        to="/plugins/$integrationId"
+        params={{ integrationId: properties.instance.integration_id }}
+        class="flex min-w-0 flex-1 items-center gap-4"
       >
-        {properties.instance.is_enabled ? "Disable" : "Enable"}
-      </button>
+        <span class="min-w-0 flex-1">
+          <span class="flex items-baseline gap-2">
+            <span class="row-title">{title()}</span>
+            <code class="mono">{properties.instance.integration_id}</code>
+          </span>
+          <Show when={statusReason(properties.instance.status)}>
+            {reason => <span class="error-text mt-0.5 block truncate" title={reason()}>{reason()}</span>}
+          </Show>
+        </span>
+        <span class="w-24 shrink-0">
+          <Show
+            when={properties.instance.status.state === "error"}
+            fallback={(
+              <StatusLabel
+                status={statusTone(properties.instance.status)}
+                label={statusLabel(properties.instance.status)}
+              />
+            )}
+          >
+            <span class="error-text inline-flex items-center gap-1.5">
+              <span class="status-dot size-2 bg-red-500" aria-hidden="true" />
+              Error
+            </span>
+          </Show>
+        </span>
+      </Link>
+      <OverflowMenu label={`More actions for ${title()}`}>
+        <MenuItem
+          isDisabled={store.isSaving()}
+          onSelect={() =>
+            void store.updatePluginInstance(properties.instance.integration_id, {
+              is_enabled: !properties.instance.is_enabled,
+            })}
+        >
+          {properties.instance.is_enabled ? "Disable" : "Enable"}
+        </MenuItem>
+        <CopyConfigItems path={`/api/plugins/${encodeURIComponent(properties.instance.integration_id)}/config`} />
+        <MenuSeparator />
+        <MenuItem isDanger onSelect={() => void store.deletePluginInstance(properties.instance.integration_id)}>
+          Remove
+        </MenuItem>
+      </OverflowMenu>
     </div>
   );
 };
@@ -72,104 +91,108 @@ const PluginsOverview: Component = () => {
 
   return (
     <div class="page">
-      <div class="page-head">
-        <h1 class="page-title">Plugins</h1>
-        <div class="flex gap-2">
-          <AddPluginDialog
-            trigger={(
-              <button type="button" class="primary-button">
-                <TbPlus class="h-3.5 w-3.5" />
-                Add plugin
-              </button>
-            )}
-          />
-          <CopyConfigButton />
-        </div>
-      </div>
+      <PageHeader
+        mark={<FiPackage class="size-5" />}
+        title="Plugins"
+        meta={(
+          <span>
+            <span class="tabular-nums">{store.plugins().instances.length}</span>
+            {" "}
+            added
+          </span>
+        )}
+        actions={<AddPluginDialog />}
+      />
 
-      <div class="card">
-        <div class="card-head">
-          <p class="card-title">Configured</p>
-          <span class="chip chip-muted">{store.plugins().instances.length}</span>
+      <Show
+        when={store.plugins().instances.length > 0}
+        fallback={<p class="surface empty">No plugins yet.</p>}
+      >
+        <div class="surface rows overflow-hidden">
+          <For each={store.plugins().instances}>
+            {instance => <InstanceRow instance={instance} />}
+          </For>
         </div>
-        <div class="card-body">
-          <Show
-            when={store.plugins().instances.length > 0}
-            fallback={<p class="empty">No plugin instances yet.</p>}
-          >
-            <div class="rows">
-              <For each={store.plugins().instances}>
-                {instance => <InstanceRow instance={instance} />}
-              </For>
-            </div>
-          </Show>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <p class="card-title">Available</p>
-        </div>
-        <div class="card-body">
-          <div class="rows">
-            <For each={store.plugins().types}>
-              {manifest => (
-                <div class="row">
-                  <div class="row-main">
-                    <div class="min-w-0 flex-1">
-                      <p class="row-title">{manifest.display_name}</p>
-                      <p class="row-meta">{manifest.description}</p>
-                      <p class="row-meta">
-                        <span class="chip chip-muted">
-                          {countOf(manifest.actions.length, "action")}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                  <AddPluginDialog
-                    trigger={(
-                      <button type="button" class="secondary-button">
-                        <TbPlus class="h-3.5 w-3.5" />
-                        Add
-                      </button>
-                    )}
-                  />
-                </div>
-              )}
-            </For>
-          </div>
-        </div>
-      </div>
+      </Show>
     </div>
   );
 };
 
-const CopyConfigButton: Component = () => {
+const RunActionButton: Component<{ integrationId: string; action: ActionDefinition; }> = (properties) => {
   const store = useInventory();
-  const [copied, setCopied] = createSignal(false);
+  const [isOpen, setIsOpen] = createSignal(false);
+  const [parameters, setParameters] = createStore<Record<string, unknown>>({});
+
+  const run = async (): Promise<void> => {
+    const succeeded = await store.runPluginAction(properties.integrationId, properties.action.name, {
+      ...parameters,
+    });
+
+    if (succeeded) setIsOpen(false);
+  };
 
   return (
-    <button
-      type="button"
-      class="secondary-button"
-      onClick={() =>
-        void store.copyToClipboard(async () => {
-          const text = await fetchFullConfig();
-
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-
-          return text;
-        })}
+    <Show
+      when={properties.action.parameters.length > 0}
+      fallback={(
+        <button
+          type="button"
+          class="secondary-button"
+          disabled={store.isSaving()}
+          onClick={() => void store.runPluginAction(properties.integrationId, properties.action.name, {})}
+        >
+          <FiPlay class="size-4" />
+          Run
+        </button>
+      )}
     >
-      <TbCopy class="h-3.5 w-3.5" />
-      {copied() ? "Copied" : "Copy all TOML"}
-    </button>
+      <Dialog.Root open={isOpen()} onOpenChange={setIsOpen}>
+        <Dialog.Trigger class="secondary-button">
+          <FiPlay class="size-4" />
+          Run
+        </Dialog.Trigger>
+        <Dialog.Portal>
+          <Dialog.Overlay class="dialog-overlay" />
+          <div class="dialog-positioner">
+            <Dialog.Content class="dialog-content">
+              <div class="dialog-head">
+                <Dialog.Title class="dialog-title">{properties.action.label}</Dialog.Title>
+              </div>
+              <div class="dialog-body">
+                <For each={properties.action.parameters}>
+                  {field => (
+                    <ConfigFieldInput
+                      field={field}
+                      supportsReferences
+                      integrationId={properties.integrationId}
+                      value={parameters[field.key]}
+                      onChange={raw => setParameters(field.key, coerceConfigValue(field, raw))}
+                    />
+                  )}
+                </For>
+              </div>
+              <div class="dialog-actions">
+                <Dialog.CloseButton class="secondary-button">Cancel</Dialog.CloseButton>
+                <button
+                  type="button"
+                  class="primary-button"
+                  disabled={store.isSaving()}
+                  onClick={() => void run()}
+                >
+                  {store.isSaving() ? "Running..." : "Run"}
+                </button>
+              </div>
+            </Dialog.Content>
+          </div>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </Show>
   );
 };
 
 const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
   const store = useInventory();
+  const navigate = useNavigate();
   const instance = createMemo(() =>
     store.plugins().instances.find(entry => entry.integration_id === properties.integrationId) ?? null,
   );
@@ -184,7 +207,6 @@ const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
     values: {},
     dirty: false,
   });
-  const [copied, setCopied] = createSignal(false);
 
   // Reseed whenever the instance is replaced, which is every save, so the form follows what the
   // daemon actually stored rather than what was typed.
@@ -211,6 +233,10 @@ const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
     if (saved) setDraft("dirty", false);
   };
 
+  const remove = async (): Promise<void> => {
+    if (await store.deletePluginInstance(properties.integrationId)) void navigate({ to: "/plugins" });
+  };
+
   const liveVariables = createMemo(() =>
     Object.entries(store.variables)
       .filter(([key]) => key.startsWith(`${properties.integrationId}:`))
@@ -218,81 +244,56 @@ const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
   );
 
   return (
-    <Show when={instance()} fallback={<div class="page"><p class="empty">This plugin instance was not found.</p></div>}>
+    <Show when={instance()} fallback={<div class="page"><p class="surface empty">This plugin was not found.</p></div>}>
       {found => (
         <div class="page">
-          <div class="page-head">
-            <div>
-              <p class="breadcrumb">
-                <Link to="/plugins">Plugins</Link>
-              </p>
-              <h1 class="page-title">{found().display_name}</h1>
-              <p class="meta-line">
-                <span class="mono">{found().integration_id}</span>
-                <span class="meta-sep">-</span>
-                <StatusDot status={statusTone(found().status)} />
-                {statusLabel(found().status)}
-              </p>
-            </div>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                class="secondary-button"
-                disabled={store.isSaving()}
-                onClick={() =>
-                  void store.updatePluginInstance(found().integration_id, {
-                    is_enabled: !found().is_enabled,
-                  })}
-              >
-                {found().is_enabled ? "Disable" : "Enable"}
-              </button>
-              <button
-                type="button"
-                class="secondary-button"
-                onClick={() =>
-                  void store.copyToClipboard(async () => {
-                    const text = await fetchInstanceConfig(found().integration_id);
-
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-
-                    return text;
-                  })}
-              >
-                <TbCopy class="h-3.5 w-3.5" />
-                {copied() ? "Copied" : "Copy TOML"}
-              </button>
-              <button
-                type="button"
-                class="danger-button"
-                aria-label="Delete instance"
-                onClick={() => void store.deletePluginInstance(found().integration_id)}
-              >
-                <TbTrash class="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+          <PageHeader
+            mark={<FiPackage class="size-5" />}
+            title={<span class="truncate">{instanceTitle(found(), store.plugins().types)}</span>}
+            meta={(
+              <>
+                <StatusLabel status={statusTone(found().status)} label={statusLabel(found().status)} />
+                <MetaSeparator />
+                <code class="mono">{found().integration_id}</code>
+              </>
+            )}
+            actions={(
+              <>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  disabled={store.isSaving()}
+                  onClick={() =>
+                    void store.updatePluginInstance(found().integration_id, {
+                      is_enabled: !found().is_enabled,
+                    })}
+                >
+                  {found().is_enabled ? "Disable" : "Enable"}
+                </button>
+                <OverflowMenu label={`More actions for ${instanceTitle(found(), store.plugins().types)}`}>
+                  <CopyConfigItems path={`/api/plugins/${encodeURIComponent(found().integration_id)}/config`} />
+                  <MenuSeparator />
+                  <MenuItem isDanger onSelect={() => void remove()}>Remove</MenuItem>
+                </OverflowMenu>
+              </>
+            )}
+          />
 
           <Show when={statusReason(found().status)}>
-            {reason => <p class="alert">{reason()}</p>}
+            {reason => <p class="alert" role="alert">{reason()}</p>}
           </Show>
 
-          <div class="editor">
-            <div class="grid gap-4">
-              <div class="card">
-                <div class="card-head">
-                  <p class="card-title">Configuration</p>
-                  <button
-                    type="button"
-                    class="primary-button"
-                    disabled={!draft.dirty || store.isSaving()}
-                    onClick={() => void save()}
+          <div class="grid grid-cols-[minmax(0,1fr)_20rem] items-start gap-4">
+            <section>
+              <div class="section-head">
+                <h2 class="label-sm">Configuration</h2>
+              </div>
+              <div class="surface">
+                <div class="grid gap-4 p-4">
+                  <For
+                    each={manifest()?.config_schema ?? []}
+                    fallback={<p class="text-muted">Nothing to configure.</p>}
                   >
-                    Save
-                  </button>
-                </div>
-                <div class="card-body">
-                  <For each={manifest()?.config_schema ?? []}>
                     {field => (
                       <ConfigFieldInput
                         field={field}
@@ -302,72 +303,67 @@ const InstanceDetail: Component<{ integrationId: string; }> = (properties) => {
                       />
                     )}
                   </For>
-                  <p class="hint">
-                    Secrets are never sent back to the browser. Leave one blank to keep what is
-                    already configured.
-                  </p>
+                </div>
+                <div class="flex items-center justify-end gap-2 border-t border-hairline px-4 py-3">
+                  <Show when={draft.dirty} fallback={<span class="mr-auto text-muted">No unsaved changes</span>}>
+                    <span class="unsaved mr-auto">Unsaved changes</span>
+                  </Show>
+                  <button
+                    type="button"
+                    class="primary-button"
+                    disabled={!draft.dirty || store.isSaving()}
+                    onClick={() => void save()}
+                  >
+                    {store.isSaving() ? "Saving..." : "Save"}
+                  </button>
                 </div>
               </div>
+            </section>
 
-              <div class="card">
-                <div class="card-head">
-                  <p class="card-title">Actions</p>
-                </div>
-                <div class="card-body">
-                  <div class="rows">
+            <div class="grid gap-8">
+              <Show when={(manifest()?.actions ?? []).length > 0}>
+                <section>
+                  <div class="section-head">
+                    <h2 class="label-sm">Actions</h2>
+                  </div>
+                  <div class="surface rows">
                     <For each={manifest()?.actions ?? []}>
                       {action => (
-                        <div class="row">
-                          <div class="row-main">
-                            <p class="row-title">{action.label}</p>
-                            <p class="row-meta">
-                              <span class="mono">{action.name}</span>
-                              <Show when={action.description}>
-                                {description => (
-                                  <>
-                                    <span class="meta-sep">-</span>
-                                    {description()}
-                                  </>
-                                )}
-                              </Show>
-                            </p>
-                          </div>
+                        <div class="row gap-3">
+                          <span class="min-w-0 flex-1" title={action.description ?? undefined}>
+                            <span class="row-title block">{action.label}</span>
+                            <code class="mono">{action.name}</code>
+                          </span>
+                          <RunActionButton integrationId={found().integration_id} action={action} />
                         </div>
                       )}
                     </For>
                   </div>
-                </div>
-              </div>
-            </div>
+                </section>
+              </Show>
 
-            <div class="grid gap-4">
-              <div class="card">
-                <div class="card-head">
-                  <p class="card-title">Variables</p>
-                  <span class="chip chip-muted">{liveVariables().length}</span>
+              <section>
+                <div class="section-head">
+                  <h2 class="label-sm">Values</h2>
                 </div>
-                <div class="card-body">
-                  <Show
-                    when={liveVariables().length > 0}
-                    fallback={<p class="empty">Nothing published yet.</p>}
-                  >
-                    <div class="rows">
-                      <For each={liveVariables()}>
-                        {variable => (
-                          <div class="row">
-                            <div class="row-main">
-                              <p class="row-title mono">
-                                {variableReference(found().integration_id, variable.name)}
-                              </p>
-                              <p class="row-meta">{variable.value}</p>
-                            </div>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-              </div>
+                <Show
+                  when={liveVariables().length > 0}
+                  fallback={<p class="surface empty">None yet.</p>}
+                >
+                  <div class="surface rows">
+                    <For each={liveVariables()}>
+                      {variable => (
+                        <div class="row py-2">
+                          <code class="mono min-w-0 flex-1 truncate">
+                            {variableReference(found().integration_id, variable.name)}
+                          </code>
+                          <span class="max-w-[50%] truncate text-right tabular-nums">{variable.value}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </section>
             </div>
           </div>
         </div>

@@ -4,12 +4,16 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Launchpi</title>
+        <script>
+            // Runs before the stylesheet paints, so a stored dark choice never flashes light.
+            const stored = localStorage.getItem('launchpi-theme');
+            const isDark = stored === null ? matchMedia('(prefers-color-scheme: dark)').matches : stored === 'dark';
+            document.documentElement.classList.toggle('dark', isDark);
+        </script>
         <link rel="stylesheet" href="src/global.css" />
         <link rel="icon" href="icon.svg" />
     </head>
-    <body
-        class=""
-    >
+    <body>
         <div id="root"></div>
         <script type="module" src="./src/index.tsx"></script>
     </body>

@@ -1,7 +1,7 @@
 import * as Dialog from "@kobalte/core/dialog";
 import { useNavigate } from "@tanstack/solid-router";
-import { TbFillCircleX as TbX } from "solid-icons/tb";
-import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
+import { FiPlus, FiX } from "solid-icons/fi";
+import { Component, createMemo, createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 
 import { coerceConfigValue, ConfigField, PluginManifest } from "../api/plugins";
@@ -22,7 +22,7 @@ const suggestedName = (existing: string[], pluginType: string): string => {
   return "";
 };
 
-export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties) => {
+export const AddPluginDialog: Component = () => {
   const store = useInventory();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = createSignal(false);
@@ -97,31 +97,36 @@ export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties
         if (!open) reset();
       }}
     >
-      <Dialog.Trigger as="div" class="contents">{properties.trigger}</Dialog.Trigger>
+      <Dialog.Trigger class="primary-button">
+        <FiPlus class="size-4" />
+        Add plugin
+      </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">
-          <Dialog.Content class="dialog-content">
+          <Dialog.Content class="dialog-content max-w-lg">
             <div class="dialog-head">
               <Dialog.Title class="dialog-title">
-                {chosen()?.display_name ?? "Add a plugin"}
+                {chosen()?.display_name ?? "Add plugin"}
               </Dialog.Title>
-              <Dialog.CloseButton class="icon-button" aria-label="Close">
-                <TbX class="h-3.5 w-3.5" />
+              <Dialog.CloseButton class="icon-button ml-auto" aria-label="Close">
+                <FiX class="size-4" />
               </Dialog.CloseButton>
             </div>
 
             <Show
               when={chosen()}
               fallback={(
-                <div class="dialog-body">
-                  <SearchField
-                    label="Search plugins"
-                    value={search()}
-                    placeholder="http, music, lights..."
-                    onChange={setSearch}
-                  />
-                  <div class="rows max-h-72 overflow-y-auto">
+                <>
+                  <div class="px-3 pt-1 pb-2">
+                    <SearchField
+                      label="Search plugins"
+                      value={search()}
+                      placeholder="Search plugins"
+                      onChange={setSearch}
+                    />
+                  </div>
+                  <div class="grid max-h-[60vh] grid-cols-[minmax(0,1fr)] gap-0.5 overflow-y-auto px-1 pb-2">
                     <Show
                       when={matches().length > 0}
                       fallback={<p class="empty">Nothing matches that.</p>}
@@ -130,16 +135,14 @@ export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties
                         {manifest => (
                           <button
                             type="button"
-                            class="row w-full text-left"
+                            class="flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition-colors hover:bg-raised"
                             onClick={() => choose(manifest)}
                           >
-                            <span class="row-main">
-                              <span class="min-w-0 flex-1">
-                                <span class="row-title block">{manifest.display_name}</span>
-                                <span class="row-meta block">{manifest.description}</span>
-                              </span>
+                            <span class="min-w-0 flex-1">
+                              <span class="row-title block">{manifest.display_name}</span>
+                              <span class="row-meta block">{manifest.description}</span>
                             </span>
-                            <span class="chip chip-muted">
+                            <span class="w-20 shrink-0 text-right text-muted tabular-nums">
                               {countOf(manifest.actions.length, "action")}
                             </span>
                           </button>
@@ -147,7 +150,7 @@ export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties
                       </For>
                     </Show>
                   </div>
-                </div>
+                </>
               )}
             >
               {manifest => (
@@ -160,15 +163,9 @@ export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties
                       label="Instance name"
                       value={name()}
                       placeholder="default"
+                      help={`Referenced as $(${manifest().plugin_type}.${name().trim() || "name"}:value)`}
                       onChange={setName}
                     />
-                    <p class="hint">
-                      Referenced as
-                      {" "}
-                      <span class="mono">
-                        {`$(${manifest().plugin_type}.${name().trim() || "name"}:value)`}
-                      </span>
-                    </p>
                     <For each={manifest().config_schema}>
                       {field => (
                         <ConfigFieldInput
@@ -188,7 +185,7 @@ export const AddPluginDialog: Component<{ trigger: JSX.Element; }> = (properties
                       class="primary-button"
                       disabled={store.isSaving() || name().trim() === ""}
                     >
-                      Add plugin
+                      {store.isSaving() ? "Adding..." : "Add plugin"}
                     </button>
                   </div>
                 </form>

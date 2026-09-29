@@ -1,7 +1,7 @@
 import { Component, createResource, createSignal, For, Show } from "solid-js";
 
 import { fetchIcons } from "../api/icons";
-import { TextField } from "./fields";
+import { SearchField } from "./fields";
 
 /**
  * Browses the icon pack the daemon holds.
@@ -17,7 +17,7 @@ export const IconPicker: Component<{ onChoose: (icon: string) => void; }> = (pro
 
   return (
     <div class="icon-picker">
-      <TextField
+      <SearchField
         label="Search icons"
         value={search()}
         placeholder="lightbulb, volume, play..."
@@ -25,7 +25,9 @@ export const IconPicker: Component<{ onChoose: (icon: string) => void; }> = (pro
       />
       <Show
         when={found().length > 0}
-        fallback={<p class="hint">{icons.loading ? "Looking..." : "No icon matches that."}</p>}
+        fallback={(
+          <p class="hint" role="status">{icons.loading ? "Looking..." : "No icon matches that."}</p>
+        )}
       >
         <div class="icon-grid">
           <For each={found()}>
@@ -34,6 +36,7 @@ export const IconPicker: Component<{ onChoose: (icon: string) => void; }> = (pro
                 type="button"
                 class="icon-tile"
                 title={icon}
+                aria-label={icon}
                 onClick={() => properties.onChoose(icon)}
               >
                 <img src={`/api/icons/${encodeURIComponent(icon)}`} alt="" />

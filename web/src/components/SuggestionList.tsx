@@ -1,4 +1,4 @@
-import { TbFillCaretRight as TbChevron } from "solid-icons/tb";
+import { FiChevronRight } from "solid-icons/fi";
 import { Component, For, Match, Show, Switch } from "solid-js";
 
 import { LookupOption } from "../api/plugins";
@@ -79,7 +79,7 @@ export const SuggestionList: Component<{
                         <span class="suggestion-value block">{group().detail}</span>
                       </Show>
                     </span>
-                    <TbChevron class="h-3 w-3 shrink-0 text-neutral-500" />
+                    <FiChevronRight class="size-4 shrink-0 text-muted" />
                   </>
                 )}
               </Match>
@@ -97,7 +97,7 @@ export const SuggestionList: Component<{
                       {preview => <span class="suggestion-preview">{preview()}</span>}
                     </Show>
                     <Show when={properties.showGroup !== false && option().group}>
-                      {group => <span class="chip chip-muted shrink-0">{group()}</span>}
+                      {group => <span class="shrink-0 text-xs text-muted">{group()}</span>}
                     </Show>
                   </>
                 )}

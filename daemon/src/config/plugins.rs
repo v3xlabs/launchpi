@@ -130,13 +130,13 @@ fn restrict_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Renders an instance file with every inline secret rewritten into an environment reference, so
-/// the result is safe to paste somewhere public and still usable once that variable is set.
-pub fn export_document(
+/// An instance document with every inline secret rewritten into an environment reference, so the
+/// result is safe to paste somewhere public and still usable once that variable is set.
+pub fn exported_document(
     integration_id: &IntegrationId,
     document: &InstanceDocument,
     manifest: &PluginManifest,
-) -> Result<String, String> {
+) -> Result<InstanceDocument, String> {
     let mut exported = document.clone();
     for field in manifest
         .config_schema
@@ -152,7 +152,7 @@ pub fn export_document(
             .map_err(|error| error.to_string())?;
         exported.config.insert(field.key.clone(), replacement);
     }
-    toml::to_string_pretty(&exported).map_err(|error| error.to_string())
+    Ok(exported)
 }
 
 #[cfg(test)]
@@ -178,14 +178,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn exporting_rewrites_an_inline_secret_into_an_environment_reference() {
-        let exported = export_document(
+    fn export(config: &str) -> String {
+        let exported = exported_document(
             &IntegrationId("hass.home".to_string()),
-            &document("url = \"http://hass.local\"\ntoken = \"hunter2\""),
+            &document(config),
             &manifest(),
         )
         .expect("exports");
+        toml::to_string_pretty(&exported).expect("renders")
+    }
+
+    #[test]
+    fn exporting_rewrites_an_inline_secret_into_an_environment_reference() {
+        let exported = export("url = \"http://hass.local\"\ntoken = \"hunter2\"");
         assert!(!exported.contains("hunter2"));
         assert!(exported.contains("LAUNCHPI_HASS_HOME_TOKEN"));
         assert!(exported.contains("http://hass.local"));
@@ -193,23 +198,13 @@ mod tests {
 
     #[test]
     fn exporting_leaves_an_indirect_reference_untouched() {
-        let exported = export_document(
-            &IntegrationId("hass.home".to_string()),
-            &document("token = { file = \"/run/agenix/token\" }"),
-            &manifest(),
-        )
-        .expect("exports");
+        let exported = export("token = { file = \"/run/agenix/token\" }");
         assert!(exported.contains("/run/agenix/token"));
     }
 
     #[test]
     fn exporting_does_not_touch_fields_the_manifest_never_declared_secret() {
-        let exported = export_document(
-            &IntegrationId("hass.home".to_string()),
-            &document("url = \"http://hass.local\""),
-            &manifest(),
-        )
-        .expect("exports");
+        let exported = export("url = \"http://hass.local\"");
         assert!(exported.contains("http://hass.local"));
     }
 }

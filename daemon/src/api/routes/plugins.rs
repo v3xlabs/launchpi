@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    api::error::ApiError,
+    api::{error::ApiError, routes::config::ExportQuery},
     assets::icons,
-    config::values::UserValue,
+    config::{changes::Entry, values::UserValue, ExportFormat},
     identifiers::IntegrationId,
     plugins::{
         instance::PluginInstance,
@@ -310,12 +310,18 @@ async fn delete_instance(
 async fn export_instance(
     State(state): State<AppState>,
     Path(integration_id): Path<String>,
+    Query(query): Query<ExportQuery>,
 ) -> Result<String, ApiError> {
-    state
+    let (identity, document) = state
         .plugins
-        .export_instance(&IntegrationId(integration_id))
-        .ok_or_else(|| ApiError::not_found("plugin instance"))?
-        .map_err(ApiError::bad_request)
+        .instance_document(&IntegrationId(integration_id))
+        .ok_or_else(|| ApiError::not_found("plugin instance"))?;
+    let entry = Entry::Plugin(identity, document);
+    match query.format {
+        ExportFormat::Toml => entry.toml(),
+        ExportFormat::Nix => entry.nix(),
+    }
+    .map_err(|error| ApiError::bad_request(format!("{error:#}")))
 }
 
 /// Backs the combobox on a lookup field: real choices from the running instance, with free text
@@ -375,39 +381,31 @@ async fn run_action(
 async fn export_device(
     State(state): State<AppState>,
     Path(surface_id): Path<String>,
+    Query(query): Query<ExportQuery>,
 ) -> Result<String, ApiError> {
     state
-        .export_device_configuration(&surface_id)
+        .export_device_configuration(&surface_id, query.format)
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("device"))
 }
 
 async fn export_configuration(State(state): State<AppState>) -> Result<String, ApiError> {
-    state
-        .export_configuration()
-        .map_err(ApiError::internal)
-        .map(|document| {
-            let instances: Vec<_> = state
-                .plugins
-                .instances()
-                .into_iter()
-                .filter_map(|instance| {
-                    let exported = state
-                        .plugins
-                        .export_instance(&instance.integration_id)?
-                        .ok()?;
-                    Some(format!(
-                        "# plugins/{}.{}.toml\n{exported}",
-                        instance.plugin_type, instance.name
-                    ))
-                })
-                .collect();
-            if instances.is_empty() {
-                document
-            } else {
-                format!("{document}\n{}", instances.join("\n"))
-            }
+    let document = state.export_configuration().map_err(ApiError::internal)?;
+    let mut documents = state.plugins.instance_documents();
+    documents.sort_by_key(|(identity, _)| identity.file_name());
+    let instances: Vec<_> = documents
+        .into_iter()
+        .filter_map(|(identity, document)| {
+            let file_name = identity.file_name();
+            let exported = Entry::Plugin(identity, document).toml().ok()?;
+            Some(format!("# plugins/{file_name}\n{exported}"))
         })
+        .collect();
+    Ok(if instances.is_empty() {
+        document
+    } else {
+        format!("{document}\n{}", instances.join("\n"))
+    })
 }
 
 /// TOML has no null, so a form that left a field blank sends one and it is dropped rather than
