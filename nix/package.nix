@@ -9,7 +9,7 @@
   lib,
   nodejs,
   pkg-config,
-  pnpm,
+  pnpm_11,
   pnpmConfigHook,
   fetchPnpmDeps,
   jack2,
@@ -33,6 +33,7 @@ rustPlatform.buildRustPackage {
     pname = "launchpi-web";
     version = "0.0.1";
     src = ../web;
+    pnpm = pnpm_11;
     fetcherVersion = 4;
     hash = "sha256-P+xMgfpTPJxIT6qKmYDiWHEGNnU3pTyBwqWOcp9AEGo=";
   };
@@ -41,7 +42,7 @@ rustPlatform.buildRustPackage {
     just
     nodejs
     pkg-config
-    pnpm
+    pnpm_11
     pnpmConfigHook
   ];
 
