@@ -20,7 +20,7 @@
         "solid-icons": "^1.2.0",
         "solid-js": "^1.9.7",
         "tailwindcss": "^4.3.3",
-        "vite": "^5.0.10"
+        "vite": "^6.4.4"
     },
     "devDependencies": {
         "@typescript-eslint/parser": "^6.15.0",
