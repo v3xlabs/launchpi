@@ -1090,13 +1090,14 @@ async fn watch_assets(engine: Arc<PluginEngine>, mut ready: mpsc::Receiver<Strin
     }
 }
 
-/// The registry already broadcasts `Changed` from every call site that alters which controls are
-/// visible, so the index follows it rather than adding hooks to each one.
+/// The registry broadcasts `Changed` from every call site that alters which controls exist, and
+/// `PresentationChanged` when a subpanel opens or closes, which changes which controls are visible
+/// without changing saved data. The index follows both rather than adding hooks to each call site.
 async fn watch_inventory(engine: Arc<PluginEngine>) {
     let mut events = engine.surfaces.subscribe();
     loop {
         match events.recv().await {
-            Ok(ServerEvent::Changed) => {
+            Ok(ServerEvent::Changed | ServerEvent::PresentationChanged { .. }) => {
                 let _ = engine.signals.try_send(EngineSignal::InventoryChanged);
             }
             Ok(_) => {}
@@ -1159,5 +1160,130 @@ mod tests {
     fn nothing_to_offer_is_not_an_endless_loop() {
         assert!(interleave(vec![Vec::new(), Vec::new()], 10).is_empty());
         assert!(interleave(Vec::new(), 10).is_empty());
+    }
+
+    fn open_subpanel_key_panels() -> Vec<Panel> {
+        use crate::{
+            identifiers::PanelId,
+            panels::{
+                rendered_state::{ColorBinding, Layer, RenderedState},
+                PanelLayout,
+            },
+            surfaces::defaults::default_panel,
+        };
+
+        let mut tab = default_panel();
+        tab.panel_id = PanelId("tabs".to_string());
+        tab.layout = PanelLayout {
+            columns: 1,
+            rows: 1,
+        };
+        tab.dials = Vec::new();
+        tab.controls[0].pressed_state = None;
+        tab.controls[0].default_state = RenderedState {
+            layers: vec![Layer::Fill {
+                color: ColorBinding::Reference("$(test.default:tab.color)".to_string()),
+            }],
+            is_pressed: false,
+        };
+        vec![default_panel(), tab]
+    }
+
+    async fn next_fill(
+        commands: &mut mpsc::Receiver<crate::surfaces::command::SurfaceCommand>,
+    ) -> Option<crate::panels::rendered_state::RgbaColor> {
+        use crate::surfaces::command::SurfaceCommand;
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let command = tokio::time::timeout_at(deadline, commands.recv())
+                .await
+                .expect("the key should have been repainted");
+            if let Some(SurfaceCommand::RenderKey(rendering)) = command {
+                if rendering.key_index == 0 {
+                    return rendering.palette_color();
+                }
+            }
+        }
+    }
+
+    /// The owner's deck: a tab key in an open subpanel bound to a colour that goes green while its
+    /// tab is active and empty afterwards. The key has to follow both changes without being pressed.
+    #[tokio::test]
+    async fn a_key_in_an_open_subpanel_follows_its_bound_colour_to_green_and_back() {
+        use crate::{
+            assets::AssetStore,
+            bindings::action::SubpanelPlacement,
+            config::{plugins::PluginDirectory, store::Persistence},
+            panels::rendered_state::RgbaColor,
+        };
+
+        let home = std::env::temp_dir().join(format!("launchpi-subpanel-{}", std::process::id()));
+        for variable in ["LAUNCHPI_CONFIG_DIR", "LAUNCHPI_STATE_DIR"] {
+            std::env::set_var(variable, home.join(variable));
+        }
+        let (persistence, _, _) = Persistence::open().await.expect("a scratch configuration");
+        let surfaces = Arc::new(SurfaceRegistry::from_configuration(
+            Vec::new(),
+            open_subpanel_key_panels(),
+        ));
+        let surface_id = SurfaceId("stream-deck-studio-1".to_string());
+        let (_is_active, mut commands, _brightness) = surfaces.activate(&surface_id);
+        let (assets_ready, assets_ready_receiver) = mpsc::channel(1);
+        let assets = Arc::new(
+            AssetStore::open(home.join("assets"), reqwest::Client::new(), assets_ready)
+                .expect("a scratch asset store"),
+        );
+        let engine = PluginEngine::start(
+            surfaces.clone(),
+            surfaces.variables(),
+            PluginDirectory::open(&home.join("LAUNCHPI_CONFIG_DIR")).expect("a plugin directory"),
+            Arc::new(persistence),
+            home.join("values.toml"),
+            assets,
+            assets_ready_receiver,
+            surfaces.take_input_receiver().expect("the input receiver"),
+        )
+        .await;
+        // `watch_inventory` subscribes to the registry when it is first polled.
+        tokio::task::yield_now().await;
+
+        surfaces
+            .open_subpanel(
+                &surface_id,
+                "tabs",
+                SurfacePosition { column: 0, row: 0 },
+                SubpanelPlacement::TopStart,
+                0,
+                0,
+            )
+            .expect("the subpanel opens");
+        while commands.try_recv().is_ok() {}
+        let reference = VariableRef::new("test.default", "tab.color");
+        let green = RgbaColor::opaque(0x22, 0xc5, 0x5e);
+
+        let indexed = async {
+            while engine
+                .index
+                .read()
+                .unwrap()
+                .targets_for_variable(&reference)
+                .is_empty()
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(2), indexed)
+            .await
+            .expect("the engine should index the subpanel key it was just shown");
+
+        engine.publish(
+            reference.clone(),
+            VariableValue::Text("#22c55e".to_string()),
+        );
+        assert_eq!(next_fill(&mut commands).await, Some(green));
+
+        engine.publish(reference, VariableValue::Text(String::new()));
+        assert_eq!(next_fill(&mut commands).await, None);
     }
 }
