@@ -11,6 +11,7 @@ use crate::{
     panels::{control::Control, Panel},
     plugins::engine::{InputEvent, INPUT_QUEUE_SIZE},
     rendering::ledger::RenderLedger,
+    surfaces::holds::Holds,
     surfaces::{
         connection::ActiveConnection,
         defaults::{default_device, repair_panel_assignments},
@@ -27,6 +28,8 @@ pub struct SurfaceRegistry {
     pub(super) panels: RwLock<HashMap<String, Panel>>,
     pub(super) active_connections: RwLock<HashMap<String, ActiveConnection>>,
     pub(super) key_states: RwLock<HashMap<(String, u8), bool>>,
+    /// Who holds each key and dial down; `key_states` and `dial_presses` follow what it says.
+    pub(super) holds: Holds,
     pub(super) pressed_controls: RwLock<HashMap<(String, u8), Control>>,
     pub(super) dismissed_overlay_keys: RwLock<HashSet<(String, u8)>>,
     pub(super) display_consumed_keys: RwLock<HashSet<(String, u8)>>,
@@ -97,6 +100,7 @@ impl SurfaceRegistry {
             ),
             active_connections: RwLock::default(),
             key_states: RwLock::default(),
+            holds: Holds::default(),
             pressed_controls: RwLock::default(),
             dismissed_overlay_keys: RwLock::default(),
             display_consumed_keys: RwLock::default(),

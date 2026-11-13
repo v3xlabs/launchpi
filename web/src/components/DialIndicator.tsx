@@ -7,7 +7,7 @@ const unsetColor = "#262626";
 const trackColor = "#262626";
 
 // The Studio ring is 24 discrete LED segments, lit from the bottom of the circle clockwise.
-const ringSegments = 24;
+export const ringSegments = 24;
 const segmentAngle = 360 / ringSegments;
 const segmentGapAngle = 2.5;
 // Half a segment of offset puts the last (100%) segment centred on the bottom of the ring
@@ -15,7 +15,7 @@ const segmentGapAngle = 2.5;
 const ringStartAngle = 180 + segmentAngle / 2;
 
 // Same integer maths as the daemon uses when it lights the ring.
-const litRingSegments = (level: number): number => Math.floor((level * ringSegments) / 100);
+export const litRingSegments = (level: number): number => Math.floor((level * ringSegments) / 100);
 
 const ringBackground = (color: string, level: number): string => {
   const lit = litRingSegments(level);

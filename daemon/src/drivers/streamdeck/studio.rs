@@ -1007,37 +1007,23 @@ fn record_key_events(
         0 if packet.len() >= 36 => {
             for key_index in 0..32 {
                 let is_pressed = packet[4 + key_index as usize] != 0;
-                let did_change = state
+                state
                     .surfaces
                     .record_key_state(surface_id, key_index, is_pressed);
-                if is_pressed && did_change {
-                    info!(key_index, "Stream Deck key pressed");
-                }
             }
         }
         // Like the key report, this carries the state of every dial, so releases arrive here too.
         3 if packet.len() >= dial_report_size(dials) && packet[4] == 0 => {
             for dial_index in dials.iter().map(|dial| dial.index) {
                 let is_pressed = packet[5 + usize::from(dial_index)] != 0;
-                let did_change = state
+                state
                     .surfaces
                     .record_dial_press(surface_id, dial_index, is_pressed);
-                if did_change {
-                    if is_pressed {
-                        info!(dial_index, "Stream Deck dial pressed");
-                    } else {
-                        debug!(dial_index, "Stream Deck dial released");
-                    }
-                }
             }
         }
         3 if packet.len() >= dial_report_size(dials) && packet[4] == 1 => {
             for dial_index in dials.iter().map(|dial| dial.index) {
                 let detents = packet[5 + usize::from(dial_index)] as i8;
-                if detents == 0 {
-                    continue;
-                }
-                info!(dial_index, detents, "Stream Deck dial turned");
                 state
                     .surfaces
                     .record_dial_turn(surface_id, dial_index, detents);

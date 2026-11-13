@@ -1,12 +1,12 @@
 use serde::Serialize;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{
     drivers::streamdeck::model::{model_by_name, DialPlacement},
     events::ServerEvent,
     identifiers::SurfaceId,
     panels::{dial::PanelDial, rendered_state::RgbaColor},
-    surfaces::{logs::SurfaceLogLevel, registry::SurfaceRegistry},
+    surfaces::{holds::HeldInput, logs::SurfaceLogLevel, registry::SurfaceRegistry},
 };
 
 /// The LED segments making up one dial ring. A single detent of the knob is one segment.
@@ -37,7 +37,7 @@ impl SurfaceRegistry {
             .map_or(&[], |model| model.dials)
     }
 
-    fn has_dial(&self, surface_id: &SurfaceId, dial_index: u8) -> bool {
+    pub(super) fn has_dial(&self, surface_id: &SurfaceId, dial_index: u8) -> bool {
         self.surface_dials(surface_id)
             .iter()
             .any(|dial| dial.index == dial_index)
@@ -79,9 +79,16 @@ impl SurfaceRegistry {
 
     /// Turning the knob moves the ring one segment per detent, clamped at both ends. The new
     /// position is runtime state: it is pushed back to the device and broadcast, never persisted.
+    /// The hardware driver and `POST /api/devices/:surface_id/input` both call this.
     pub fn record_dial_turn(&self, surface_id: &SurfaceId, dial_index: u8, detents: i8) {
-        if detents == 0 || self.is_display_off(surface_id) || !self.has_dial(surface_id, dial_index)
-        {
+        if detents == 0 {
+            return;
+        }
+        info!(
+            surface_id = surface_id.0,
+            dial_index, detents, "Stream Deck dial turned"
+        );
+        if self.is_display_off(surface_id) || !self.has_dial(surface_id, dial_index) {
             return;
         }
         let Some((color, current)) = self.dial_ring(surface_id, dial_index) else {
@@ -131,9 +138,22 @@ impl SurfaceRegistry {
         });
     }
 
-    /// Records a dial being pushed in or released. Returns whether that changed anything, so the
-    /// caller can log edges rather than every report. Nothing is bound to a dial press yet.
+    /// Records a dial being pushed in or released and logs the edge. Returns whether that changed
+    /// anything. Nothing is bound to a dial press yet.
     pub fn record_dial_press(
+        &self,
+        surface_id: &SurfaceId,
+        dial_index: u8,
+        is_pressed: bool,
+    ) -> bool {
+        let is_held =
+            self.holds
+                .set_hardware(&surface_id.0, HeldInput::Dial(dial_index), is_pressed);
+        self.apply_held_dial(surface_id, dial_index, is_held)
+    }
+
+    /// Moves the dial's push to whether anyone holds it, and acts only when that changes.
+    pub(super) fn apply_held_dial(
         &self,
         surface_id: &SurfaceId,
         dial_index: u8,
@@ -163,6 +183,17 @@ impl SurfaceRegistry {
             dial_index,
             is_pressed,
         });
+        if is_pressed {
+            info!(
+                surface_id = surface_id.0,
+                dial_index, "Stream Deck dial pressed"
+            );
+        } else {
+            debug!(
+                surface_id = surface_id.0,
+                dial_index, "Stream Deck dial released"
+            );
+        }
         true
     }
 

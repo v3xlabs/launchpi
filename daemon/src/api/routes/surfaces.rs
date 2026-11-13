@@ -27,6 +27,7 @@ use crate::{
     surfaces::{
         command::KeyRendering,
         defaults::stream_deck_capabilities,
+        input::{SurfaceInput, SurfaceInputError},
         inventory::DeviceInventory,
         layout::{SurfaceCapabilities, SurfaceLayout},
         managed::{
@@ -101,6 +102,7 @@ pub fn router() -> Router<AppState> {
             "/api/devices/:surface_id/presentation",
             get(device_presentation),
         )
+        .route("/api/devices/:surface_id/input", post(device_input))
         .route("/api/surfaces/display", put(set_surface_display))
         .route("/api/surfaces/brightness", put(set_surface_brightness))
         .route(
@@ -326,6 +328,36 @@ async fn device_presentation(
         .ok_or_else(|| ApiError::not_found("device presentation"))
 }
 
+/// Plays an input the way the hardware would have delivered it, for clients that show the device
+/// on screen. It reaches the same registry methods the driver calls; see
+/// `SurfaceRegistry::record_input`.
+async fn device_input(
+    State(state): State<AppState>,
+    Path(surface_id): Path<String>,
+    Json(input): Json<SurfaceInput>,
+) -> Result<StatusCode, ApiError> {
+    state.surfaces.record_input(&SurfaceId(surface_id), input)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+impl From<SurfaceInputError> for ApiError {
+    fn from(error: SurfaceInputError) -> Self {
+        let status = match error {
+            SurfaceInputError::UnknownSurface => StatusCode::NOT_FOUND,
+            SurfaceInputError::Disabled | SurfaceInputError::NotConnected(_) => {
+                StatusCode::CONFLICT
+            }
+            SurfaceInputError::UnknownKey(_)
+            | SurfaceInputError::UnknownDial(_)
+            | SurfaceInputError::InvalidClientId => StatusCode::BAD_REQUEST,
+        };
+        Self {
+            status,
+            message: error.to_string(),
+        }
+    }
+}
+
 async fn set_surface_display(
     State(state): State<AppState>,
     Json(request): Json<SetSurfaceDisplayRequest>,
@@ -440,5 +472,78 @@ fn non_empty(value: String, field_name: &str) -> Result<String, ApiError> {
         Err(ApiError::bad_request(format!("{field_name} is required")))
     } else {
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_input_body_is_tagged_on_kind() {
+        let key: SurfaceInput = serde_json::from_str(
+            r#"{"kind":"key","key_index":3,"is_pressed":true,"client_id":"tab-a"}"#,
+        )
+        .expect("a key body parses");
+        let turn: SurfaceInput =
+            serde_json::from_str(r#"{"kind":"dial_turn","dial_index":0,"detents":-2}"#)
+                .expect("a dial turn body parses");
+        let press: SurfaceInput = serde_json::from_str(
+            r#"{"kind":"dial_press","dial_index":1,"is_pressed":false,"client_id":"tab-a"}"#,
+        )
+        .expect("a dial press body parses");
+
+        assert_eq!(
+            key,
+            SurfaceInput::Key {
+                key_index: 3,
+                is_pressed: true,
+                client_id: "tab-a".to_string(),
+            }
+        );
+        assert_eq!(
+            turn,
+            SurfaceInput::DialTurn {
+                dial_index: 0,
+                detents: -2
+            }
+        );
+        assert_eq!(
+            press,
+            SurfaceInput::DialPress {
+                dial_index: 1,
+                is_pressed: false,
+                client_id: "tab-a".to_string(),
+            }
+        );
+        assert!(serde_json::from_str::<SurfaceInput>(
+            r#"{"kind":"dial_turn","dial_index":0,"detents":300}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn refused_input_answers_with_the_status_the_failure_calls_for() {
+        let status = |error: SurfaceInputError| ApiError::from(error).status;
+
+        assert_eq!(
+            status(SurfaceInputError::UnknownSurface),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(status(SurfaceInputError::Disabled), StatusCode::CONFLICT);
+        assert_eq!(
+            status(SurfaceInputError::NotConnected(
+                NetworkSurfaceStatus::Unavailable
+            )),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            status(SurfaceInputError::UnknownKey(99)),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status(SurfaceInputError::UnknownDial(9)),
+            StatusCode::BAD_REQUEST
+        );
     }
 }

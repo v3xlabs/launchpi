@@ -46,6 +46,8 @@ async fn main() {
         }
     };
 
+    surfaces::input::start_hold_expiry(state.surfaces.clone());
+
     for surface in state
         .surfaces
         .managed_surfaces()

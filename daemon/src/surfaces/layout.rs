@@ -27,6 +27,16 @@ pub enum SurfaceLayout {
     Freeform,
 }
 
+impl SurfaceLayout {
+    /// How many keys the layout holds. A freeform surface has no key grid to index into.
+    pub fn key_count(self) -> u32 {
+        match self {
+            Self::Grid { columns, rows } => u32::from(columns) * u32::from(rows),
+            Self::Freeform => 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SurfaceControl {
     pub surface_control_id: String,

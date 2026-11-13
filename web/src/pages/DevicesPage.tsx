@@ -11,9 +11,10 @@ import {
   LogEntry,
   Panel,
 } from "../api/inventory";
+import { DeviceStage } from "../components/device/DeviceStage";
+import { hardwareFor } from "../components/device/hardware";
 import { DeviceDisplayControls } from "../components/DeviceDisplayControls";
 import { DeviceImage } from "../components/DeviceImage";
-import { DevicePresentation } from "../components/DevicePresentation";
 import { CopyConfigItems, MenuItem, MenuSeparator, OverflowMenu } from "../components/Menu";
 import { MetaSeparator, PageHeader } from "../components/PageHeader";
 import { StatusLabel } from "../components/StatusDot";
@@ -161,11 +162,9 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
             </div>
             <Show when={activePanel()} fallback={<p class="empty">No panel on this device.</p>}>
               {panel => (
-                <DevicePresentation
-                  device={properties.device}
-                  panel={panel()}
-                  pressedKeys={new Set(store.pressedKeysFor(properties.device.surface_id))}
-                />
+                <Show when={hardwareFor(properties.device)}>
+                  {hardware => <DeviceStage device={properties.device} panel={panel()} hardware={hardware()} />}
+                </Show>
               )}
             </Show>
           </Show>

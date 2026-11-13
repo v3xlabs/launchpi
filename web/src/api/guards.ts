@@ -30,9 +30,11 @@ export const request = async (
   path: string,
   method: "POST" | "PATCH" | "PUT" | "DELETE",
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<Response> => {
   const response = await fetch(path, {
     method,
+    signal,
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

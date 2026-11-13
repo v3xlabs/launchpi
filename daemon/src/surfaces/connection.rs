@@ -57,6 +57,7 @@ impl SurfaceRegistry {
     }
 
     pub fn clear_input_state(&self, surface_id: &SurfaceId) {
+        self.holds.clear_surface(&surface_id.0);
         let pressed_keys = {
             let mut key_states = self.key_states.write().unwrap();
             let pressed = key_states

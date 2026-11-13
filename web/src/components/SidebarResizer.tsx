@@ -1,5 +1,7 @@
 import { Component, onCleanup } from "solid-js";
 
+import { readStorage, writeStorage } from "../utils/storage";
+
 export const sidebarRailPx = 56;
 const sidebarMinPx = 208;
 const sidebarMaxPx = 420;
@@ -13,30 +15,11 @@ const widthKey = "launchpi-sidebar-width";
 /** The page keeps at least this much room; a narrower window gets a narrower sidebar or the rail. */
 const mainMinPx = 320;
 
-// Storage can be blocked by browser policy or full. The width then lives in memory for the visit.
-const readStoredWidthPx = (): number | null => {
-  try {
-    return Number(localStorage.getItem(widthKey));
-  }
-  catch {
-    return null;
-  }
-};
-
-const storeWidthPx = (widthPx: number) => {
-  try {
-    localStorage.setItem(widthKey, String(widthPx));
-  }
-  catch {
-    // Kept in memory only.
-  }
-};
-
 /** Read before the first render, so a stored width never jumps. Narrow windows start as the rail. */
 export const initialSidebarWidthPx = (): number => {
-  const stored = readStoredWidthPx();
+  const stored = Number(readStorage(widthKey));
 
-  if (stored !== null && stored >= sidebarRailPx && stored <= sidebarMaxPx) return stored;
+  if (stored >= sidebarRailPx && stored <= sidebarMaxPx) return stored;
 
   return matchMedia("(max-width: 48rem)").matches ? sidebarRailPx : sidebarDefaultPx;
 };
@@ -127,7 +110,7 @@ export const SidebarResizer: Component<{
 
   const settle = (targetPx: number, velocityPxPerSecond: number) => {
     cancelSpring?.();
-    storeWidthPx(targetPx);
+    writeStorage(widthKey, String(targetPx));
 
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
       properties.onWidthChange(targetPx);
@@ -140,7 +123,7 @@ export const SidebarResizer: Component<{
 
   const place = (targetPx: number) => {
     cancelSpring?.();
-    storeWidthPx(targetPx);
+    writeStorage(widthKey, String(targetPx));
     properties.onWidthChange(targetPx);
   };
 

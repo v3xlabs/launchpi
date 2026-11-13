@@ -1,11 +1,12 @@
 use serde::Serialize;
+use tracing::info;
 
 use crate::{
     events::ServerEvent,
     identifiers::SurfaceId,
     panels::control::Control,
     plugins::engine::InputEvent,
-    surfaces::{logs::SurfaceLogLevel, registry::SurfaceRegistry},
+    surfaces::{holds::HeldInput, logs::SurfaceLogLevel, registry::SurfaceRegistry},
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -43,12 +44,40 @@ impl SurfaceRegistry {
         }
     }
 
+    /// Records a key going down or up and does everything a press means: the surface log line,
+    /// the `KeyState` event, the repaint and the hand-off to the action engine. Both the hardware
+    /// driver and `POST /api/devices/:surface_id/input` call this, so a press behaves the same
+    /// whichever way it arrived. Returns whether the key's state changed.
     pub fn record_key_state(
         &self,
         surface_id: &SurfaceId,
         key_index: u8,
         is_pressed: bool,
     ) -> bool {
+        let is_held = self
+            .holds
+            .set_hardware(&surface_id.0, HeldInput::Key(key_index), is_pressed);
+        self.apply_held_key(surface_id, key_index, is_held)
+    }
+
+    /// Moves the key to whether anyone holds it, and acts only when that changes.
+    pub(super) fn apply_held_key(
+        &self,
+        surface_id: &SurfaceId,
+        key_index: u8,
+        is_held: bool,
+    ) -> bool {
+        let did_change = self.apply_key_state(surface_id, key_index, is_held);
+        if is_held && did_change {
+            info!(
+                surface_id = surface_id.0,
+                key_index, "Stream Deck key pressed"
+            );
+        }
+        did_change
+    }
+
+    fn apply_key_state(&self, surface_id: &SurfaceId, key_index: u8, is_pressed: bool) -> bool {
         let mut key_states = self.key_states.write().unwrap();
         let previous_state = key_states.insert((surface_id.0.clone(), key_index), is_pressed);
         if previous_state == Some(is_pressed) {
@@ -169,10 +198,7 @@ mod tests {
         assert!(registry.record_key_state(&surface_id, 0, true));
 
         match input.try_recv().expect("the press should be queued") {
-            InputEvent::Key {
-                is_pressed,
-                ..
-            } => {
+            InputEvent::Key { is_pressed, .. } => {
                 assert!(is_pressed);
             }
             InputEvent::CancelSurfaceInput { .. } => panic!("the key press should be queued"),

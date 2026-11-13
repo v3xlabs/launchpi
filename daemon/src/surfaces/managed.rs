@@ -301,7 +301,7 @@ impl SurfaceRegistry {
     }
 }
 
-fn status_label(status: &NetworkSurfaceStatus) -> &'static str {
+pub(super) fn status_label(status: &NetworkSurfaceStatus) -> &'static str {
     match status {
         NetworkSurfaceStatus::Connecting => "connecting",
         NetworkSurfaceStatus::Connected => "connected",

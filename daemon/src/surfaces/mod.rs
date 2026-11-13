@@ -4,6 +4,8 @@ pub mod defaults;
 pub mod dials;
 pub mod display;
 pub mod gesture;
+pub mod holds;
+pub mod input;
 pub mod inventory;
 pub mod keys;
 pub mod layout;

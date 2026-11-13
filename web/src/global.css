@@ -186,6 +186,39 @@
   }
 
   /* Device renders */
+  /*
+   * The device drawing. Sizes come from `--mm`, CSS px per millimetre. The hardware is black in both
+   * themes. One light source sits above the desk, so every shadow falls down. A press takes 120 ms
+   * and a release 180 ms, both easing out.
+   */
+  .device-desk { @apply flex overflow-x-auto px-4 pt-6 pb-10; justify-content: safe center; }
+  .device-body { @apply relative shrink-0; box-shadow: 0 1px 1px rgb(15 23 42 / 0.18), 0 4px 8px rgb(15 23 42 / 0.1), 0 8px 16px rgb(15 23 42 / 0.08), 0 16px 32px rgb(15 23 42 / 0.07); }
+  .dark .device-body { box-shadow: 0 1px 1px rgb(0 0 0 / 0.9), 0 4px 8px rgb(0 0 0 / 0.6), 0 12px 24px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06); }
+  .device-plate { @apply absolute; background: linear-gradient(to bottom, #2a2b2f, #1f2023 8%, #1b1c1f); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.03); }
+  .device-ear { @apply absolute; background: linear-gradient(to bottom, #2c2d31, #212226); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0 0 1px rgb(0 0 0 / 0.4); }
+  .device-slot { @apply absolute rounded-full bg-canvas; box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.5); }
+  .device-inset { @apply absolute bg-[#18191c]; box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.6), 0 1px 0 rgb(255 255 255 / 0.05); }
+  .device-key { @apply absolute touch-none border-0 bg-[#08080a] p-0 disabled:cursor-default; box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.8), 0 1px 0 rgb(255 255 255 / 0.05); -webkit-tap-highlight-color: transparent; }
+  .device-key:focus-visible { @apply outline-2 outline-offset-1 outline-slate-50; }
+  .device-cap { @apply absolute block overflow-hidden bg-black; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 1px 1px rgb(0 0 0 / 0.55), 0 2px 3px rgb(0 0 0 / 0.35), 0 3px 6px rgb(0 0 0 / 0.2); transition: transform 180ms cubic-bezier(0.215, 0.61, 0.355, 1), box-shadow 180ms cubic-bezier(0.215, 0.61, 0.355, 1); }
+  /* The clear cap catches the light along its top edge. */
+  .device-cap::after { @apply pointer-events-none absolute inset-0 rounded-[inherit]; content: ""; background: linear-gradient(to bottom, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0) 40%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 1px rgb(255 255 255 / 0.05); }
+  /* Studio caps are 4:3 and key images square: the whole image shows, so no label is cut. */
+  .device-cap img { @apply object-contain!; }
+  .device-cap[data-dimmed] img { @apply brightness-[0.35]; }
+  .device-key[data-pressed] .device-cap { transform: translateY(calc(0.5 * var(--mm))) scale(0.98); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 0.5px 1px rgb(0 0 0 / 0.4); transition-duration: 120ms; }
+  .device-dial { @apply absolute touch-none rounded-full outline-none; }
+  .device-dial:focus-visible { @apply outline-2 outline-offset-2 outline-slate-50; }
+  .device-dial[aria-disabled="true"] { @apply cursor-default; }
+  .device-ring { @apply absolute inset-0 size-full overflow-visible; }
+  .device-ring rect { fill: #313237; }
+  .device-ring rect[data-lit] { fill: var(--dial-color); }
+  .device-knob { @apply absolute rounded-full; background: radial-gradient(circle at 50% 35%, #2f3034, #18191c 70%); box-shadow: 0 1px 1px rgb(0 0 0 / 0.6), 0 2px 4px rgb(0 0 0 / 0.4), 0 6px 10px rgb(0 0 0 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 calc(2.5 * var(--mm)) #1d1e21; transition: transform 180ms cubic-bezier(0.215, 0.61, 0.355, 1); }
+  .device-dial[data-pressed] .device-knob { transform: translateY(calc(0.4 * var(--mm))) scale(0.98); transition-duration: 120ms; }
+  .device-hint { @apply flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-4 py-2 text-sm text-slate-500 dark:text-slate-400; }
+  @media (prefers-reduced-motion: reduce) {
+    .device-cap, .device-knob { transition-duration: 0ms; }
+  }
   .device-image { @apply shrink-0 object-contain; }
 
   /* Status */
