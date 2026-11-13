@@ -2182,6 +2182,55 @@ mod tests {
 
         assert_eq!(pixels, vec![4, 0, 0, 3, 0, 0, 2, 0, 0, 1, 0, 0]);
     }
+
+    #[test]
+    fn a_held_key_renders_darker_with_a_frame_that_shows_on_black() {
+        use crate::{
+            panels::rendered_state::{Layer, RenderedState},
+            rendering::context::RenderContext,
+            variables::VariableStore,
+        };
+
+        let variables = VariableStore::default();
+        let context = RenderContext::new(&variables);
+        let pixel = |face: RgbaColor, is_pressed: bool, x: u32, y: u32| {
+            let state = RenderedState {
+                layers: vec![Layer::Fill { color: face.into() }],
+                is_pressed: false,
+            };
+            let rendering = KeyRendering {
+                key_index: 0,
+                layers: context
+                    .resolve_states(&state, None, is_pressed, None)
+                    .layers,
+                is_dimmed: false,
+            };
+            let jpeg = render_key_image(&rendering, false, None).expect("a key encodes");
+            image::load_from_memory(&jpeg)
+                .expect("the device is sent a jpeg")
+                .to_rgb8()
+                .get_pixel(x, y)
+                .0
+        };
+        let middle = u32::try_from(STUDIO_KEY_IMAGE_SIZE / 2).expect("a key is small");
+
+        let orange = RgbaColor::opaque(200, 100, 50);
+        let released = pixel(orange.clone(), false, middle, middle);
+        let held = pixel(orange, true, middle, middle);
+        assert!(
+            held[0] < released[0] - 40 && held[1] < released[1] - 20 && held[0] > held[1] + 30,
+            "a held key is darker than it was but still the same colour: {released:?} then {held:?}"
+        );
+
+        let black = RgbaColor::opaque(0, 0, 0);
+        let inside = pixel(black.clone(), true, middle, middle);
+        let edge = pixel(black, true, 1, middle);
+        assert!(inside.iter().all(|channel| *channel < 10), "{inside:?}");
+        assert!(
+            edge.iter().all(|channel| *channel > 60),
+            "a frame has to show on a black key, got {edge:?}"
+        );
+    }
 }
 
 fn frame_cora_message(flags: u16, hid_operation: u8, message_id: u32, payload: &[u8]) -> Vec<u8> {

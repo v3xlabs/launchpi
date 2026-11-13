@@ -201,7 +201,7 @@ const ControlEditor: Component<{
               when={properties.control.pressed_state}
               fallback={(
                 <div class="grid justify-items-start gap-2 px-4 py-3">
-                  <p class="text-muted">Uses the look.</p>
+                  <p class="text-muted">Darkens the look and frames it while held.</p>
                   <button
                     type="button"
                     class="secondary-button"

@@ -161,7 +161,7 @@ always writes `2`.
 | `name` | string | Editor label only; never rendered. |
 | `position` | table | `column` and `row`, both zero-based. Two controls may not share a cell, and a control outside the layout is a validation error. |
 | `default_state` | table | See below. |
-| `pressed_state` | table, optional | Falls back to `default_state` when absent. |
+| `pressed_state` | table, optional | Drawn as written while the key is held, an empty one included. When absent, the held key is its `default_state` darkened by a translucent black layer, with a light frame inside its edge; the label and icon stay. Release returns to whatever `default_state` resolves to at that moment. |
 | `action_bindings` | array | What the control does. |
 
 The key index sent to hardware is `row * columns + column`.

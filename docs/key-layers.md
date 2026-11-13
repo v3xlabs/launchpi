@@ -136,7 +136,9 @@ data — but it is a papercut, and the v4 migration must insert it so nothing ch
 Drawn text is a `Text` layer. They read similarly and are genuinely different things, and collapsing
 them would leave a control with no name when its stack has no text.
 
-`pressed_state` stays a whole alternate stack, falling back to the default stack as it does now.
+`pressed_state` stays a whole alternate stack, drawn as written when present. When it is absent, a
+held key is the default stack darkened by a translucent `Fill` with a `Border` over it, added by the
+resolver, so a control needs no copy of its stack just to show a press.
 Per-layer "only when pressed" is the obvious alternative and is worse: it puts a condition on every
 layer to express something two stacks already say.
 
