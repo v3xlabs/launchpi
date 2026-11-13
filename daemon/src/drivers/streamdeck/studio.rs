@@ -10,7 +10,7 @@ use std::{
 use cairo::{Context as CairoContext, Format as CairoFormat, ImageSurface};
 use jpeg_encoder::{ColorType, Encoder};
 use mdns_sd::{ResolvedService, ServiceDaemon, ServiceEvent};
-use pango::{Alignment as PangoAlignment, FontDescription, WrapMode};
+use pango::{Alignment as PangoAlignment, EllipsizeMode, FontDescription, WrapMode};
 use pangocairo::functions::{create_layout, show_layout};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -1587,6 +1587,36 @@ fn rgb(color: &RgbaColor) -> (u8, u8, u8) {
     )
 }
 
+fn fitted_layout(
+    context: &CairoContext,
+    text: &str,
+    anchor: Anchor9,
+    font_family: &str,
+    font_size: Option<u8>,
+    (top_bound, bottom_bound): (usize, usize),
+) -> pango::Layout {
+    let layout = create_layout(context);
+    let max_width = (STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0).round() as i32;
+    let max_height = (bottom_bound.saturating_sub(top_bound) as f32 - KEY_TEXT_PADDING * 2.0)
+        .max(1.0)
+        .round() as i32;
+    layout.set_text(text);
+    layout.set_width(max_width * PANGO_SCALE);
+    layout.set_alignment(match anchor_axes(anchor).0 {
+        0 => PangoAlignment::Left,
+        1 => PangoAlignment::Center,
+        _ => PangoAlignment::Right,
+    });
+    match font_size {
+        Some(size) => {
+            layout.set_wrap(WrapMode::WordChar);
+            set_text_size(&layout, font_family, size);
+        }
+        None => fit_text_size(&layout, font_family, max_width, max_height),
+    }
+    layout
+}
+
 fn draw_text(
     pixels: &mut [u8],
     text: &str,
@@ -1619,26 +1649,14 @@ fn draw_text(
             return;
         }
     };
-    let layout = create_layout(&context);
-    let max_width = (STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0).round() as i32;
-    let max_height = (bottom_bound.saturating_sub(top_bound) as f32 - KEY_TEXT_PADDING * 2.0)
-        .max(1.0)
-        .round() as i32;
-    layout.set_text(text);
-    layout.set_width(max_width * PANGO_SCALE);
-    layout.set_wrap(WrapMode::WordChar);
-    layout.set_alignment(match anchor_axes(anchor).0 {
-        0 => PangoAlignment::Left,
-        1 => PangoAlignment::Center,
-        _ => PangoAlignment::Right,
-    });
-
-    let font_size = font_size
-        .map(f32::from)
-        .unwrap_or_else(|| fit_text_size(&layout, font_family, max_height));
-    let mut description = FontDescription::from_string(font_family);
-    description.set_absolute_size(f64::from(font_size) * f64::from(PANGO_SCALE));
-    layout.set_font_description(Some(&description));
+    let layout = fitted_layout(
+        &context,
+        text,
+        anchor,
+        font_family,
+        font_size,
+        (top_bound, bottom_bound),
+    );
     let (_, logical) = layout.pixel_extents();
     let (horizontal, vertical) = anchor_axes(anchor);
     let left = match horizontal {
@@ -1692,19 +1710,38 @@ fn draw_text(
     }
 }
 
-fn fit_text_size(layout: &pango::Layout, font_family: &str, max_height: i32) -> f32 {
+/// Leaves `layout` at the largest size where whole words fit the key. At the minimum size a word
+/// that is wider than the key breaks across lines, and text taller than the key ends in an ellipsis.
+fn fit_text_size(layout: &pango::Layout, font_family: &str, max_width: i32, max_height: i32) {
     let largest = KEY_TEXT_MAX_PX.floor() as u8;
     let smallest = KEY_TEXT_MIN_PX.ceil() as u8;
+    layout.set_wrap(WrapMode::Word);
     for size in (smallest..=largest).rev() {
-        let mut description = FontDescription::from_string(font_family);
-        description.set_absolute_size(f64::from(size) * f64::from(PANGO_SCALE));
-        layout.set_font_description(Some(&description));
-        let (_, logical) = layout.pixel_extents();
-        if logical.height() <= max_height {
-            return f32::from(size);
+        set_text_size(layout, font_family, size);
+        let (width, height) = layout.pixel_size();
+        if width <= max_width && height <= max_height {
+            return;
         }
     }
-    f32::from(smallest)
+    layout.set_wrap(WrapMode::WordChar);
+    layout.set_height(max_height * PANGO_SCALE);
+    layout.set_ellipsize(EllipsizeMode::End);
+    let text = layout.text();
+    let shown = layout
+        .lines()
+        .last()
+        .map_or(0, |line| (line.start_index() + line.length()) as usize);
+    // Pango ellipsizes inside one paragraph and drops the paragraphs after the last shown line
+    // without a mark, so the cut text gets its own ellipsis.
+    if !layout.is_ellipsized() && shown < text.len() {
+        layout.set_text(&format!("{}\u{2026}", text[..shown].trim_end()));
+    }
+}
+
+fn set_text_size(layout: &pango::Layout, font_family: &str, size: u8) {
+    let mut description = FontDescription::from_string(font_family);
+    description.set_absolute_size(f64::from(size) * f64::from(PANGO_SCALE));
+    layout.set_font_description(Some(&description));
 }
 
 fn set_pixel(pixels: &mut [u8], x: usize, y: usize, color: (u8, u8, u8)) {
@@ -1735,11 +1772,12 @@ mod tests {
 
     use super::{
         anchored_origin, brightness_report, dial_report_size, draw_border, draw_fill,
-        flip_pixels_180, parse_child_device_info, parse_primary_device_info, render_key_image,
-        text_vertical_bounds, Anchor9, Edge, Fit, KeyRendering, PendingRenders, ResolvedLayer,
-        RgbaColor, SurfaceCommand, TransportMode, DIAL_RING_COMMAND, ELGATO_VENDOR_ID,
-        LEGACY_RESPONSE_SIZE, NETWORK_DOCK_PRODUCT_ID, OVERLAY_INSET, STREAM_DECK_STUDIO,
-        STUDIO_KEY_IMAGE_SIZE,
+        fitted_layout, flip_pixels_180, parse_child_device_info, parse_primary_device_info,
+        render_key_image, text_vertical_bounds, Anchor9, CairoContext, CairoFormat, Edge, Fit,
+        ImageSurface, KeyRendering, PendingRenders, ResolvedLayer, RgbaColor, SurfaceCommand,
+        TransportMode, DIAL_RING_COMMAND, ELGATO_VENDOR_ID, KEY_TEXT_MIN_PX, KEY_TEXT_PADDING,
+        LEGACY_RESPONSE_SIZE, NETWORK_DOCK_PRODUCT_ID, OVERLAY_INSET, PANGO_SCALE,
+        STREAM_DECK_STUDIO, STUDIO_KEY_IMAGE_SIZE,
     };
     use crate::drivers::streamdeck::model::{BrightnessProtocol, STREAM_DECK_XL};
 
@@ -1751,6 +1789,122 @@ mod tests {
             font_family: "sans-serif".to_string(),
             font_size: None,
         }
+    }
+
+    fn key_text_layout(text: &str, font_size: Option<u8>) -> pango::Layout {
+        key_text_layout_in(text, Anchor9::Center, font_size, (0, STUDIO_KEY_IMAGE_SIZE))
+    }
+
+    fn key_text_layout_in(
+        text: &str,
+        anchor: Anchor9,
+        font_size: Option<u8>,
+        bounds: (usize, usize),
+    ) -> pango::Layout {
+        let surface = ImageSurface::create(CairoFormat::ARgb32, 96, 96)
+            .expect("a 96 px surface should always be created");
+        let context = CairoContext::new(&surface).expect("a cairo context should be created");
+        fitted_layout(&context, text, anchor, "sans-serif", font_size, bounds)
+    }
+
+    fn text_size_px(layout: &pango::Layout) -> i32 {
+        layout
+            .font_description()
+            .expect("a fitted layout has a font")
+            .size()
+            / PANGO_SCALE
+    }
+
+    fn ends_with_ellipsis(layout: &pango::Layout) -> bool {
+        layout.is_ellipsized() || layout.text().ends_with('\u{2026}')
+    }
+
+    fn inner_key_size() -> i32 {
+        (STUDIO_KEY_IMAGE_SIZE as f32 - KEY_TEXT_PADDING * 2.0).round() as i32
+    }
+
+    fn words_split_across_lines<'text>(
+        layout: &pango::Layout,
+        text: &'text str,
+    ) -> Vec<&'text str> {
+        let lines: Vec<(i32, i32)> = layout
+            .lines()
+            .iter()
+            .map(|line| (line.start_index(), line.start_index() + line.length()))
+            .collect();
+        text.split_whitespace()
+            .filter(|word| {
+                let start = (word.as_ptr() as usize - text.as_ptr() as usize) as i32;
+                let end = start + word.len() as i32;
+                !lines
+                    .iter()
+                    .any(|&(line_start, line_end)| line_start <= start && end <= line_end)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn auto_sized_labels_keep_words_whole_inside_the_key() {
+        for text in [
+            "Livingroom Plain",
+            "Skadis LED Strip A Light",
+            "Dining Light 1 Light\non",
+            "one two three",
+        ] {
+            let layout = key_text_layout(text, None);
+            let (width, height) = layout.pixel_size();
+
+            assert_eq!(words_split_across_lines(&layout, text), Vec::<&str>::new());
+            assert!(width <= inner_key_size(), "{text:?} is {width} px wide");
+            assert!(height <= inner_key_size(), "{text:?} is {height} px tall");
+            assert!(
+                !ends_with_ellipsis(&layout),
+                "{text:?} fits and needs no ellipsis"
+            );
+        }
+    }
+
+    #[test]
+    fn a_word_wider_than_the_key_breaks_only_at_the_minimum_size() {
+        let layout = key_text_layout("Supercalifragilisticexpialidocious", None);
+
+        assert_eq!(text_size_px(&layout), KEY_TEXT_MIN_PX as i32);
+        assert!(layout.pixel_size().0 <= inner_key_size());
+        assert!(layout.line_count() > 1);
+    }
+
+    #[test]
+    fn text_that_does_not_fit_at_the_minimum_size_ends_with_an_ellipsis() {
+        let text = "the quick brown fox jumps over the lazy dog ".repeat(12);
+        let layout = key_text_layout(text.trim(), None);
+
+        assert_eq!(text_size_px(&layout), KEY_TEXT_MIN_PX as i32);
+        assert!(ends_with_ellipsis(&layout));
+        assert!(layout.pixel_size().1 <= inner_key_size());
+    }
+
+    #[test]
+    fn a_label_below_an_icon_that_loses_its_last_line_ends_with_an_ellipsis() {
+        let icon_and_label = [top_image(50), label("")];
+        let bounds = text_vertical_bounds(&icon_and_label, Anchor9::BottomCenter);
+        let layout = key_text_layout_in(
+            "Skadis LED Strip A Light\non",
+            Anchor9::BottomCenter,
+            None,
+            bounds,
+        );
+
+        assert!(ends_with_ellipsis(&layout));
+        assert!(
+            layout.pixel_size().1 <= (bounds.1 - bounds.0) as i32 - 2 * KEY_TEXT_PADDING as i32
+        );
+    }
+
+    #[test]
+    fn an_explicit_font_size_is_not_searched() {
+        let layout = key_text_layout("Livingroom Plain", Some(30));
+
+        assert_eq!(text_size_px(&layout), 30);
     }
 
     fn top_image(scale_percent: u8) -> ResolvedLayer {
