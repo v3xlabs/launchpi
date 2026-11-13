@@ -1,5 +1,5 @@
 import * as Dialog from "@kobalte/core/dialog";
-import { FiCheck, FiX } from "solid-icons/fi";
+import { FiCheck, FiPlus, FiX } from "solid-icons/fi";
 import { Component, createSignal, For, Show } from "solid-js";
 
 import { DeviceKind, deviceKindLabels } from "../api/inventory";
@@ -41,7 +41,11 @@ export const AddDeviceDialog: Component = () => {
 
   return (
     <Dialog.Root open={isOpen()} onOpenChange={setIsOpen}>
-      <Dialog.Trigger class="secondary-button">Add</Dialog.Trigger>
+      <Dialog.Trigger class="secondary-button" aria-label="Add device">
+        <FiPlus class="size-3.5" />
+        Add
+        <span class="max-sm:hidden">device</span>
+      </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="dialog-overlay" />
         <div class="dialog-positioner">

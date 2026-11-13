@@ -7,18 +7,18 @@ export const PageHeader: Component<{
   meta?: JSX.Element;
   actions?: JSX.Element;
 }> = properties => (
-  <div class="flex items-center gap-3">
+  <div class="flex flex-wrap items-center gap-3">
     <div class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-control bg-raised text-soft">
       {properties.mark}
     </div>
-    <div class="min-w-0 flex-1">
+    <div class="min-w-0 flex-[1_1_12rem]">
       <h1 class="flex min-w-0 items-center gap-2 text-lg font-semibold">{properties.title}</h1>
       <Show when={properties.meta}>
         <p class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 text-muted">{properties.meta}</p>
       </Show>
     </div>
     <Show when={properties.actions}>
-      <div class="flex shrink-0 items-center gap-2">{properties.actions}</div>
+      <div class="ml-auto flex shrink-0 items-center gap-2">{properties.actions}</div>
     </Show>
   </div>
 );

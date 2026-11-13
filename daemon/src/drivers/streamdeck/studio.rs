@@ -906,7 +906,7 @@ fn register_network_dock_child(state: &AppState, parent_surface_id: &SurfaceId, 
         .ensure_default_panel_for_layout(&model.layout);
     let child = ManagedNetworkSurface {
         surface_id: state.surfaces.create_surface_id(),
-        name: format!("{} child", parent.name),
+        name: model.name.to_string(),
         host: parent.host,
         port: child_port,
         serial_number,

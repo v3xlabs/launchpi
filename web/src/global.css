@@ -51,7 +51,36 @@
   .empty { @apply px-4 py-3 text-sm text-slate-500 dark:text-slate-400; }
 
   /* Layout */
-  .page { @apply mx-auto grid w-full max-w-5xl gap-8 px-6 py-8; }
+  /* An explicit track: an auto track floors at the widest child's content and pushes past the window. */
+  .page { @apply grid w-full grid-cols-[minmax(0,1fr)] gap-8 px-4 py-6 sm:px-8; }
+  .page-inset { @apply px-4 sm:px-8; }
+
+  /* Shell: the sidebar, its 1px edge, and the main column. Nothing is centred or capped. */
+  .shell { @apply grid min-h-dvh grid-cols-[var(--sidebar-w)_minmax(0,1fr)]; }
+  .sidebar { @apply sticky top-0 z-20 h-dvh border-r border-hairline bg-surface; }
+  .sidebar-content { @apply flex h-full flex-col overflow-hidden; }
+  .sidebar-brand { @apply flex h-13 shrink-0 items-center gap-2 px-4 text-sm font-semibold tracking-tight whitespace-nowrap; }
+  .sidebar-nav { @apply grid min-h-0 content-start gap-0.5 overflow-x-hidden overflow-y-auto px-2; }
+  .nav-item { @apply flex h-8 shrink-0 items-center gap-3 rounded-control px-3 whitespace-nowrap text-slate-600 transition-colors hover:bg-raised hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100; }
+  .nav-item[data-status="active"], .tree-item[data-status="active"] { @apply bg-raised font-medium text-slate-900 dark:text-slate-100; }
+  /* The guide joins a device to the section it belongs to. */
+  .tree { @apply relative ml-5 grid gap-0.5 py-0.5 pl-2 before:absolute before:inset-y-1 before:left-0 before:w-px before:bg-hairline before:content-['']; }
+  .tree-item { @apply flex h-7 items-center gap-2 rounded-md px-2 whitespace-nowrap text-slate-600 transition-colors hover:bg-raised hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100; }
+  .tree-group-label { @apply truncate px-2 pt-1 text-xs font-medium text-slate-500 dark:text-slate-400; }
+  .sidebar-foot { @apply mt-auto grid gap-2 border-t border-hairline p-2; }
+  .sidebar-status { @apply flex min-w-0 flex-1 items-center gap-2 overflow-hidden pl-2 whitespace-nowrap text-slate-500 dark:text-slate-400; }
+
+  /* The rail: the same items with their labels hidden. Collapsing is a width, not a second component. */
+  .shell[data-rail] .sidebar-label { @apply sr-only; }
+  .shell[data-rail] .tree { @apply hidden; }
+  .shell[data-rail] .sidebar-brand, .shell[data-rail] .nav-item { @apply justify-center px-0; }
+  .shell[data-rail] .sidebar-rail-stack { @apply flex-col; }
+  .shell[data-rail] .sidebar-status { @apply justify-center pl-0; }
+
+  /* The edge is 1px to see and 9px to hit. */
+  .sidebar-resizer { @apply absolute inset-y-0 -right-px z-10 w-px cursor-col-resize touch-none outline-none before:absolute before:inset-y-0 before:-inset-x-1 before:content-[''] after:absolute after:inset-y-0 after:right-0 after:w-0.5 after:bg-slate-400 after:opacity-0 after:transition-opacity after:content-[''] hover:after:opacity-100 focus-visible:after:opacity-100 data-[dragging]:after:opacity-100 dark:after:bg-slate-600; }
+  body[data-resizing] { @apply cursor-col-resize select-none; }
+
   .surface { @apply rounded-panel bg-surface; }
   .rows { @apply divide-y divide-hairline; }
   .row { @apply flex items-center gap-4 px-4 py-3; }

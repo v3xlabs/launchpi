@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/solid-router";
 import { FiAlertCircle, FiChevronRight, FiHardDrive, FiPlus } from "solid-icons/fi";
-import { Component, createEffect, createMemo, createSignal, For, Index, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Index, Match, Show, Switch } from "solid-js";
 
 import {
   Device,
@@ -20,6 +20,7 @@ import { StatusLabel } from "../components/StatusDot";
 import { useInventory } from "../context/InventoryContext";
 import { AddDeviceDialog } from "../dialogs/AddDeviceDialog";
 import { SupportedDevicesDialog } from "../dialogs/SupportedDevicesDialog";
+import { deviceTree } from "../utils/deviceTree";
 import { countOf } from "../utils/plural";
 
 export const DevicesPage: Component<{ surfaceId?: string; }> = (properties) => {
@@ -71,7 +72,7 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
                 <>
                   <MetaSeparator />
                   <span>
-                    {"on "}
+                    {"via "}
                     <Link
                       to="/devices/$surfaceId"
                       params={{ surfaceId: entry().surface_id }}
@@ -200,6 +201,20 @@ const DeviceDetail: Component<{ device: Device; }> = (properties) => {
               <Show when={properties.device.serial_number} fallback={<dd class="text-muted">Not reported</dd>}>
                 {serial => <dd class="text-soft tabular-nums">{serial()}</dd>}
               </Show>
+              <Show when={parent()}>
+                {dock => (
+                  <>
+                    <dt class="text-muted">Via</dt>
+                    <dd class="flex min-w-0 flex-wrap items-center gap-x-2 text-soft">
+                      <span>{displayName(dock().name)}</span>
+                      <MetaSeparator />
+                      <StatusLabel status={dock().status} />
+                      <MetaSeparator />
+                      <span class="tabular-nums">{`${dock().host}:${dock().port}`}</span>
+                    </dd>
+                  </>
+                )}
+              </Show>
             </dl>
           </div>
         </div>
@@ -290,20 +305,20 @@ const DeviceLog: Component<{ surfaceId: string; }> = (properties) => {
   );
 };
 
-const DeviceRow: Component<{ device: Device; isChild?: boolean; }> = (properties) => {
+const DeviceRow: Component<{ device: Device; via?: Device | null; isChild?: boolean; }> = (properties) => {
   const store = useInventory();
   const name = () => displayName(properties.device.name);
   const activePanel = () =>
     store.inventory().panels.find(panel => panel.panel_id === properties.device.active_panel_id) ?? null;
 
   return (
-    <div classList={{ "row transition-colors hover:bg-raised/60": true, "pl-10": properties.isChild }}>
+    <div classList={{ "@container row transition-colors hover:bg-raised/60": true, "pl-10": properties.isChild }}>
       <Link
         to="/devices/$surfaceId"
         params={{ surfaceId: properties.device.surface_id }}
         class="flex min-w-0 flex-1 items-center gap-4"
       >
-        <DeviceImage model={properties.device.model} class="h-9 w-14" />
+        <DeviceImage model={properties.device.model} class="h-9 w-14 @max-md:hidden" />
         <span class="min-w-0 flex-1">
           <span class="row-title block">{name()}</span>
           <span class="row-meta block">
@@ -314,12 +329,21 @@ const DeviceRow: Component<{ device: Device; isChild?: boolean; }> = (properties
               {" "}
             </Show>
             {properties.device.host}
+            <Show when={properties.via}>
+              {dock => (
+                <>
+                  {" "}
+                  <MetaSeparator />
+                  {` via ${displayName(dock().name)}`}
+                </>
+              )}
+            </Show>
           </span>
         </span>
-        <span class="w-28 shrink-0">
+        <span class="w-28 shrink-0 @max-md:w-auto">
           <StatusLabel status={properties.device.status} />
         </span>
-        <span class="w-24 shrink-0 truncate">
+        <span class="w-24 shrink-0 truncate @max-xl:hidden">
           <Show when={activePanel()} fallback={<span class="text-muted">No panel</span>}>
             {panel => <span class="text-soft">{panel().name}</span>}
           </Show>
@@ -388,7 +412,7 @@ const DiscoveredRow: Component<{ discovered: DiscoveredDevice; }> = (properties)
 
 const DevicesOverview: Component = () => {
   const store = useInventory();
-  const rootDevices = () => store.inventory().devices.filter(device => device.parent_surface_id === null);
+  const entries = createMemo(() => deviceTree(store.inventory().devices));
   const discovered = () =>
     store.inventory().discovered.filter(entry =>
       store.inventory().devices.every(device => !isSameEndpoint(device, entry)));
@@ -401,7 +425,9 @@ const DevicesOverview: Component = () => {
         meta={(
           <>
             <span>
-              <span class="tabular-nums">{store.inventory().devices.length}</span>
+              <span class="tabular-nums">
+                {entries().reduce((count, entry) => count + (entry.kind === "device" ? 1 : entry.children.length), 0)}
+              </span>
               {" added"}
             </span>
             <MetaSeparator />
@@ -424,17 +450,22 @@ const DevicesOverview: Component = () => {
           <h2 class="label-sm">Added</h2>
         </div>
         <div class="surface rows overflow-hidden">
-          <Show when={rootDevices().length > 0} fallback={<p class="empty">No devices yet.</p>}>
-            <For each={rootDevices()}>
-              {device => (
-                <>
-                  <DeviceRow device={device} />
-                  <For
-                    each={store.inventory().devices.filter(child => child.parent_surface_id === device.surface_id)}
-                  >
-                    {child => <DeviceRow device={child} isChild />}
-                  </For>
-                </>
+          <Show when={entries().length > 0} fallback={<p class="empty">No devices yet.</p>}>
+            <For each={entries()}>
+              {entry => (
+                <Switch>
+                  <Match when={entry.kind === "device" && entry}>
+                    {deviceEntry => <DeviceRow device={deviceEntry().device} via={deviceEntry().via} />}
+                  </Match>
+                  <Match when={entry.kind === "group" && entry}>
+                    {group => (
+                      <>
+                        <p class="px-4 pt-3 pb-1 label-sm">{displayName(group().link.name)}</p>
+                        <For each={group().children}>{child => <DeviceRow device={child} isChild />}</For>
+                      </>
+                    )}
+                  </Match>
+                </Switch>
               )}
             </For>
           </Show>

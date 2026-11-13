@@ -1,8 +1,9 @@
 import * as Dialog from "@kobalte/core/dialog";
-import { FiInfo, FiX } from "solid-icons/fi";
+import { FiHelpCircle, FiX } from "solid-icons/fi";
 import { Component, For, Show } from "solid-js";
 
 import { DeviceImage } from "../components/DeviceImage";
+import { Tip } from "../components/InfoTip";
 
 type Connection = "network" | "dock" | "usb-midi";
 type SupportedDevice = {
@@ -56,9 +57,11 @@ const supportedDevices: SupportedDevice[] = [
 
 export const SupportedDevicesDialog: Component = () => (
   <Dialog.Root>
-    <Dialog.Trigger class="icon-button" aria-label="Supported devices" title="Supported devices">
-      <FiInfo class="size-4" />
-    </Dialog.Trigger>
+    <Tip label="Supported devices">
+      <Dialog.Trigger class="icon-button" aria-label="Supported devices">
+        <FiHelpCircle class="size-4" />
+      </Dialog.Trigger>
+    </Tip>
     <Dialog.Portal>
       <Dialog.Overlay class="dialog-overlay" />
       <div class="dialog-positioner">

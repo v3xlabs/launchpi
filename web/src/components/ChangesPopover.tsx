@@ -30,14 +30,14 @@ export const ChangesPopover: Component = () => {
     <Popover.Root
       open={isOpen()}
       onOpenChange={setIsOpen}
-      placement="bottom-end"
+      placement="top-start"
       gutter={6}
     >
-      <Popover.Trigger class="inline-flex items-center gap-1.5 rounded-control bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950/70">
+      <Popover.Trigger class="inline-flex min-w-0 items-center gap-1.5 rounded-control bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950/70">
         <span class="status-dot size-2 bg-amber-500" aria-hidden="true" />
         <span class="tabular-nums">{count()}</span>
-        {count() === 1 ? "temporary change" : "temporary changes"}
-        <FiChevronDown class="size-3.5" />
+        <span class="sidebar-label truncate">{count() === 1 ? "temporary change" : "temporary changes"}</span>
+        <FiChevronDown class="size-3.5 shrink-0 sidebar-label" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content class="popover w-96">
