@@ -452,8 +452,9 @@ fn publish(context: &PluginContext, shared: &Shared, state: &JsonValue) -> bool 
         .iter()
         .filter(|binding| binding.entity_id == entity_id)
     {
-        if let Some(value) = value_for_field(state, &binding.field) {
-            context.set_value(binding.name.clone(), value);
+        match value_for_field(state, &binding.field) {
+            Some(value) => context.set_value(binding.name.clone(), value),
+            None => context.clear_value(binding.name.clone()),
         }
     }
 

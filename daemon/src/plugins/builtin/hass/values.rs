@@ -78,7 +78,8 @@ fn walk<'a>(document: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
 }
 
 /// A light that reports no colour is still asked for one by whatever key draws it, so an entity
-/// that is on reads as white and anything else as black rather than keeping a stale colour.
+/// that is on reads as white. Anything else has no colour, which a key shows as unstyled: a black
+/// answer would paint a black icon or border on a black key.
 fn color_of(state: &JsonValue) -> Option<RgbaColor> {
     if let Some(color) = attribute(state, "rgb_color").and_then(rgb_from_array) {
         return Some(color);
@@ -94,7 +95,7 @@ fn color_of(state: &JsonValue) -> Option<RgbaColor> {
 
     match state_text(state)? {
         "on" => Some(RgbaColor::opaque(255, 255, 255)),
-        _ => Some(RgbaColor::opaque(0, 0, 0)),
+        _ => None,
     }
 }
 
@@ -228,17 +229,24 @@ mod tests {
     }
 
     #[test]
-    fn an_entity_with_no_colour_at_all_reads_white_when_on_and_black_otherwise() {
+    fn an_entity_with_no_colour_at_all_reads_white_when_on_and_has_none_otherwise() {
         let on = serde_json::json!({ "entity_id": "switch.fan", "state": "on" });
         let off = serde_json::json!({ "entity_id": "switch.fan", "state": "off" });
         assert_eq!(
             value_for_field(&on, "color"),
             Some(VariableValue::Color(RgbaColor::opaque(255, 255, 255)))
         );
-        assert_eq!(
-            value_for_field(&off, "color"),
-            Some(VariableValue::Color(RgbaColor::opaque(0, 0, 0)))
-        );
+        assert_eq!(value_for_field(&off, "color"), None);
+    }
+
+    #[test]
+    fn a_light_that_is_off_reports_null_colours_and_has_none() {
+        let state = serde_json::json!({
+            "entity_id": "light.kitchen",
+            "state": "off",
+            "attributes": { "rgb_color": null, "hs_color": null },
+        });
+        assert_eq!(value_for_field(&state, "color"), None);
     }
 
     #[test]

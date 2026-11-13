@@ -198,12 +198,9 @@ fn action_preset(
     }
 }
 
-/// The entity colour goes on the outline rather than the face because `values.rs` answers black for
-/// an entity that is off and white for one that is on without a colour of its own, and a key whose
-/// whole face is that colour has no legible label left at either end of the range.
-/// The icon is left white rather than tinted with the entity's colour: `color_of` answers black
-/// for anything that is off, and a black glyph on a dark key is a key that looks broken rather than
-/// one that looks off. The colour goes on the outline, which reads against the fill in every state.
+/// The entity colour goes on the outline rather than the face because `values.rs` answers white for
+/// an entity that is on without a colour of its own, and a key whose whole face is that colour has
+/// no legible label left. An entity that is off has no colour, so its outline is absent.
 ///
 /// What Home Assistant already draws for an entity wins over the domain default, so an icon
 /// someone chose there is the icon here. An icon this pack does not have falls back rather than
@@ -591,20 +588,5 @@ mod tests {
                 "{entity_id} should be recognisable before its label is read"
             );
         }
-    }
-
-    /// `color_of` answers black for anything that is off, so a tinted glyph would vanish on a dark
-    /// key exactly when someone is looking to see whether the light is on.
-    #[test]
-    fn an_icon_is_never_tinted_with_a_colour_that_can_be_black() {
-        let preset = only("light.kitchen", "Kitchen");
-        let tinted = preset
-            .control
-            .default_state
-            .layers
-            .iter()
-            .any(|layer| matches!(layer, Layer::Image { tint: Some(_), .. }));
-
-        assert!(!tinted);
     }
 }

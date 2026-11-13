@@ -65,8 +65,9 @@ fn variables() -> Vec<VariableDefinition> {
         VariableDefinition::new("<entity_id>.on", VariableKind::Boolean)
             .description("Whether the entity's state is on."),
         VariableDefinition::new("<entity_id>.color", VariableKind::Text).description(
-            "The entity's colour, for background_color and foreground_color. White when an entity \
-             without a colour is on, black otherwise.",
+            "The entity's colour, for background_color, foreground_color and tint. White when an \
+             entity without a colour is on. Absent while the entity is off, so a binding to it is \
+             left unset.",
         ),
         VariableDefinition::new("<entity_id>.brightness", VariableKind::Number)
             .description("Brightness from 0 to 255."),
@@ -273,6 +274,22 @@ mod tests {
                             ]),
                             "call_service" => {
                                 let _ = calls.send(command.clone());
+                                if command["service"] == json!("turn_off") {
+                                    let _ = socket
+                                        .send(frame(json!({
+                                            "id": 1,
+                                            "type": "event",
+                                            "event": {
+                                                "event_type": "state_changed",
+                                                "data": {
+                                                    "entity_id": "light.kitchen",
+                                                    "old_state": kitchen_state(true),
+                                                    "new_state": kitchen_state(false),
+                                                },
+                                            },
+                                        })))
+                                        .await;
+                                }
                                 JsonValue::Null
                             }
                             _ => JsonValue::Null,
@@ -639,6 +656,47 @@ mod tests {
         assert_eq!(call["target"]["entity_id"], json!("light.kitchen"));
         assert_eq!(call["service_data"]["brightness_pct"], json!(40.0));
         assert!(call["id"].as_u64().is_some(), "a command needs an id");
+    }
+
+    #[tokio::test]
+    async fn a_light_that_turns_off_loses_its_colour() {
+        let (calls, _received) = mpsc::unbounded_channel();
+        let port = home_assistant(calls).await;
+        let started = started(format!(
+            "url = \"http://127.0.0.1:{port}\"\ntoken = \"{TOKEN}\"\n"
+        ))
+        .await
+        .expect("the instance starts");
+
+        started
+            .plugin
+            .subscribe(&subscriptions(&["light.kitchen.color"]))
+            .await
+            .expect("subscriptions are accepted");
+        await_value(
+            &started.variables,
+            "light.kitchen.color",
+            VariableValue::Color(RgbaColor::opaque(232, 185, 35)),
+        )
+        .await;
+
+        started
+            .plugin
+            .invoke("light.turn_off", &json!({ "entity_id": "light.kitchen" }))
+            .await
+            .expect("the call is sent");
+
+        let reference = VariableRef::new("hass.home", "light.kitchen.color");
+        for _ in 0..250 {
+            if started.variables.get(&reference).is_none() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!(
+            "the colour stayed at {:?} after the light turned off",
+            started.variables.get(&reference)
+        );
     }
 
     #[tokio::test]

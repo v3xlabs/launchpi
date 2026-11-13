@@ -31,3 +31,14 @@ Preset generation needs more than an entity ID, friendly name, domain, and icon.
 ### Safety
 
 Do not create one-press defaults for locks, alarms, updates, or destructive automations. Use explicit actions and require a hold gesture or confirmation for those controls.
+
+## Values
+
+### Entity colour
+
+`<entity_id>.color` is the colour a light reports, from `rgb_color`, else from `hs_color`.
+An entity that is on and reports no colour reads white.
+An entity that is off has no colour, and the value is withdrawn when it turns off.
+
+A fill, border or tint bound to a value that is absent is left unset, so the key shows no fill, no border or the untinted icon.
+Bind a `tint` to `.color` and the icon of an off light stays white.
